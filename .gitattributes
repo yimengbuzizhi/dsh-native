@@ -6,6 +6,10 @@ parity/fixtures/** text eol=lf
 core/js/src/main/cpp/** -text
 thirdparty/** -text
 
+# 第三方 / 内嵌代码不计入 GitHub 语言统计（否则 QuickJS 的 C 源码会盖过 Kotlin）
+core/js/src/main/cpp/quickjs/** linguist-vendored
+thirdparty/** linguist-vendored
+
 # shell 脚本必须 LF（gradlew 在 Linux/macOS 上要能执行）
 gradlew text eol=lf
 *.sh text eol=lf
