@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- present 工具产出的文件都在 App 私有 filesDir 下，用 FileProvider 暴露给系统打开 -->
+    <files-path name="files" path="." />
+    <!-- 聊天输入条「拍照」的临时原图（cache/camera/chat-*.jpg），交给系统相机写入 -->
+    <cache-path name="cache" path="." />
+</paths>

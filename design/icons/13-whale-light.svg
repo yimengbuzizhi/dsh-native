@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- 浅色反相版：白底 + 黑标记 -->
+  <rect width="512" height="512" rx="118" fill="#F7F6F2"/>
+  <g fill="#14161A" stroke="#14161A">
+    <circle cx="176" cy="106" r="17" stroke="none"/>
+    <circle cx="336" cy="106" r="17" stroke="none"/>
+    <line x1="206" y1="196" x2="178" y2="112" stroke-width="22" stroke-linecap="round"/>
+    <line x1="306" y1="196" x2="334" y2="112" stroke-width="22" stroke-linecap="round"/>
+    <path d="M118 306 C118 226 178 178 256 178 C334 178 394 226 394 306
+             C394 366 360 402 314 410 L198 410 C152 402 118 366 118 306 Z" stroke="none"/>
+    <path d="M392 306 C420 292 436 264 440 232 C458 268 458 318 440 350
+             C432 326 414 312 392 310 Z" stroke="none"/>
+  </g>
+  <rect x="196" y="296" width="26" height="40" rx="13" fill="#F7F6F2"/>
+  <rect x="290" y="296" width="26" height="40" rx="13" fill="#F7F6F2"/>
+  <path d="M232 370 C246 378 266 378 280 370" stroke="#F7F6F2" stroke-width="10"
+        stroke-linecap="round" fill="none"/>
+</svg>

@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
+  <rect width="390" height="844" fill="#F6F7FB"/>
+
+  <text x="24" y="30" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#6B7280">9:41</text>
+  <g fill="#6B7280">
+    <rect x="300" y="21" width="3" height="7" rx="1"/><rect x="306" y="18" width="3" height="10" rx="1"/>
+    <rect x="312" y="15" width="3" height="13" rx="1"/><rect x="318" y="12" width="3" height="16" rx="1"/>
+    <rect x="330" y="14" width="22" height="11" rx="3" fill="none" stroke="#6B7280" stroke-width="1.5"/>
+    <rect x="333" y="17" width="14" height="5" rx="1.5"/><rect x="355" y="17" width="2" height="5" rx="1"/>
+  </g>
+
+  <text x="20" y="82" font-family="Microsoft YaHei, sans-serif" font-size="28" font-weight="700" fill="#161B26">设置</text>
+
+  <rect x="16" y="104" width="358" height="38" rx="12" fill="#FFFFFF" stroke="#E6E9F0"/>
+  <circle cx="38" cy="123" r="6" fill="none" stroke="#9AA3B2" stroke-width="1.6"/>
+  <path d="M43 128l4 4" stroke="#9AA3B2" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="56" y="128" font-family="Microsoft YaHei, sans-serif" font-size="13" fill="#9AA3B2">搜索设置项</text>
+
+  <!-- 组：模型与对话 -->
+  <text x="20" y="176" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#9AA3B2">模型与对话</text>
+  <rect x="16" y="188" width="358" height="168" rx="14" fill="#FFFFFF" stroke="#EDEFF4"/>
+
+  <g font-family="Microsoft YaHei, sans-serif">
+    <rect x="30" y="204" width="30" height="30" rx="9" fill="#DBEAFE"/>
+    <text x="45" y="224" text-anchor="middle" font-size="13" fill="#2563EB">M</text>
+    <text x="72" y="216" font-size="14" fill="#161B26">默认模型</text>
+    <text x="72" y="232" font-size="11" fill="#9AA3B2">deepseek-chat</text>
+    <text x="344" y="222" font-size="14" fill="#C3C9D4">›</text>
+
+    <text x="72" y="270" font-size="14" fill="#161B26">工具权限</text>
+    <text x="344" y="270" font-size="14" fill="#C3C9D4">›</text>
+
+    <text x="72" y="318" font-size="14" fill="#161B26">上下文压缩</text>
+    <rect x="292" y="304" width="44" height="24" rx="12" fill="#2563EB"/>
+    <circle cx="325" cy="316" r="9" fill="#FFFFFF"/>
+    <text x="344" y="330" font-size="14" fill="#C3C9D4">›</text>
+  </g>
+  <g stroke="#EDEFF4" stroke-width="1">
+    <line x1="72" y1="248" x2="374" y2="248"/>
+    <line x1="72" y1="292" x2="374" y2="292"/>
+  </g>
+
+  <!-- 组：设备能力 -->
+  <text x="20" y="392" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#9AA3B2">设备能力</text>
+  <rect x="16" y="404" width="358" height="222" rx="14" fill="#FFFFFF" stroke="#EDEFF4"/>
+  <g font-family="Microsoft YaHei, sans-serif">
+    <rect x="30" y="420" width="30" height="30" rx="9" fill="#DCFCE7"/>
+    <text x="45" y="440" text-anchor="middle" font-size="13" fill="#1F9D6B">S</text>
+    <text x="72" y="432" font-size="14" fill="#161B26">Shizuku</text>
+    <text x="72" y="448" font-size="11" fill="#9AA3B2">已授权</text>
+    <text x="344" y="438" font-size="14" fill="#C3C9D4">›</text>
+
+    <text x="72" y="486" font-size="14" fill="#161B26">无障碍服务</text>
+    <text x="72" y="502" font-size="11" fill="#9AA3B2">已开启</text>
+    <text x="344" y="492" font-size="14" fill="#C3C9D4">›</text>
+
+    <text x="72" y="540" font-size="14" fill="#161B26">虚拟屏</text>
+    <text x="72" y="556" font-size="11" fill="#9AA3B2">Shower · 1080×2400</text>
+    <text x="344" y="546" font-size="14" fill="#C3C9D4">›</text>
+
+    <text x="72" y="594" font-size="14" fill="#161B26">悬浮球</text>
+    <text x="72" y="610" font-size="11" fill="#9AA3B2">单击面板 · 长按建屏 · 双击收起</text>
+    <text x="344" y="600" font-size="14" fill="#C3C9D4">›</text>
+  </g>
+  <g stroke="#EDEFF4" stroke-width="1">
+    <line x1="72" y1="464" x2="374" y2="464"/>
+    <line x1="72" y1="518" x2="374" y2="518"/>
+    <line x1="72" y1="572" x2="374" y2="572"/>
+  </g>
+
+  <!-- 组：数据 -->
+  <text x="20" y="660" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#9AA3B2">数据</text>
+  <rect x="16" y="672" width="358" height="112" rx="14" fill="#FFFFFF" stroke="#EDEFF4"/>
+  <g font-family="Microsoft YaHei, sans-serif">
+    <text x="30" y="702" font-size="14" fill="#161B26">备份与恢复</text>
+    <text x="30" y="720" font-size="11" fill="#9AA3B2">会话 · 配置 · 插件</text>
+    <text x="344" y="706" font-size="14" fill="#C3C9D4">›</text>
+    <text x="30" y="754" font-size="14" fill="#161B26">存储占用</text>
+    <text x="300" y="754" font-size="12" fill="#9AA3B2">1.2 GB</text>
+    <text x="344" y="758" font-size="14" fill="#C3C9D4">›</text>
+  </g>
+  <line x1="30" y1="734" x2="374" y2="734" stroke="#EDEFF4"/>
+
+  <!-- 底部导航 -->
+  <rect x="0" y="760" width="390" height="84" fill="#FFFFFF"/>
+  <rect x="0" y="760" width="390" height="1" fill="#E6E9F0"/>
+  <g font-family="Microsoft YaHei, sans-serif" font-size="10">
+    <text x="58" y="800" text-anchor="middle" fill="#9AA3B2">聊天</text>
+    <text x="146" y="800" text-anchor="middle" fill="#9AA3B2">控制台</text>
+    <text x="234" y="800" text-anchor="middle" fill="#9AA3B2">会话</text>
+    <text x="322" y="800" text-anchor="middle" fill="#2563EB">设置</text>
+  </g>
+  <g fill="none" stroke="#9AA3B2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M52 772h12a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4h-6l-5 4v-4a4 4 0 0 1-1-3v-7a4 4 0 0 1 0-4z"/>
+    <rect x="138" y="770" width="16" height="16" rx="4"/><path d="M144 778h4"/>
+    <rect x="226" y="770" width="16" height="16" rx="4"/><path d="M230 774h8M230 778h8M230 782h5"/>
+    <circle cx="322" cy="778" r="7"/><path d="M317 785l-2 3"/>
+  </g>
+  <rect x="145" y="826" width="100" height="4" rx="2" fill="#D5DAE3"/>
+</svg>

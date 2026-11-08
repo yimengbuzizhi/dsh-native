@@ -1,0 +1,11 @@
+{
+  "type": "request/context",
+  "seq": 21,
+  "time": 1793284429754,
+  "data": {
+    "provider": "deepseek-account",
+    "model": "deepseek-flash",
+    "contextWindow": 1048576,
+    "systemPromptUpdate": "in-history"
+  }
+}

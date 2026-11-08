@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
+  <defs>
+    <linearGradient id="sendg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B82F6"/><stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <clipPath id="screenClip"><rect width="390" height="844" rx="0"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#screenClip)">
+    <rect width="390" height="844" fill="#080B12"/>
+
+    <!-- 状态栏 -->
+    <text x="24" y="30" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#8E99AD">9:41</text>
+    <g fill="#8E99AD">
+      <rect x="300" y="21" width="3" height="7" rx="1"/>
+      <rect x="306" y="18" width="3" height="10" rx="1"/>
+      <rect x="312" y="15" width="3" height="13" rx="1"/>
+      <rect x="318" y="12" width="3" height="16" rx="1"/>
+      <rect x="330" y="14" width="22" height="11" rx="3" fill="none" stroke="#8E99AD" stroke-width="1.5"/>
+      <rect x="333" y="17" width="14" height="5" rx="1.5"/>
+      <rect x="355" y="17" width="2" height="5" rx="1"/>
+    </g>
+
+    <!-- 顶栏 -->
+    <text x="18" y="66" font-family="Microsoft YaHei, sans-serif" font-size="22" fill="#2563EB">‹</text>
+    <text x="44" y="64" font-family="Microsoft YaHei, sans-serif" font-size="16" font-weight="600" fill="#E9EEFB">重构终端组件</text>
+    <text x="44" y="82" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8E99AD">deepseek-chat · 12 轮</text>
+    <text x="330" y="66" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#8E99AD">⋯</text>
+    <circle cx="364" cy="60" r="14" fill="#111725" stroke="#232C3E"/>
+    <text x="364" y="65" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#60A5FA">＋</text>
+
+    <rect x="0" y="94" width="390" height="1" fill="#161D2B"/>
+
+    <!-- 时间 -->
+    <text x="195" y="122" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#5E6A80">今天 14:32</text>
+
+    <!-- 用户消息 -->
+    <rect x="158" y="140" width="212" height="58" rx="18" fill="#2563EB"/>
+    <text x="176" y="166" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#FFFFFF">把 src/math.ts 里的 add 改成</text>
+    <text x="176" y="186" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#FFFFFF">异步，调用方一起改掉。</text>
+
+    <!-- 助手正文 -->
+    <text x="24" y="242" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#E9EEFB">先看一下现在的实现。</text>
+
+    <!-- 工具卡：读取 -->
+    <rect x="20" y="260" width="350" height="46" rx="12" fill="#111725" stroke="#232C3E"/>
+    <circle cx="42" cy="283" r="11" fill="#16233F"/>
+    <path d="M36 283 L47 283 M42 278 L42 288" stroke="#60A5FA" stroke-width="1.6" stroke-linecap="round"/>
+    <text x="62" y="281" font-family="Microsoft YaHei, sans-serif" font-size="13" fill="#E9EEFB">已读取 3 个文件</text>
+    <text x="62" y="297" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8E99AD">math.ts · index.ts · api.ts</text>
+    <text x="350" y="287" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#5E6A80">›</text>
+
+    <!-- 工具卡：编辑 -->
+    <rect x="20" y="314" width="350" height="46" rx="12" fill="#111725" stroke="#232C3E"/>
+    <circle cx="42" cy="337" r="11" fill="#122A22"/>
+    <path d="M37 337 L41 341 L48 333" stroke="#31C48D" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="62" y="335" font-family="Microsoft YaHei, sans-serif" font-size="13" fill="#E9EEFB">编辑 src/math.ts</text>
+    <text x="62" y="351" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#31C48D">+12 −8</text>
+    <text x="350" y="341" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#5E6A80">›</text>
+
+    <!-- 代码块 -->
+    <rect x="20" y="378" width="350" height="150" rx="12" fill="#0D1420" stroke="#1C2536"/>
+    <rect x="20" y="378" width="350" height="30" rx="12" fill="#111A29"/>
+    <rect x="20" y="396" width="350" height="12" fill="#111A29"/>
+    <text x="36" y="398" font-family="Consolas, monospace" font-size="11" fill="#8E99AD">ts</text>
+    <text x="332" y="398" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#60A5FA">复制</text>
+    <g font-family="Consolas, monospace" font-size="11.5" fill="#C8D3E6">
+      <text x="36" y="432" fill="#5E6A80">1</text><text x="58" y="432"><tspan fill="#C084FC">export async function</tspan> add(</text>
+      <text x="36" y="452" fill="#5E6A80">2</text><text x="58" y="452">  a: <tspan fill="#7DD3FC">number</tspan>, b: <tspan fill="#7DD3FC">number</tspan></text>
+      <text x="36" y="472" fill="#5E6A80">3</text><text x="58" y="472">): <tspan fill="#7DD3FC">Promise</tspan>&lt;<tspan fill="#7DD3FC">number</tspan>&gt; {</text>
+      <text x="36" y="492" fill="#5E6A80">4</text><text x="58" y="492">  <tspan fill="#F472B6">await</tspan> ready()</text>
+      <text x="36" y="512" fill="#5E6A80">5</text><text x="58" y="512">  <tspan fill="#F472B6">return</tspan> a + b</text>
+    </g>
+
+    <!-- 助手续 -->
+    <text x="24" y="558" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#E9EEFB">改好了，调用方也一起调整：</text>
+    <text x="24" y="580" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#E9EEFB">api.ts 里 <tspan font-family="Consolas, monospace" fill="#7DD3FC">add(1, 2)</tspan> 现在是异步的。</text>
+
+    <!-- 流式光标 -->
+    <rect x="24" y="594" width="9" height="18" rx="2" fill="#2563EB"/>
+
+    <!-- 底部渐隐 + 输入栏 -->
+    <rect x="0" y="700" width="390" height="144" fill="#080B12"/>
+    <rect x="16" y="726" width="358" height="62" rx="20" fill="#111725" stroke="#232C3E"/>
+    <circle cx="42" cy="757" r="14" fill="#1A2233"/>
+    <text x="42" y="762" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="16" fill="#8E99AD">＋</text>
+    <text x="68" y="762" font-family="Microsoft YaHei, sans-serif" font-size="13" fill="#5E6A80">继续输入…</text>
+    <circle cx="348" cy="757" r="18" fill="url(#sendg)"/>
+    <path d="M348 750 L348 763 M343 756 L348 750 L353 756" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- 手势条 -->
+    <rect x="145" y="826" width="100" height="4" rx="2" fill="#3A4256"/>
+  </g>
+</svg>

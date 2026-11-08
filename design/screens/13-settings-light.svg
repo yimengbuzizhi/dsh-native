@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
+  <rect width="390" height="844" fill="#F7F5F0"/>
+
+  <text x="24" y="30" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#1A1A17">21:26</text>
+  <g fill="#1A1A17">
+    <rect x="300" y="21" width="3" height="7" rx="1"/><rect x="306" y="18" width="3" height="10" rx="1"/>
+    <rect x="312" y="15" width="3" height="13" rx="1"/><rect x="318" y="12" width="3" height="16" rx="1"/>
+    <rect x="330" y="14" width="22" height="11" rx="3" fill="none" stroke="#1A1A17" stroke-width="1.4"/>
+    <rect x="333" y="17" width="14" height="5" rx="1.5"/><rect x="355" y="17" width="2" height="5" rx="1"/>
+  </g>
+
+  <text x="24" y="96" font-family="Microsoft YaHei, sans-serif" font-size="30" font-weight="700" fill="#1A1A17">设置</text>
+  <circle cx="352" cy="86" r="16" fill="none" stroke="#4A4842" stroke-width="1.6"/>
+  <circle cx="348" cy="82" r="4" fill="none" stroke="#4A4842" stroke-width="1.6"/>
+  <path d="M352 90l6 6" stroke="#4A4842" stroke-width="1.6" stroke-linecap="round"/>
+
+  <!-- 通用 -->
+  <text x="24" y="140" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#8A877E">通用</text>
+  <rect x="16" y="152" width="358" height="128" rx="22" fill="#FFFFFF"/>
+
+  <circle cx="52" cy="184" r="17" fill="#DCE9FF"/>
+  <g stroke="#2563EB" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <circle cx="52" cy="184" r="6"/><path d="M52 175v-2M52 195v-2M43 184h-2M63 184h-2"/>
+  </g>
+  <text x="80" y="182" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#1A1A17">外观</text>
+  <text x="80" y="200" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A877E">深海 · 跟随系统</text>
+  <text x="346" y="190" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#C0BCB2">›</text>
+
+  <line x1="80" y1="216" x2="358" y2="216" stroke="#F0EDE6"/>
+
+  <circle cx="52" cy="248" r="17" fill="#F3E8FF"/>
+  <g stroke="#8B5CF6" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <path d="M46 251v-3l6-7 6 7v3z"/><path d="M49 251v-4h6v4"/>
+  </g>
+  <text x="80" y="246" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#1A1A17">偏好</text>
+  <text x="80" y="264" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A877E">通知 · 动效 · 输入</text>
+  <text x="346" y="254" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#C0BCB2">›</text>
+
+  <!-- 模型与服务 -->
+  <text x="24" y="308" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#8A877E">模型与服务</text>
+  <rect x="16" y="320" width="358" height="192" rx="22" fill="#FFFFFF"/>
+
+  <circle cx="52" cy="352" r="17" fill="#DCFCE7"/>
+  <path d="M46 352h12M52 346v12" stroke="#16A34A" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="80" y="350" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#1A1A17">默认模型</text>
+  <text x="80" y="368" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A877E">deepseek-chat</text>
+  <text x="346" y="358" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#C0BCB2">›</text>
+
+  <line x1="80" y1="384" x2="358" y2="384" stroke="#F0EDE6"/>
+
+  <circle cx="52" cy="416" r="17" fill="#FFE4E6"/>
+  <g stroke="#E11D48" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <circle cx="52" cy="416" r="5"/><path d="M52 411v5l3 2"/>
+  </g>
+  <text x="80" y="414" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#1A1A17">模型服务商</text>
+  <text x="80" y="432" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A877E">2 个 · DeepSeek / OpenRouter</text>
+  <text x="346" y="422" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#C0BCB2">›</text>
+
+  <line x1="80" y1="448" x2="358" y2="448" stroke="#F0EDE6"/>
+
+  <circle cx="52" cy="480" r="17" fill="#FEF3C7"/>
+  <path d="M52 472l2.4 5.2 5.6.6-4.2 3.8 1.2 5.4-5-2.8-5 2.8 1.2-5.4-4.2-3.8 5.6-.6z" fill="#D97706"/>
+  <text x="80" y="478" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#1A1A17">网页搜索</text>
+  <text x="80" y="496" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A877E">默认关闭 · 可接 Exa / Tavily</text>
+  <text x="346" y="486" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#C0BCB2">›</text>
+
+  <!-- 扩展 -->
+  <text x="24" y="544" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#8A877E">扩展</text>
+  <rect x="16" y="556" width="358" height="128" rx="22" fill="#FFFFFF"/>
+
+  <circle cx="52" cy="588" r="17" fill="#E0F2FE"/>
+  <g stroke="#0284C7" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <rect x="45" y="581" width="7" height="7" rx="2"/><rect x="52" y="588" width="7" height="7" rx="2"/>
+  </g>
+  <text x="80" y="586" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#1A1A17">插件</text>
+  <text x="80" y="604" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A877E">21 已启用 · 1 加载失败</text>
+  <text x="346" y="594" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#C0BCB2">›</text>
+
+  <line x1="80" y1="620" x2="358" y2="620" stroke="#F0EDE6"/>
+
+  <circle cx="52" cy="652" r="17" fill="#EDE9FE"/>
+  <path d="M52 644l7 4v8l-7 4-7-4v-8z" fill="none" stroke="#7C3AED" stroke-width="1.5" stroke-linejoin="round"/>
+  <text x="80" y="650" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#1A1A17">MCP 与技能</text>
+  <text x="80" y="668" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A877E">3 个服务 · 5 个技能</text>
+  <text x="346" y="658" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#C0BCB2">›</text>
+
+  <!-- 数据 -->
+  <text x="24" y="716" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#8A877E">数据</text>
+  <rect x="16" y="728" width="358" height="64" rx="22" fill="#FFFFFF"/>
+  <circle cx="52" cy="760" r="17" fill="#CCFBF1"/>
+  <g stroke="#0D9488" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <path d="M45 760a7 7 0 0 1 14 0"/><path d="M52 753v7l4 2"/>
+  </g>
+  <text x="80" y="758" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#1A1A17">备份与恢复</text>
+  <text x="80" y="776" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A877E">会话 · 配置 · 插件 · 1.2 GB</text>
+  <text x="346" y="766" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#C0BCB2">›</text>
+
+  <text x="195" y="820" text-anchor="middle" font-family="Consolas, monospace" font-size="10" fill="#B0ADA4">DSH Native 1.0.0 (1)</text>
+  <rect x="145" y="830" width="100" height="4" rx="2" fill="#C9C5BA"/>
+</svg>

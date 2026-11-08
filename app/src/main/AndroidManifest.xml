@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 虚拟桌面/应用选择器要枚举全部已安装应用（Android 11+ 默认只能看到部分） -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- 悬浮球（Operit FloatingChatService 的简化版） -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 保活前台服务里的 PARTIAL_WAKE_LOCK：锁屏后 CPU 不睡，长任务能跑完（docs/48） -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 语音输入（Operit 输入条麦克风；先申请，接 SDK 后生效） -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Shizuku（虚拟屏 / 终端 / 设备工具需要 shell 身份） -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <!-- Shower 服务端要写 /sdcard/Download/Operit/shower-server.jar（Operit 客户端硬编码路径） -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <!-- 权限页「电池优化」项：申请忽略电池优化（长时间任务/虚拟屏不被掐） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 悬浮窗附件「位置」（docs/76 W24）：运行时权限，授权后取一次位置拼文本附件 -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <application
+        android:name=".DshApplication"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 虚拟屏自己的桌面：Home 键/启动虚拟屏时在 display 13 上打开，只影响虚拟屏 -->
+        <activity
+            android:name=".VirtualHomeActivity"
+            android:exported="true"
+            android:label="虚拟桌面"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="xin.dshaa.nativeapp.virtualhome"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="xin.dshaa.nativeapp.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Shizuku：接收 binder（SDK 通过 provider 初始化） -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!-- Shower 虚拟屏：app_process 服务端把 Binder 用这个 action 广播回来（jar 里写死） -->
+        <receiver
+            android:name=".device.ShowerBinderReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.ai.assistance.operit.action.SHOWER_BINDER_READY" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 无障碍：读屏 / 点击 / 手势 / 截图（Operit 的无障碍 provider 的原生替代） -->
+        <service
+            android:name=".device.a11y.DshAccessibilityService"
+            android:exported="true"
+            android:label="DSH 无障碍"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- 悬浮球 -->
+        <service
+            android:name=".device.floating.FloatingBallService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="floating ball overlay" />
+        </service>
+
+        <!-- 悬浮窗附件「通知」的数据源（docs/76 W24）：系统「通知使用权」页授权后才绑定 -->
+        <service
+            android:name=".device.notify.DshNotificationListenerService"
+            android:exported="true"
+            android:label="@string/notification_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- 悬浮窗附件「位置」的透明授权页（docs/76 W24）：运行时权限必须在 Activity 里弹 -->
+        <activity
+            android:name=".device.attach.LocationAttachActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="false"
+            android:taskAffinity="xin.dshaa.nativeapp.attach"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- 对话/后台任务保活：退后台/锁屏时不被 cached-app freezer 冻住（docs/48） -->
+        <service
+            android:name=".chat.TurnKeepAliveService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="AI chat turn keep-alive" />
+        </service>
+    </application>
+</manifest>

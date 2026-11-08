@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
+  <rect width="390" height="844" fill="#F7F5F0"/>
+
+  <!-- 状态栏 -->
+  <text x="24" y="30" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#1A1A17">21:26</text>
+  <g fill="#1A1A17">
+    <rect x="300" y="21" width="3" height="7" rx="1"/><rect x="306" y="18" width="3" height="10" rx="1"/>
+    <rect x="312" y="15" width="3" height="13" rx="1"/><rect x="318" y="12" width="3" height="16" rx="1"/>
+    <rect x="330" y="14" width="22" height="11" rx="3" fill="none" stroke="#1A1A17" stroke-width="1.4"/>
+    <rect x="333" y="17" width="14" height="5" rx="1.5"/><rect x="355" y="17" width="2" height="5" rx="1"/>
+  </g>
+
+  <!-- 顶栏：极简 -->
+  <g stroke="#1A1A17" stroke-width="1.8" stroke-linecap="round">
+    <path d="M24 62h14M22 70h10M28 78h10"/>
+  </g>
+  <text x="60" y="66" font-family="Microsoft YaHei, sans-serif" font-size="17" font-weight="600" fill="#1A1A17">你好，有什么可以帮您</text>
+  <text x="60" y="84" font-family="Consolas, monospace" font-size="10" letter-spacing="1.2" fill="#8A877E">DEEPSEEK-CHAT</text>
+  <g fill="#1A1A17">
+    <circle cx="316" cy="68" r="2"/><circle cx="324" cy="68" r="2"/><circle cx="332" cy="68" r="2"/>
+  </g>
+  <circle cx="360" cy="68" r="14" fill="none" stroke="#1A1A17" stroke-width="1.8"/>
+  <path d="M360 62v12M354 68h12" stroke="#1A1A17" stroke-width="1.8" stroke-linecap="round"/>
+
+  <!-- 用户消息 -->
+  <rect x="272" y="120" width="94" height="44" rx="18" fill="#EAE7DF"/>
+  <text x="288" y="147" font-family="Microsoft YaHei, sans-serif" font-size="16" fill="#1A1A17">hi</text>
+
+  <!-- 消息操作行 -->
+  <g stroke="#8A877E" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="138" y="182" width="12" height="12" rx="2"/><rect x="143" y="178" width="12" height="12" rx="2"/>
+    <path d="M192 178a7 7 0 1 1 2 5l-3 1 1-3a7 7 0 0 1 0-3z"/>
+    <path d="M240 190l8-12 4 6-8 8-5 1z"/>
+    <circle cx="288" cy="184" r="3"/><circle cx="298" cy="184" r="3"/><circle cx="308" cy="184" r="3"/>
+    <path d="M338 180l6 8 6-8"/>
+  </g>
+
+  <!-- 助手 -->
+  <path d="M24 232l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#2563EB"/>
+  <text x="46" y="244" font-family="Consolas, monospace" font-size="11" letter-spacing="1.4" fill="#8A877E">DEEPSEEK-CHAT</text>
+  <text x="24" y="276" font-family="Microsoft YaHei, sans-serif" font-size="17" fill="#1A1A17">你好，有什么可以帮你？</text>
+
+  <!-- 工具行 -->
+  <rect x="24" y="296" width="240" height="34" rx="10" fill="#EFEDE6"/>
+  <circle cx="42" cy="313" r="6" fill="none" stroke="#7A776F" stroke-width="1.3"/>
+  <path d="M42 309v4l3 2" stroke="#7A776F" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+  <text x="56" y="318" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#4A4842">已读取 3 个文件 · math.ts</text>
+  <path d="M248 313l4 4-4 4" stroke="#8A877E" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+
+  <!-- 助手操作行 -->
+  <g stroke="#8A877E" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="24" y="352" width="12" height="12" rx="2"/><rect x="29" y="348" width="12" height="12" rx="2"/>
+    <path d="M78 348a7 7 0 1 1 2 5l-3 1 1-3a7 7 0 0 1 0-3z"/>
+    <path d="M126 360l8-12 4 6-8 8-5 1z"/>
+    <circle cx="174" cy="354" r="3"/><circle cx="184" cy="354" r="3"/><circle cx="194" cy="354" r="3"/>
+    <path d="M222 350l6 8 6-8"/>
+  </g>
+
+  <!-- tokens -->
+  <text x="195" y="396" text-anchor="middle" font-family="Consolas, monospace" font-size="10" fill="#B0ADA4">Tokens: 12 (1 → 11)</text>
+
+  <!-- 第二条用户消息 -->
+  <rect x="182" y="424" width="184" height="72" rx="18" fill="#EAE7DF"/>
+  <text x="198" y="450" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#1A1A17">把 src/math.ts 的 add</text>
+  <text x="198" y="472" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#1A1A17">改成异步，调用方一起改。</text>
+
+  <!-- 代码块 -->
+  <rect x="24" y="516" width="342" height="128" rx="14" fill="#F1EEE7" stroke="#E6E2D8"/>
+  <text x="40" y="540" font-family="Consolas, monospace" font-size="10" fill="#8A877E">ts</text>
+  <text x="344" y="540" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#2563EB">复制</text>
+  <g font-family="Consolas, monospace" font-size="11" fill="#3A3833">
+    <text x="40" y="566"><tspan fill="#7C3AED">export async function</tspan> add(</text>
+    <text x="40" y="586">  a: <tspan fill="#0369A1">number</tspan>, b: <tspan fill="#0369A1">number</tspan></text>
+    <text x="40" y="606">): <tspan fill="#0369A1">Promise</tspan>&lt;<tspan fill="#0369A1">number</tspan>&gt; {</text>
+    <text x="40" y="626">  <tspan fill="#BE185D">await</tspan> ready(); <tspan fill="#BE185D">return</tspan> a + b</text>
+  </g>
+
+  <!-- 助手正文 -->
+  <text x="24" y="676" font-family="Microsoft YaHei, sans-serif" font-size="16" fill="#1A1A17">改好了，调用方也一起调整。</text>
+  <rect x="24" y="690" width="9" height="18" rx="2" fill="#2563EB"/>
+
+  <!-- 输入区 -->
+  <rect x="16" y="726" width="358" height="54" rx="27" fill="#EFEDE6"/>
+  <text x="40" y="759" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#8A877E">输入消息与 AI 聊天</text>
+  <g stroke="#4A4842" stroke-width="1.6" fill="none" stroke-linecap="round">
+    <path d="M330 744v8M326 748h8"/>
+    <path d="M322 740h-2a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/>
+    <path d="M330 738h6v6h-6z"/>
+  </g>
+
+  <!-- 输入区下方工具行 -->
+  <path d="M36 806l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#2563EB"/>
+  <circle cx="92" cy="816" r="10" fill="none" stroke="#4A4842" stroke-width="1.6"/>
+  <rect x="88" y="812" width="8" height="8" rx="2" fill="#4A4842"/>
+  <text x="282" y="822" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="24" fill="#4A4842">＋</text>
+  <circle cx="342" cy="816" r="18" fill="#2563EB"/>
+  <path d="M342 809v14M337 815l5-6 5 6" stroke="#FFFFFF" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="145" y="826" width="100" height="4" rx="2" fill="#C9C5BA"/>
+</svg>

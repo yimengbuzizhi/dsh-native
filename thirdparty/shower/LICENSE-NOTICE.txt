@@ -1,0 +1,49 @@
+Shower 客户端库（thirdparty/shower）· 许可证与来源声明
+================================================================
+
+本模块的源码来自 Operit 项目的 showerclient 模块，按 LGPL-3.0 使用。
+
+上游来源
+--------
+- 项目：Operit（com.ai.assistance.operit）
+- 仓库：https://github.com/AAswordman/Operit
+- 上游模块路径：showerclient/
+- 本地只读副本：native/.thirdparty-src/Operit/showerclient（gitignored，不随本仓库分发）
+
+许可证
+------
+Operit 根 README.md 的 "License" 一节原文（第 230-232 行）：
+
+    ## License
+
+    The main code in this repository is licensed under [GNU LGPL v3
+    (LGPL-3.0-only)](https://spdx.org/licenses/LGPL-3.0-only.html). Tools,
+    examples, templates, and third-party dependencies may use other licenses;
+    refer to [LICENSE](LICENSE), the license files in their respective
+    directories, and package metadata for their terms.
+
+即：Operit 的主要代码（包含本模块所复制的内容）采用 GNU Lesser General
+Public License v3.0（SPDX：LGPL-3.0-only）。上游 LICENSE 文件全文为
+GNU LGPL v3（29 June 2007），见：
+https://github.com/AAswordman/Operit/blob/main/LICENSE
+https://www.gnu.org/licenses/lgpl-3.0.html
+
+说明：showerclient/README.md 本身没有独立的许可证段落，上述许可证信息
+取自 Operit 仓库根 README.md 的 "License" 节及根 LICENSE 文件。
+
+本模块复制的内容
+----------------
+- showerclient/src/main/java/**（Kotlin/Java 源码，包名
+  com.ai.assistance.showerclient 与 com.ai.assistance.shower）
+- showerclient/src/main/assets/shower-server.jar（app_process 服务包）
+
+本模块对上游内容的修改（LGPL-3.0 要求的修改声明）
+-------------------------------------------------
+1. src/main/AndroidManifest.xml：删除 package="com.ai.assistance.showerclient"
+   属性（AGP 8 不再接受清单中的 package，改由 build.gradle.kts 的
+   namespace 声明），并补充注释；未增删任何组件。
+2. build.gradle.kts：按 DSH 原生工程重写（compileSdk 34、minSdk 26、
+   AGP/Kotlin 插件 id、依赖版本），不复制上游构建脚本。
+3. 其余 Kotlin/Java 源码与 shower-server.jar 未作修改。
+
+本模块以 LGPL-3.0 分发；完整许可证文本见上游 LICENSE 链接。

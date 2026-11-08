@@ -1,0 +1,239 @@
+[
+  {
+    "name": "device_info",
+    "description": "Report the Android device state: model, Android release, screen size in pixels, current foreground package, whether the DSH accessibility service is connected, and whether Shizuku or root shell access is available. Call this before UI automation when you are unsure what screen you are on.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "dump_ui",
+    "description": "Dump the current window's accessibility node tree as numbered lines (index, class, text, content description, view id, bounds, clickable/editable). Pass an index to click_element to operate on a node. The tree is truncated at max_nodes; screens with long lists may need scrolling and re-dumping.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "max_nodes": {
+          "type": "integer",
+          "description": "Maximum nodes to include (default 250, at most 1000)."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "click_element",
+    "description": "Click a node from the accessibility tree. Pass either an index from dump_ui, or a text/content-description substring. The closest clickable ancestor is clicked. Returns an error when the accessibility service is not connected or nothing matched.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "description": "Node index from the most recent dump_ui (same breadth-first order)."
+        },
+        "text": {
+          "type": "string",
+          "description": "Text or content-description substring to match (first match wins)."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "tap",
+    "description": "Tap a screen point. Coordinates are normalized to 0..999 (top-left 0,0 to bottom-right 999,999), matching the phone-agent convention; DSH converts them to pixels using the current display size. Pass display to tap inside a running virtual display instead of the physical screen.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number", "description": "Horizontal position, 0..999." },
+        "y": { "type": "number", "description": "Vertical position, 0..999." },
+        "display": { "type": "integer", "description": "Optional virtual display id returned by start_virtual_display. Omit for the main screen." }
+      },
+      "required": ["x", "y"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "long_press",
+    "description": "Long-press a screen point (normalized 0..999) to open context menus or start text selection. Pass display to target a running virtual display.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number", "description": "Horizontal position, 0..999." },
+        "y": { "type": "number", "description": "Vertical position, 0..999." },
+        "display": { "type": "integer", "description": "Optional virtual display id returned by start_virtual_display. Omit for the main screen." }
+      },
+      "required": ["x", "y"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "swipe",
+    "description": "Swipe between two normalized points (0..999). Use it to scroll, pull the notification shade, or navigate. Duration is optional (default 300 ms). Pass display to swipe inside a running virtual display.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "start_x": { "type": "number", "description": "Start horizontal position, 0..999." },
+        "start_y": { "type": "number", "description": "Start vertical position, 0..999." },
+        "end_x": { "type": "number", "description": "End horizontal position, 0..999." },
+        "end_y": { "type": "number", "description": "End vertical position, 0..999." },
+        "duration_ms": { "type": "integer", "description": "Gesture duration in milliseconds (default 300)." },
+        "display": { "type": "integer", "description": "Optional virtual display id returned by start_virtual_display. Omit for the main screen." }
+      },
+      "required": ["start_x", "start_y", "end_x", "end_y"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "press_key",
+    "description": "Press a system key. Named keys: back, home, recents, notifications. Other values are Android key names or numeric key codes, injected through the shell (`input keyevent`), e.g. ENTER, DEL, VOLUME_UP, 66. Pass display to press a key inside a running virtual display; home opens that display's virtual desktop, and recents is not scoped to a virtual display.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "description": "back / home / recents / notifications, or an Android key name / numeric key code." },
+        "display": { "type": "integer", "description": "Optional virtual display id returned by start_virtual_display. Omit for the main screen." }
+      },
+      "required": ["key"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "input_text",
+    "description": "Set the text of the currently focused editable field. Use tap or click_element to focus the field first. Replaces the field content; this does not press Enter. With display, it clears the field and pastes through the shell (Unicode/Chinese supported); without display it uses accessibility ACTION_SET_TEXT.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string", "description": "Text to put into the focused field." },
+        "display": { "type": "integer", "description": "Optional virtual display id returned by start_virtual_display. Omit for the main screen." }
+      },
+      "required": ["text"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "launch_app",
+    "description": "Launch an installed app by package name (e.g. com.android.settings). Returns an error if the package has no launchable activity. With display, the app opens on that virtual display instead of the main screen.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "package_name": { "type": "string", "description": "Android package name to launch." },
+        "display": { "type": "integer", "description": "Optional virtual display id returned by start_virtual_display. Omit for the main screen." }
+      },
+      "required": ["package_name"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "capture_screenshot",
+    "description": "Take a screenshot and save it as a PNG in the DSH workspace (screenshots/). Returns the absolute path so you can inspect it with read_image. Screenshots may be rate-limited by Android (about one per second). Pass display to capture the virtual screen's own framebuffer.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "display": { "type": "integer", "description": "Optional virtual display id returned by start_virtual_display. Omit for the main screen." }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "start_virtual_display",
+    "description": "Start (or reuse) a Shower virtual display for UI automation. This runs apps in the background without touching the physical screen. Returns a display id; pass that id as `display` to tap, long_press, swipe, press_key, input_text, launch_app and capture_screenshot. Requires Shizuku or root. If no app is given, the virtual desktop opens.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "width": { "type": "integer", "description": "Display width in pixels (default 1080; encoded width may be aligned to 1088)." },
+        "height": { "type": "integer", "description": "Display height in pixels (default 1920)." },
+        "dpi": { "type": "integer", "description": "Display density (default 320)." },
+        "app": { "type": "string", "description": "Optional package name or app label to launch after creating the display." }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "close_all_virtual_displays",
+    "description": "Stop the Shower virtual display and its server process. Call this when virtual-screen automation is finished so the encoder and virtual display are released.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "create_terminal_session",
+    "description": "Create or reuse a named, persistent terminal session: a real PTY running an Ubuntu proot shell. Unlike `bash`, the session keeps its working directory, environment variables and running programs between calls, and can drive interactive programs. Returns session_id (and state) to pass to execute_in_terminal_session, input_in_terminal_session, get_terminal_session_screen and close_terminal_session. Reusing an existing session_name returns the same session_id. The first session may need to unpack the Ubuntu rootfs and can be slow.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "session_name": { "type": "string", "description": "Name of the terminal session; the same name reuses the existing session." }
+      },
+      "required": ["session_name"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "execute_in_terminal_session",
+    "description": "Run a command inside an existing terminal session and wait until it returns to the shell prompt, returning the collected output. Working directory and exported variables persist across calls on the same session_id. Multi-line commands are executed through `bash -c`. On timeout DSH sends Ctrl+C and returns the partial output with timed_out=true. If the session is already in an interactive program (cat/vim/password prompt), the command is written as terminal input and the call returns immediately; then use input_in_terminal_session and get_terminal_session_screen. A program that waits for input without printing anything cannot be detected as interactive, so this call would wait for its timeout; start such programs with input_in_terminal_session (input=\"cat\" + control=\"enter\") instead.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "session_id": { "type": "string", "description": "Terminal session id returned by create_terminal_session." },
+        "command": { "type": "string", "description": "Command to execute in the session (single line or a multi-line script)." },
+        "timeout_ms": { "type": "integer", "description": "Optional command timeout in milliseconds (default 1800000 = 30 minutes)." }
+      },
+      "required": ["session_id", "command"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "execute_hidden_terminal_command",
+    "description": "Run a command in a hidden non-PTY executor (same Ubuntu environment, not shown in the terminal UI). Commands with the same executor_key reuse one background login shell, so `cd`/exports persist there too. Returns the real exit_code, and timed_out=true when the timeout expired. Use it for quick one-off commands that do not need a visible session; use create_terminal_session for interactive work.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "command": { "type": "string", "description": "Command to execute." },
+        "executor_key": { "type": "string", "description": "Optional hidden executor key used to reuse the same background shell context (default \"default\")." },
+        "timeout_ms": { "type": "integer", "description": "Optional command timeout in milliseconds (default 120000 = 2 minutes)." }
+      },
+      "required": ["command"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "input_in_terminal_session",
+    "description": "Write raw input and/or a control key into a terminal session. At least one of input or control is required. Typical use: input=\"y\" then control=\"enter\" to answer a prompt. control accepts enter/tab/esc/up/down/left/right/home/end/pageup/pagedown/backspace/delete, or a modifier: control=\"ctrl\" with input=\"c\" sends Ctrl+C (interrupt the running program), alt/meta/cmd prefix ESC to input, shift uppercases input. To launch an interactive program without blocking, type its command here (input=\"cat\" + control=\"enter\"), then read the screen with get_terminal_session_screen.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "session_id": { "type": "string", "description": "Terminal session id returned by create_terminal_session." },
+        "input": { "type": "string", "description": "Text to write to the terminal (can include newlines)." },
+        "control": { "type": "string", "description": "Control key or modifier, e.g. enter/tab/esc/up/down/home/end/pageup/pagedown/backspace/delete, or ctrl/alt/shift with input." }
+      },
+      "required": ["session_id"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "close_terminal_session",
+    "description": "Close a terminal session and release its PTY. Use it when finished so the shell process and its child programs do not keep running.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "session_id": { "type": "string", "description": "Terminal session id returned by create_terminal_session." }
+      },
+      "required": ["session_id"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_terminal_session_screen",
+    "description": "Return the currently visible PTY screen of a terminal session as a text grid (single screen, no scrollback history). Use it after sending input to an interactive program to see the prompt/menu, or to check what is on screen right now.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "session_id": { "type": "string", "description": "Terminal session id returned by create_terminal_session." }
+      },
+      "required": ["session_id"],
+      "additionalProperties": false
+    }
+  }
+]

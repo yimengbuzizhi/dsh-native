@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2F7BFF"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="116" fill="url(#bg4)"/>
+
+  <!-- 天线 -->
+  <g stroke="#FFFFFF" stroke-width="16" stroke-linecap="round">
+    <line x1="196" y1="214" x2="180" y2="126"/>
+    <line x1="316" y1="214" x2="332" y2="126"/>
+  </g>
+  <circle cx="180" cy="120" r="15" fill="#FFFFFF"/>
+  <circle cx="332" cy="120" r="15" fill="#31C48D"/>
+
+  <!-- 字标 -->
+  <text x="256" y="330" text-anchor="middle"
+        font-family="Arial Black, Segoe UI, Microsoft YaHei, sans-serif"
+        font-size="164" font-weight="900" letter-spacing="6" fill="#FFFFFF">DSH</text>
+
+  <!-- 下划水波 -->
+  <path d="M150 372 C190 392 232 392 272 376 C312 360 348 360 376 374"
+        stroke="#BFD4FF" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.9"/>
+</svg>

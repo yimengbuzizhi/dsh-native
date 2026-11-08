@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- 自适应图标 · 前景（108dp 画布，内容缩到 66dp 安全区） -->
+  <defs>
+    <linearGradient id="ink2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#D9E0EB"/>
+    </linearGradient>
+    <linearGradient id="blue2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4F8BFF"/><stop offset="1" stop-color="#2457C9"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(256 256) scale(0.72) translate(-256 -256)">
+    <g stroke="url(#ink2)" stroke-width="20" stroke-linecap="round">
+      <line x1="196" y1="190" x2="170" y2="104"/>
+      <line x1="304" y1="190" x2="330" y2="104"/>
+    </g>
+    <circle cx="168" cy="98" r="16" fill="url(#ink2)"/>
+    <circle cx="332" cy="98" r="16" fill="url(#ink2)"/>
+    <path fill-rule="evenodd" fill="url(#ink2)"
+          d="M150 168 L250 168 C352 168 406 214 406 286 C406 358 352 404 250 404 L150 404 Z
+             M232 246 L252 246 C298 246 322 262 322 286 C322 310 298 326 252 326 L232 326 Z"/>
+    <path d="M232 246 L252 246 C298 246 322 262 322 286 C322 310 298 326 252 326 L232 326 Z"
+          fill="url(#blue2)"/>
+  </g>
+</svg>

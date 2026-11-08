@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
+  <defs>
+    <linearGradient id="hdr" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F6FE0"/><stop offset="0.6" stop-color="#3B82F6"/><stop offset="1" stop-color="#60A5FA"/>
+    </linearGradient>
+    <linearGradient id="hdrimg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="390" height="844" fill="#FFFFFF"/>
+
+  <!-- 顶部渐变头图 -->
+  <rect width="390" height="132" fill="url(#hdr)"/>
+  <rect width="390" height="132" fill="url(#hdrimg)"/>
+  <text x="24" y="30" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#EAF2FF">9:41</text>
+  <g fill="#EAF2FF">
+    <rect x="300" y="21" width="3" height="7" rx="1"/><rect x="306" y="18" width="3" height="10" rx="1"/>
+    <rect x="312" y="15" width="3" height="13" rx="1"/><rect x="318" y="12" width="3" height="16" rx="1"/>
+    <rect x="330" y="14" width="22" height="11" rx="3" fill="none" stroke="#EAF2FF" stroke-width="1.4"/>
+    <rect x="333" y="17" width="14" height="5" rx="1.5"/><rect x="355" y="17" width="2" height="5" rx="1"/>
+  </g>
+
+  <g stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">
+    <path d="M26 58h14M26 66h10M26 74h14"/>
+  </g>
+  <text x="56" y="66" font-family="Microsoft YaHei, sans-serif" font-size="19" font-weight="600" fill="#FFFFFF">重构终端组件</text>
+  <text x="56" y="86" font-family="Consolas, monospace" font-size="10" letter-spacing="1" fill="#D7E6FF">DEEPSEEK-CHAT · 12 轮</text>
+  <circle cx="356" cy="64" r="14" fill="#FFFFFF" opacity="0.18"/>
+  <path d="M356 58v12M350 64h12" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/>
+
+  <!-- 用户消息 -->
+  <rect x="186" y="152" width="184" height="66" rx="16" fill="#E9F0FB"/>
+  <text x="202" y="178" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#17181A">把 src/math.ts 的 add</text>
+  <text x="202" y="200" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#17181A">改成异步，调用方一起改。</text>
+
+  <!-- 助手卡片 -->
+  <rect x="16" y="234" width="358" height="236" rx="16" fill="#F4F8FF" stroke="#DCE6F6"/>
+  <circle cx="44" cy="262" r="14" fill="#2F6FE0"/>
+  <text x="44" y="267" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF">D</text>
+  <text x="66" y="267" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="600" fill="#17181A">DSH</text>
+  <text x="102" y="267" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#6B7280">14:32</text>
+
+  <text x="32" y="296" font-family="Microsoft YaHei, sans-serif" font-size="13" fill="#17181A">先看一下现在的实现，再改。</text>
+
+  <!-- 思考过程 -->
+  <g stroke="#6B7280" stroke-width="1.4" fill="none" stroke-linecap="round">
+    <path d="M34 312l4 4 4-4"/>
+  </g>
+  <text x="50" y="320" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#6B7280">思考过程 · 3 步</text>
+
+  <!-- 工具行 -->
+  <rect x="28" y="332" width="334" height="42" rx="10" fill="#FFFFFF" stroke="#E3EBF8"/>
+  <rect x="38" y="343" width="20" height="20" rx="6" fill="#E6F0FF"/>
+  <path d="M44 353h8M48 349v8" stroke="#2F6FE0" stroke-width="1.4" stroke-linecap="round"/>
+  <text x="66" y="352" font-family="Consolas, monospace" font-size="11" fill="#17181A">read_file</text>
+  <text x="132" y="352" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#6B7280">src/math.ts</text>
+  <circle cx="342" cy="353" r="4" fill="#16A34A"/>
+
+  <rect x="28" y="380" width="334" height="42" rx="10" fill="#FFFFFF" stroke="#E3EBF8"/>
+  <rect x="38" y="391" width="20" height="20" rx="6" fill="#E6F0FF"/>
+  <path d="M43 401l4-6 5 5" stroke="#2F6FE0" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+  <text x="66" y="400" font-family="Consolas, monospace" font-size="11" fill="#17181A">edit_file</text>
+  <text x="132" y="400" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#6B7280">src/math.ts</text>
+  <text x="300" y="400" font-family="Consolas, monospace" font-size="10" fill="#137333">+12</text>
+  <text x="330" y="400" font-family="Consolas, monospace" font-size="10" fill="#C5221F">−8</text>
+
+  <path d="M30 445l3 3 5-6" stroke="#137333" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="44" y="449" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#4B5563">改好了，调用方也一起调整</text>
+
+  <!-- 第二条助手 -->
+  <rect x="16" y="486" width="358" height="136" rx="16" fill="#F4F8FF" stroke="#DCE6F6"/>
+  <circle cx="44" cy="514" r="14" fill="#2F6FE0"/>
+  <text x="44" y="519" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF">D</text>
+  <text x="66" y="519" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="600" fill="#17181A">DSH</text>
+  <text x="32" y="544" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#4B5563">改动如下：</text>
+
+  <rect x="28" y="556" width="334" height="56" rx="10" fill="#FFFFFF" stroke="#E3EBF8"/>
+  <text x="40" y="578" font-family="Consolas, monospace" font-size="11" fill="#137333">+ export async function add(</text>
+  <text x="40" y="598" font-family="Consolas, monospace" font-size="11" fill="#C5221F">− export function add(</text>
+
+  <!-- 输入栏 -->
+  <rect x="16" y="700" width="358" height="96" rx="20" fill="#F4F8FF" stroke="#DCE6F6"/>
+  <text x="36" y="730" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#8A93A3">继续输入…</text>
+  <rect x="32" y="750" width="112" height="30" rx="15" fill="#FFFFFF" stroke="#DCE6F6"/>
+  <text x="46" y="770" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#17181A">deepseek-chat</text>
+  <path d="M126 762l4 4 4-4" stroke="#6B7280" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+  <g stroke="#6B7280" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <path d="M176 758v10M172 762h8"/>
+    <circle cx="212" cy="763" r="6"/><path d="M212 757v12"/>
+    <rect x="244" y="756" width="12" height="12" rx="3"/><path d="M248 760h4M248 764h4"/>
+  </g>
+  <circle cx="338" cy="766" r="20" fill="#2F6FE0"/>
+  <path d="M338 758v16M332 764l6-6 6 6" stroke="#FFFFFF" stroke-width="1.9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="145" y="826" width="100" height="4" rx="2" fill="#D5DCE8"/>
+</svg>

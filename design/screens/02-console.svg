@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
+  <defs>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101B36"/><stop offset="1" stop-color="#0C1424"/>
+    </linearGradient>
+    <linearGradient id="heroLine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2563EB"/><stop offset="1" stop-color="#2563EB" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="390" height="844" fill="#080B12"/>
+
+  <!-- 状态栏 -->
+  <text x="24" y="30" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#8E99AD">9:41</text>
+  <g fill="#8E99AD">
+    <rect x="300" y="21" width="3" height="7" rx="1"/><rect x="306" y="18" width="3" height="10" rx="1"/>
+    <rect x="312" y="15" width="3" height="13" rx="1"/><rect x="318" y="12" width="3" height="16" rx="1"/>
+    <rect x="330" y="14" width="22" height="11" rx="3" fill="none" stroke="#8E99AD" stroke-width="1.5"/>
+    <rect x="333" y="17" width="14" height="5" rx="1.5"/><rect x="355" y="17" width="2" height="5" rx="1"/>
+  </g>
+
+  <!-- 标题 -->
+  <text x="20" y="78" font-family="Microsoft YaHei, sans-serif" font-size="26" font-weight="700" fill="#E9EEFB">控制台</text>
+  <text x="20" y="100" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8E99AD">DSH Native · v1.0.0</text>
+  <circle cx="352" cy="82" r="18" fill="#111725" stroke="#232C3E"/>
+  <g stroke="#8E99AD" stroke-width="1.6" fill="none" stroke-linecap="round">
+    <circle cx="352" cy="82" r="4.5"/>
+    <path d="M352 72v3 M352 89v3 M342 82h3 M359 82h3 M345 75l2 2 M357 87l2 2 M359 75l-2 2 M345 89l2-2"/>
+  </g>
+
+  <!-- 主状态卡 -->
+  <rect x="16" y="120" width="358" height="152" rx="20" fill="url(#hero)" stroke="#1E2A44"/>
+  <rect x="16" y="120" width="358" height="152" rx="20" fill="none" stroke="url(#heroLine)" stroke-width="1.2"/>
+  <circle cx="42" cy="152" r="6" fill="#31C48D"/>
+  <circle cx="42" cy="152" r="11" fill="#31C48D" opacity="0.16"/>
+  <text x="58" y="157" font-family="Microsoft YaHei, sans-serif" font-size="15" font-weight="600" fill="#E9EEFB">引擎运行中</text>
+  <text x="58" y="176" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8E99AD">deepseek-chat · 延迟 42ms · 已连续运行 3 小时</text>
+
+  <g font-family="Microsoft YaHei, sans-serif">
+    <text x="40" y="222" font-size="22" font-weight="700" fill="#FFFFFF">12</text>
+    <text x="40" y="242" font-size="11" fill="#8E99AD">会话</text>
+    <text x="132" y="222" font-size="22" font-weight="700" fill="#FFFFFF">23</text>
+    <text x="132" y="242" font-size="11" fill="#8E99AD">插件</text>
+    <text x="224" y="222" font-size="22" font-weight="700" fill="#FFFFFF">30</text>
+    <text x="224" y="242" font-size="11" fill="#8E99AD">工具</text>
+    <text x="316" y="222" font-size="22" font-weight="700" fill="#60A5FA">3</text>
+    <text x="316" y="242" font-size="11" fill="#8E99AD">待更新</text>
+  </g>
+  <rect x="40" y="186" width="300" height="1" fill="#1B2740"/>
+
+  <!-- 分组：能力 -->
+  <text x="20" y="306" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#5E6A80">设备能力</text>
+
+  <g font-family="Microsoft YaHei, sans-serif">
+    <!-- Shizuku -->
+    <rect x="16" y="318" width="358" height="56" rx="14" fill="#111725" stroke="#1C2536"/>
+    <rect x="30" y="332" width="28" height="28" rx="8" fill="#16233F"/>
+    <text x="44" y="351" text-anchor="middle" font-size="13" fill="#60A5FA">S</text>
+    <text x="70" y="343" font-size="14" fill="#E9EEFB">Shizuku</text>
+    <text x="70" y="360" font-size="11" fill="#8E99AD">ADB 级权限 · 已授权</text>
+    <circle cx="344" cy="346" r="4" fill="#31C48D"/>
+    <text x="354" y="350" font-size="14" fill="#5E6A80">›</text>
+
+    <!-- 无障碍 -->
+    <rect x="16" y="382" width="358" height="56" rx="14" fill="#111725" stroke="#1C2536"/>
+    <rect x="30" y="396" width="28" height="28" rx="8" fill="#122A22"/>
+    <text x="44" y="415" text-anchor="middle" font-size="13" fill="#31C48D">A</text>
+    <text x="70" y="407" font-size="14" fill="#E9EEFB">无障碍</text>
+    <text x="70" y="424" font-size="11" fill="#8E99AD">读屏 / 点击 / 截图 · 已开启</text>
+    <circle cx="344" cy="410" r="4" fill="#31C48D"/>
+    <text x="354" y="414" font-size="14" fill="#5E6A80">›</text>
+
+    <!-- 虚拟屏 -->
+    <rect x="16" y="446" width="358" height="56" rx="14" fill="#111725" stroke="#1C2536"/>
+    <rect x="30" y="460" width="28" height="28" rx="8" fill="#1A2233"/>
+    <text x="44" y="479" text-anchor="middle" font-size="13" fill="#8E99AD">V</text>
+    <text x="70" y="471" font-size="14" fill="#E9EEFB">虚拟屏</text>
+    <text x="70" y="488" font-size="11" fill="#8E99AD">Shower · 就绪（1080×2400）</text>
+    <circle cx="344" cy="474" r="4" fill="#5E6A80"/>
+    <text x="354" y="478" font-size="14" fill="#5E6A80">›</text>
+  </g>
+
+  <!-- 分组：最近 -->
+  <text x="20" y="536" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#5E6A80">最近</text>
+
+  <rect x="16" y="548" width="358" height="56" rx="14" fill="#111725" stroke="#1C2536"/>
+  <text x="70" y="573" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#E9EEFB">今天 · 重构终端组件</text>
+  <text x="70" y="590" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8E99AD">12 轮 · 14:32</text>
+  <text x="354" y="580" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#5E6A80">›</text>
+
+  <rect x="16" y="612" width="358" height="56" rx="14" fill="#111725" stroke="#1C2536"/>
+  <text x="70" y="637" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#E9EEFB">运行日志</text>
+  <text x="70" y="654" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8E99AD">0 错误 · 3 警告</text>
+  <text x="354" y="644" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#5E6A80">›</text>
+
+  <!-- 底部导航 -->
+  <rect x="0" y="760" width="390" height="84" fill="#0A0F19"/>
+  <rect x="0" y="760" width="390" height="1" fill="#161D2B"/>
+  <g font-family="Microsoft YaHei, sans-serif" font-size="10">
+    <text x="58" y="800" text-anchor="middle" fill="#5E6A80">聊天</text>
+    <text x="146" y="800" text-anchor="middle" fill="#60A5FA">控制台</text>
+    <text x="234" y="800" text-anchor="middle" fill="#5E6A80">会话</text>
+    <text x="322" y="800" text-anchor="middle" fill="#5E6A80">设置</text>
+  </g>
+  <g fill="none" stroke="#5E6A80" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M52 772h12a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4h-6l-5 4v-4a4 4 0 0 1-1-3v-7a4 4 0 0 1 0-4z"/>
+    <rect x="138" y="770" width="7" height="7" rx="2"/>
+    <rect x="148" y="770" width="7" height="7" rx="2"/>
+    <rect x="138" y="780" width="7" height="7" rx="2"/>
+    <rect x="148" y="780" width="7" height="7" rx="2"/>
+    <rect x="226" y="770" width="16" height="16" rx="4"/><path d="M230 774h8M230 778h8M230 782h5"/>
+    <circle cx="322" cy="778" r="7"/><path d="M317 785l-2 3"/>
+  </g>
+  <rect x="145" y="826" width="100" height="4" rx="2" fill="#3A4256"/>
+</svg>
