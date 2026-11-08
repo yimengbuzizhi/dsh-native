@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  仅 debug：允许明文 HTTP，供门 2 对拍台把 baseURL 指到本机回放器（127.0.0.1:18080）。
+  release 不带这个覆盖，仍然只走 HTTPS。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>

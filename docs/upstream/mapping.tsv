@@ -1,0 +1,310 @@
+﻿package	group	module	status	note
+cordis	infra	:core:kernel	planned	
+cordis-plugin-group	infra	:core:kernel	planned	
+cordis-plugin-include	infra	:core:kernel	planned	
+cordis-plugin-loader	infra	:core:kernel	planned	
+cordis-plugin-timer	infra	:core:kernel	planned	
+cosmokit	infra	:core:kernel	planned	
+dsh	other	:core:port	planned	
+dsh-acp	other	:core:port	planned	
+dsh-acp-app	other	:core:port	planned	
+dsh-agent	agent	:core:agent	planned	
+dsh-agent-default-model	agent	:core:agent	planned	
+dsh-agent-instructions	agent	:core:agent	planned	
+dsh-agent-loop	agent	:core:agent	planned	
+dsh-agent-preset	agent	:core:agent	planned	
+dsh-agent-preset-registry	agent	:core:agent	planned	
+dsh-agent-tool-presentation	agent	:core:agent	planned	
+dsh-anonymous-user-id	other	:core:port	planned	
+dsh-api-account-controller	api	:core:protocol	planned	
+dsh-api-gateway	api	:core:protocol	planned	
+dsh-api-job-controller	api	:core:protocol	planned	
+dsh-api-remote-access	api	:core:protocol	planned	
+dsh-api-remotes	api	:core:protocol	planned	
+dsh-api-session-controller	api	:core:protocol	planned	
+dsh-api-settings-controller	api	:core:protocol	planned	
+dsh-api-terminal-controller	api	:core:protocol	planned	
+dsh-api-workspace-controller	api	:core:protocol	planned	
+dsh-api-workspace-files	api	:core:protocol	planned	
+dsh-app-boot	other	:core:port	planned	
+dsh-atomic-write	infra	:core:kernel	planned	
+dsh-attachment	other	:core:port	planned	
+dsh-attachment-local	other	:core:port	planned	
+dsh-authorization	other	:core:port	planned	
+dsh-base	infra	:core:kernel	planned	
+dsh-bash-local	other	:core:port	planned	
+dsh-bash-sandbox	other	:core:port	planned	
+dsh-brand	other	:core:port	planned	
+dsh-chunked-list	other	:core:port	planned	
+dsh-client-connection	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-file-upload	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-hmr	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-locale	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-modules	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-product-analytics	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-resources	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-shortcuts	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-agent-preset	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-approval	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-attachment	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-brand-official	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-chat	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-commands	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-conversation	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-cordis	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-deepseek-model-label-1017	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-deliverables	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-directory-picker-browse	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-directory-picker-native	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-goal	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-input-trigger	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-jobs	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-layout	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-message-feedback	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-model-selection	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-open-in-app	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-permission-presets	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-plan	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-plugin-manager	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-plugin-market	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-reference	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-renderer	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-schedule	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-secret-mask	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-session	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-settings	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-settings-account	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-settings-agent-loop	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-settings-general	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-settings-models	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-settings-plugin-inventory	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-settings-plugins	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-settings-session-log	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-settings-shell	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-settings-subagent	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-settings-web-search	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-shortcuts	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-sidebar	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-sidebar-browser	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-sidebar-documentpreview	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-sidebar-files	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-sidebar-right	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-sidebar-terminal	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-skill	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-subagent	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-theme	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-tool	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-trajectory	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-user-questions	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-workflow-run	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-client-ui-workspace	ui	:ui:legacy-mirror	adapted	原生 Compose 重画，不逐包移植
+dsh-cmdline	other	:core:port	planned	
+dsh-command-compact	other	:core:port	planned	
+dsh-command-feedback	other	:core:port	planned	
+dsh-command-goal	other	:core:port	planned	
+dsh-commands	other	:core:port	planned	
+dsh-compaction	other	:core:port	planned	
+dsh-compaction-basic	other	:core:port	planned	
+dsh-compaction-image-offload	other	:core:port	planned	
+dsh-compaction-tool-result-pruner	other	:core:port	planned	
+dsh-config-editor	other	:core:port	planned	
+dsh-cordis-client-runner	other	:core:port	planned	
+dsh-cordis-host-runner	other	:core:port	planned	
+dsh-credentials	other	:core:port	planned	
+dsh-credentials-local	other	:core:port	planned	
+dsh-deepseek-account	other	:core:port	planned	
+dsh-deepseek-account-platform	other	:core:port	planned	
+dsh-deepseek-llm-api-extensions	other	:core:port	planned	
+dsh-deque	infra	:core:kernel	planned	
+dsh-experimental-agent-team	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-agent-team-profile	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-api-speech-to-text	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-auto-review	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-badge-skill-bundle	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-client-ui-agent-team	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-client-ui-cot-translation	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-client-ui-voice-input	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-cot-translation-bundle	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-inspector	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-inspector-profile	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-plugin-market-bundle	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-ralph-bundle	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-session-inspector	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-session-search	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-session-titles-bundle	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-speech-to-text	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-speech-to-text-sensevoice	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-terminal-bundle	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-tool-agent-team	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-tool-worktree	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-translator	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-voice-input-bundle	experimental	—	ignored	实验/开发工具，不做
+dsh-experimental-worktree	experimental	—	ignored	实验/开发工具，不做
+dsh-file-reference	other	:core:port	planned	
+dsh-file-reference-local	other	:core:port	planned	
+dsh-fs	other	:core:port	planned	
+dsh-fs-local	other	:core:port	planned	
+dsh-fs-observation-policy	other	:core:port	planned	
+dsh-fs-sandbox	other	:core:port	planned	
+dsh-goal	other	:core:port	planned	
+dsh-goal-round-driver	other	:core:port	planned	
+dsh-harness-dev-context	other	:core:port	planned	
+dsh-headless	other	:core:port	planned	
+dsh-hmr	other	:core:port	planned	
+dsh-home-paths	other	:core:port	planned	
+dsh-host-directory-picker	web	:core:web	planned	
+dsh-host-directory-picker-auto	web	:core:web	planned	
+dsh-host-directory-picker-browse	web	:core:web	planned	
+dsh-host-directory-picker-native	web	:core:web	planned	
+dsh-host-frontend-static	web	:core:web	planned	
+dsh-host-open-in-app	web	:core:web	planned	
+dsh-host-plugin-inventory	web	:core:web	planned	
+dsh-host-product-telemetry-otel	web	:core:web	planned	
+dsh-host-webserver	web	:core:web	planned	
+dsh-http-proxy	other	:core:port	planned	
+dsh-jobs	other	:core:port	planned	
+dsh-jobs-local	other	:core:port	planned	
+dsh-launch-environment	other	:core:port	planned	
+dsh-lazy-require	infra	:core:kernel	planned	
+dsh-llm	llm	:core:llm	planned	
+dsh-llm-deepseek	llm	:core:llm	planned	
+dsh-llm-deepseek-account	llm	:core:llm	planned	
+dsh-llm-deepseek-api-key	llm	:core:llm	planned	
+dsh-llm-pi-ai	llm	:core:llm	planned	
+dsh-llm-retry	llm	:core:llm	planned	
+dsh-mcp-client	mcp	:core:mcp	planned	
+dsh-mcp-resources	mcp	:core:mcp	planned	
+dsh-message-feedback	other	:core:port	planned	
+dsh-native-command	other	:core:port	planned	
+dsh-office-to-pdf	other	:core:port	planned	
+dsh-otel	other	:core:port	planned	
+dsh-output-retention	other	:core:port	planned	
+dsh-package-manifest	other	:core:port	planned	
+dsh-permission-presets	other	:core:port	planned	
+dsh-persona	other	:core:port	planned	
+dsh-plan-mode	other	:core:port	planned	
+dsh-plugin-manager	plugin	:plugins:kernel	planned	
+dsh-plugin-market	plugin	:plugins:kernel	planned	
+dsh-plugin-market-index	plugin	:plugins:kernel	planned	
+dsh-plugin-package-inventory-deepseek	plugin	:plugins:kernel	planned	
+dsh-ptc-runtime	other	:core:port	planned	
+dsh-ptc-runtime-node	other	:core:port	planned	
+dsh-pwsh-local	other	:core:port	planned	
+dsh-pwsh-sandbox	other	:core:port	planned	
+dsh-repeat-tool-reminder	other	:core:port	planned	
+dsh-sandbox	other	:core:port	planned	
+dsh-sandbox-local	other	:core:port	planned	
+dsh-sandbox-policy	other	:core:port	planned	
+dsh-sandbox-windows-acl	other	:core:port	planned	
+dsh-schedule	other	:core:port	planned	
+dsh-scope	infra	:core:kernel	planned	
+dsh-sdk-app	other	:core:port	planned	
+dsh-sdk-jsonrpc-server	other	:core:port	planned	
+dsh-sdk-minimal	other	:core:port	planned	
+dsh-sdk-protocol	other	:core:port	planned	
+dsh-session	session	:core:session	planned	
+dsh-session-checkpoint-policy	session	:core:session	planned	
+dsh-session-format	session	:core:session	planned	
+dsh-session-format-catalog	session	:core:session	planned	
+dsh-session-format-v0-to-v1	session	:core:session	planned	
+dsh-session-format-v1-to-v2	session	:core:session	planned	
+dsh-session-format-v2-to-v3	session	:core:session	planned	
+dsh-session-format-v3-to-v4	session	:core:session	planned	
+dsh-session-log-deepseek	session	:core:session	planned	
+dsh-session-log-export	session	:core:session	planned	
+dsh-session-persistence	session	:core:session	planned	
+dsh-session-persistence-jsonl	session	:core:session	planned	
+dsh-session-projection	session	:core:session	planned	
+dsh-session-projection-cache	session	:core:session	planned	
+dsh-session-query	session	:core:session	planned	
+dsh-session-query-sqlite	session	:core:session	planned	
+dsh-session-reference	session	:core:session	planned	
+dsh-session-stats	session	:core:session	planned	
+dsh-session-telemetry	session	:core:session	planned	
+dsh-session-telemetry-otel	session	:core:session	planned	
+dsh-session-title	session	:core:session	planned	
+dsh-session-title-all-prompts-llm	session	:core:session	planned	
+dsh-session-title-first-prompt-llm	session	:core:session	planned	
+dsh-session-title-llm	session	:core:session	planned	
+dsh-session-turn-outline	session	:core:session	planned	
+dsh-settings	other	:core:port	planned	
+dsh-shell	other	:core:port	planned	
+dsh-shell-env	other	:core:port	planned	
+dsh-skill	skill	:core:skills	planned	
+dsh-skill-badge	skill	:core:skills	planned	
+dsh-skill-filesystem	skill	:core:skills	planned	
+dsh-skill-office	skill	:core:skills	planned	
+dsh-spill	other	:core:port	planned	
+dsh-spill-local	other	:core:port	planned	
+dsh-spill-policy	other	:core:port	planned	
+dsh-storage	infra	:core:kernel	planned	
+dsh-storage-domain	infra	:core:kernel	planned	
+dsh-storage-json	infra	:core:kernel	planned	
+dsh-subagent	other	:core:port	planned	
+dsh-subagent-fork-in-process	other	:core:port	planned	
+dsh-subagent-spawn-in-process	other	:core:port	planned	
+dsh-subprocess	other	:core:port	planned	
+dsh-subprocess-local	other	:core:port	planned	
+dsh-system-prompt	other	:core:port	planned	
+dsh-terminal	other	:core:port	planned	
+dsh-terminal-bash	other	:core:port	planned	
+dsh-time-context	other	:core:port	planned	
+dsh-timeout	infra	:core:kernel	planned	
+dsh-tmux-context	other	:core:port	planned	
+dsh-token-meter	other	:core:port	planned	
+dsh-tool-accessibility	tool	:core:tools	planned	
+dsh-tool-android	tool	:core:tools	planned	
+dsh-tool-ask-user	tool	:core:tools	planned	
+dsh-tool-bash	tool	:core:tools	planned	
+dsh-tool-bash-persistent	tool	:core:tools	planned	
+dsh-tool-browser	tool	:core:tools	planned	
+dsh-tool-call-timeout-policy	tool	:core:tools	planned	
+dsh-tool-cordis	tool	:core:tools	planned	
+dsh-tool-fs	tool	:core:tools	planned	
+dsh-tool-fs-search	tool	:core:tools	planned	
+dsh-tool-goal	tool	:core:tools	planned	
+dsh-tool-jobs	tool	:core:tools	planned	
+dsh-tool-present	tool	:core:tools	planned	
+dsh-tool-pwsh	tool	:core:tools	planned	
+dsh-tool-pwsh-persistent	tool	:core:tools	planned	
+dsh-tool-ralph	tool	:core:tools	planned	
+dsh-tools	other	:core:port	planned	
+dsh-tool-schedule	tool	:core:tools	planned	
+dsh-tool-session-query	tool	:core:tools	planned	
+dsh-tool-shizuku	tool	:core:tools	planned	
+dsh-tool-skill	tool	:core:tools	planned	
+dsh-tool-str-replace-editor	tool	:core:tools	planned	
+dsh-tool-subagent	tool	:core:tools	planned	
+dsh-tool-subagent-control	tool	:core:tools	planned	
+dsh-tool-terminal	tool	:core:tools	planned	
+dsh-tool-todo	tool	:core:tools	planned	
+dsh-tool-vscreen	tool	:core:tools	planned	
+dsh-tool-web	tool	:core:tools	planned	
+dsh-tool-workflow	tool	:core:tools	planned	
+dsh-tool-working-directory	tool	:core:tools	planned	
+dsh-tool-workspace-dependencies	tool	:core:tools	planned	
+dsh-typert-loader	api	:core:protocol	planned	
+dsh-typert-protocol	api	:core:protocol	planned	
+dsh-typert-registry	api	:core:protocol	planned	
+dsh-user-approval	other	:core:port	planned	
+dsh-user-questions	other	:core:port	planned	
+dsh-util-code-language	infra	:core:kernel	planned	
+dsh-util-crypto	infra	:core:kernel	planned	
+dsh-util-time	infra	:core:kernel	planned	
+dsh-util-values	infra	:core:kernel	planned	
+dsh-util-workspace-path	infra	:core:kernel	planned	
+dsh-web	web	:core:web	planned	
+dsh-web-app	web	:core:web	planned	
+dsh-web-deepseek-api	web	:core:web	planned	
+dsh-web-fetch-http	web	:core:web	planned	
+dsh-web-frontend	web	:core:web	planned	
+dsh-web-search-deepseek	web	:core:web	planned	
+dsh-win32-process	other	:core:port	planned	
+dsh-workflow	workflow	:core:workflow	planned	
+dsh-workflow-ptc	workflow	:core:workflow	planned	
+dsh-working-directory	other	:core:port	planned	
+dsh-workspace	other	:core:port	planned	
+dsh-workspace-changes	other	:core:port	planned	
+libreoffice-kit	other	:core:port	planned	
+node-addon-system	other	:core:port	planned	
+schemastery	infra	:core:kernel	planned	

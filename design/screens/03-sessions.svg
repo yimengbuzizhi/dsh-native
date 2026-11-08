@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
+  <rect width="390" height="844" fill="#F6F7FB"/>
+
+  <!-- 状态栏 -->
+  <text x="24" y="30" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#6B7280">9:41</text>
+  <g fill="#6B7280">
+    <rect x="300" y="21" width="3" height="7" rx="1"/><rect x="306" y="18" width="3" height="10" rx="1"/>
+    <rect x="312" y="15" width="3" height="13" rx="1"/><rect x="318" y="12" width="3" height="16" rx="1"/>
+    <rect x="330" y="14" width="22" height="11" rx="3" fill="none" stroke="#6B7280" stroke-width="1.5"/>
+    <rect x="333" y="17" width="14" height="5" rx="1.5"/><rect x="355" y="17" width="2" height="5" rx="1"/>
+  </g>
+
+  <text x="20" y="82" font-family="Microsoft YaHei, sans-serif" font-size="28" font-weight="700" fill="#161B26">会话</text>
+  <circle cx="352" cy="74" r="18" fill="#FFFFFF" stroke="#E6E9F0"/>
+  <path d="M352 66v16M344 74h16" stroke="#2563EB" stroke-width="1.8" stroke-linecap="round"/>
+
+  <!-- 搜索 -->
+  <rect x="16" y="106" width="358" height="40" rx="12" fill="#FFFFFF" stroke="#E6E9F0"/>
+  <circle cx="38" cy="126" r="6" fill="none" stroke="#9AA3B2" stroke-width="1.6"/>
+  <path d="M43 131l4 4" stroke="#9AA3B2" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="56" y="131" font-family="Microsoft YaHei, sans-serif" font-size="13" fill="#9AA3B2">搜索会话</text>
+
+  <!-- 今天 -->
+  <text x="20" y="180" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#9AA3B2">今天</text>
+  <rect x="16" y="192" width="358" height="64" rx="14" fill="#FFFFFF" stroke="#EDEFF4"/>
+  <text x="32" y="218" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="500" fill="#161B26">重构终端组件</text>
+  <text x="32" y="238" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#6B7280">改好了，调用方也一起调整…</text>
+  <text x="358" y="218" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#9AA3B2">14:32</text>
+  <rect x="32" y="246" width="34" height="4" rx="2" fill="#DBEAFE"/>
+
+  <rect x="16" y="264" width="358" height="64" rx="14" fill="#FFFFFF" stroke="#EDEFF4"/>
+  <text x="32" y="290" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="500" fill="#161B26">插件装不上的问题</text>
+  <text x="32" y="310" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#6B7280">看了日志，是 manifest 少了权限声明…</text>
+  <text x="358" y="290" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#9AA3B2">11:05</text>
+
+  <!-- 昨天 -->
+  <text x="20" y="360" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#9AA3B2">昨天</text>
+  <rect x="16" y="372" width="358" height="64" rx="14" fill="#FFFFFF" stroke="#EDEFF4"/>
+  <text x="32" y="398" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="500" fill="#161B26">把这台手机的 Shizuku 调通</text>
+  <text x="32" y="418" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#6B7280">权限已经给了，`rish` 也能跑…</text>
+  <text x="358" y="398" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#9AA3B2">昨天</text>
+
+  <rect x="16" y="444" width="358" height="64" rx="14" fill="#FFFFFF" stroke="#EDEFF4"/>
+  <text x="32" y="470" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="500" fill="#161B26">写一个抓天气的插件</text>
+  <text x="32" y="490" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#6B7280">插件装好了，`weather_now` 可以调用…</text>
+  <text x="358" y="470" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#9AA3B2">昨天</text>
+
+  <!-- 更早 -->
+  <text x="20" y="540" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#9AA3B2">更早</text>
+  <rect x="16" y="552" width="358" height="64" rx="14" fill="#FFFFFF" stroke="#EDEFF4"/>
+  <text x="32" y="578" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="500" fill="#161B26">检查一下会话文件</text>
+  <text x="32" y="598" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#6B7280">41 条会话都能读出来，格式是 v4…</text>
+  <text x="358" y="578" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#9AA3B2">10-12</text>
+
+  <!-- 底部导航 -->
+  <rect x="0" y="760" width="390" height="84" fill="#FFFFFF"/>
+  <rect x="0" y="760" width="390" height="1" fill="#E6E9F0"/>
+  <g font-family="Microsoft YaHei, sans-serif" font-size="10">
+    <text x="58" y="800" text-anchor="middle" fill="#9AA3B2">聊天</text>
+    <text x="146" y="800" text-anchor="middle" fill="#9AA3B2">控制台</text>
+    <text x="234" y="800" text-anchor="middle" fill="#2563EB">会话</text>
+    <text x="322" y="800" text-anchor="middle" fill="#9AA3B2">设置</text>
+  </g>
+  <g fill="none" stroke="#9AA3B2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M52 772h12a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4h-6l-5 4v-4a4 4 0 0 1-1-3v-7a4 4 0 0 1 0-4z"/>
+    <rect x="138" y="770" width="16" height="16" rx="4"/><path d="M144 778h4"/>
+    <rect x="226" y="770" width="16" height="16" rx="4"/><path d="M230 774h8M230 778h8M230 782h5"/>
+    <circle cx="322" cy="778" r="7"/><path d="M317 785l-2 3"/>
+  </g>
+  <rect x="145" y="826" width="100" height="4" rx="2" fill="#D5DAE3"/>
+</svg>

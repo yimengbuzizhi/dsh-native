@@ -1,0 +1,11 @@
+# 逐字节比对的夹具：无论 core.autocrlf 怎么配，checkout 必须是 LF。
+core/session/src/test/resources/** text eol=lf
+parity/fixtures/** text eol=lf
+
+# vendored 源码 / 二进制：不做 EOL 转换
+core/js/src/main/cpp/** -text
+thirdparty/** -text
+
+# shell 脚本必须 LF（gradlew 在 Linux/macOS 上要能执行）
+gradlew text eol=lf
+*.sh text eol=lf

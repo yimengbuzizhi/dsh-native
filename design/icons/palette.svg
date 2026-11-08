@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="620" viewBox="0 0 1400 620">
+  <rect width="1400" height="620" fill="#0B0F17"/>
+
+  <text x="64" y="86" font-family="Microsoft YaHei, sans-serif" font-size="30" font-weight="700" fill="#E9EEFB">品牌蓝 · 三个候选</text>
+  <text x="64" y="122" font-family="Microsoft YaHei, sans-serif" font-size="16" fill="#8E99AD">默认主题：蓝 + 白。旧版是 #4D6BFE（偏紫），建议换掉。</text>
+
+  <!-- A -->
+  <g transform="translate(64 170)">
+    <rect width="300" height="190" rx="20" fill="#111725" stroke="#232C3E"/>
+    <rect x="22" y="22" width="256" height="96" rx="14" fill="#2563EB"/>
+    <text x="22" y="152" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#E9EEFB">A · 浏览器蓝</text>
+    <text x="22" y="176" font-family="Consolas, monospace" font-size="15" fill="#8E99AD">#2563EB   ← 推荐</text>
+  </g>
+
+  <!-- B -->
+  <g transform="translate(392 170)">
+    <rect width="300" height="190" rx="20" fill="#111725" stroke="#232C3E"/>
+    <rect x="22" y="22" width="256" height="96" rx="14" fill="#1668FF"/>
+    <text x="22" y="152" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#E9EEFB">B · 电光蓝</text>
+    <text x="22" y="176" font-family="Consolas, monospace" font-size="15" fill="#8E99AD">#1668FF</text>
+  </g>
+
+  <!-- C -->
+  <g transform="translate(720 170)">
+    <rect width="300" height="190" rx="20" fill="#111725" stroke="#232C3E"/>
+    <rect x="22" y="22" width="256" height="96" rx="14" fill="#0A84FF"/>
+    <text x="22" y="152" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#E9EEFB">C · 系统蓝</text>
+    <text x="22" y="176" font-family="Consolas, monospace" font-size="15" fill="#8E99AD">#0A84FF</text>
+  </g>
+
+  <!-- D -->
+  <g transform="translate(1048 170)">
+    <rect width="300" height="190" rx="20" fill="#111725" stroke="#232C3E"/>
+    <rect x="22" y="22" width="256" height="96" rx="14" fill="#4D6BFE"/>
+    <text x="22" y="152" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#E9EEFB">D · 旧版（对照）</text>
+    <text x="22" y="176" font-family="Consolas, monospace" font-size="15" fill="#8E99AD">#4D6BFE</text>
+  </g>
+
+  <!-- 色板 -->
+  <text x="64" y="430" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#E9EEFB">配套色板（A 方案）</text>
+  <g transform="translate(64 456)">
+    <rect width="120" height="56" rx="10" fill="#2563EB"/><text x="0" y="86" font-family="Consolas" font-size="13" fill="#8E99AD">brand</text>
+    <rect x="136" width="120" height="56" rx="10" fill="#1D4ED8"/><text x="136" y="86" font-family="Consolas" font-size="13" fill="#8E99AD">brand-deep</text>
+    <rect x="272" width="120" height="56" rx="10" fill="#60A5FA"/><text x="272" y="86" font-family="Consolas" font-size="13" fill="#8E99AD">brand-light</text>
+    <rect x="408" width="120" height="56" rx="10" fill="#DBEAFE"/><text x="408" y="86" font-family="Consolas" font-size="13" fill="#8E99AD">brand-soft</text>
+    <rect x="544" width="120" height="56" rx="10" fill="#31C48D"/><text x="544" y="86" font-family="Consolas" font-size="13" fill="#8E99AD">success</text>
+    <rect x="680" width="120" height="56" rx="10" fill="#F05252"/><text x="680" y="86" font-family="Consolas" font-size="13" fill="#8E99AD">danger</text>
+    <rect x="816" width="120" height="56" rx="10" fill="#080B12" stroke="#232C3E"/><text x="816" y="86" font-family="Consolas" font-size="13" fill="#8E99AD">bg-dark</text>
+    <rect x="952" width="120" height="56" rx="10" fill="#F6F7FB" stroke="#E6E9F0"/><text x="952" y="86" font-family="Consolas" font-size="13" fill="#8E99AD">bg-light</text>
+  </g>
+
+  <text x="64" y="592" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#6B7280">注：蓝只做强调，不铺大面积；暗色底 #080B12，亮色底 #F6F7FB。</text>
+</svg>

@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
+  <rect width="390" height="844" fill="#FFFFFF"/>
+
+  <text x="24" y="30" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#17181A">9:41</text>
+  <g fill="#17181A">
+    <rect x="300" y="21" width="3" height="7" rx="1"/><rect x="306" y="18" width="3" height="10" rx="1"/>
+    <rect x="312" y="15" width="3" height="13" rx="1"/><rect x="318" y="12" width="3" height="16" rx="1"/>
+    <rect x="330" y="14" width="22" height="11" rx="3" fill="none" stroke="#17181A" stroke-width="1.4"/>
+    <rect x="333" y="17" width="14" height="5" rx="1.5"/><rect x="355" y="17" width="2" height="5" rx="1"/>
+  </g>
+
+  <text x="22" y="66" font-family="Microsoft YaHei, sans-serif" font-size="20" fill="#2F6FE0">‹</text>
+  <text x="44" y="66" font-family="Microsoft YaHei, sans-serif" font-size="20" font-weight="700" fill="#17181A">插件</text>
+  <circle cx="352" cy="60" r="15" fill="none" stroke="#4B5563" stroke-width="1.6"/>
+  <circle cx="348" cy="56" r="4" fill="none" stroke="#4B5563" stroke-width="1.6"/>
+  <path d="M352 64l5 5" stroke="#4B5563" stroke-width="1.6" stroke-linecap="round"/>
+
+  <!-- 标签页 -->
+  <g font-family="Microsoft YaHei, sans-serif" font-size="13">
+    <text x="24" y="100" fill="#2F6FE0" font-weight="600">插件</text>
+    <text x="78" y="100" fill="#8A93A3">工具</text>
+    <text x="132" y="100" fill="#8A93A3">技能</text>
+    <text x="186" y="100" fill="#8A93A3">MCP</text>
+  </g>
+  <rect x="20" y="110" width="30" height="3" rx="1.5" fill="#2F6FE0"/>
+  <line x1="0" y1="114" x2="390" y2="114" stroke="#EEF1F6"/>
+
+  <!-- 搜索 -->
+  <rect x="16" y="128" width="358" height="38" rx="12" fill="#F4F6FA"/>
+  <circle cx="38" cy="147" r="6" fill="none" stroke="#8A93A3" stroke-width="1.5"/>
+  <path d="M43 152l4 4" stroke="#8A93A3" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="58" y="152" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#8A93A3">搜索插件 / 工具 / 技能</text>
+
+  <!-- 行：浏览器 -->
+  <rect x="16" y="182" width="358" height="72" rx="14" fill="#FFFFFF" stroke="#EDF0F5"/>
+  <rect x="28" y="196" width="36" height="36" rx="10" fill="#E6F0FF"/>
+  <text x="46" y="220" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="700" fill="#2F6FE0">B</text>
+  <text x="76" y="208" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="600" fill="#17181A">浏览器</text>
+  <text x="76" y="225" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A93A3">多标签 + 页面 Agent + 同屏</text>
+  <text x="76" y="242" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#B0B6C0">工具 10 个 · v2.1.0</text>
+  <rect x="304" y="204" width="46" height="26" rx="13" fill="#2F6FE0"/>
+  <circle cx="337" cy="217" r="10" fill="#FFFFFF"/>
+
+  <!-- 行：虚拟屏 -->
+  <rect x="16" y="262" width="358" height="72" rx="14" fill="#FFFFFF" stroke="#EDF0F5"/>
+  <rect x="28" y="276" width="36" height="36" rx="10" fill="#E6F7EF"/>
+  <text x="46" y="300" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="700" fill="#137333">V</text>
+  <text x="76" y="288" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="600" fill="#17181A">虚拟屏</text>
+  <text x="76" y="305" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A93A3">Shower · 建屏 / 输入 / 截图</text>
+  <text x="76" y="322" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#B0B6C0">需要 Shizuku · v1.4.0</text>
+  <rect x="304" y="284" width="46" height="26" rx="13" fill="#2F6FE0"/>
+  <circle cx="337" cy="297" r="10" fill="#FFFFFF"/>
+
+  <!-- 行：天气（第三方） -->
+  <rect x="16" y="342" width="358" height="72" rx="14" fill="#FFFFFF" stroke="#EDF0F5"/>
+  <rect x="28" y="356" width="36" height="36" rx="10" fill="#F3E8FF"/>
+  <text x="46" y="380" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="700" fill="#7C3AED">W</text>
+  <text x="76" y="368" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="600" fill="#17181A">天气</text>
+  <text x="76" y="385" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A93A3">AI 改造自社区插件</text>
+  <text x="76" y="402" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#B0B6C0">工具 1 个 · 网络权限 · v0.3.1</text>
+  <rect x="304" y="364" width="46" height="26" rx="13" fill="#2F6FE0"/>
+  <circle cx="337" cy="377" r="10" fill="#FFFFFF"/>
+
+  <!-- 行：失败 -->
+  <rect x="16" y="422" width="358" height="80" rx="14" fill="#FFF8F8" stroke="#F6D9D6"/>
+  <rect x="28" y="436" width="36" height="36" rx="10" fill="#FCE8E6"/>
+  <text x="46" y="460" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="15" font-weight="700" fill="#C5221F">!</text>
+  <text x="76" y="448" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="600" fill="#17181A">屏幕录制</text>
+  <text x="76" y="465" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#C5221F">加载失败：manifest 缺 permissions</text>
+  <text x="76" y="482" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#8A93A3">把这条错误发给 AI，让它改</text>
+  <rect x="304" y="444" width="46" height="26" rx="13" fill="#F1F3F7"/>
+  <circle cx="315" cy="457" r="10" fill="#C0C6D0"/>
+
+  <!-- 行：技能 -->
+  <rect x="16" y="510" width="358" height="72" rx="14" fill="#FFFFFF" stroke="#EDF0F5"/>
+  <rect x="28" y="524" width="36" height="36" rx="10" fill="#FEF3C7"/>
+  <text x="46" y="548" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="700" fill="#B26B00">S</text>
+  <text x="76" y="536" font-family="Microsoft YaHei, sans-serif" font-size="14" font-weight="600" fill="#17181A">技能 · 插件开发</text>
+  <text x="76" y="553" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A93A3">教 AI 按我们的规范写插件</text>
+  <text x="76" y="570" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#B0B6C0">内置 · 随包分发</text>
+  <rect x="304" y="532" width="46" height="26" rx="13" fill="#2F6FE0"/>
+  <circle cx="337" cy="545" r="10" fill="#FFFFFF"/>
+
+  <!-- 统计 -->
+  <text x="24" y="622" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8A93A3">已启用 21 · 已禁用 2 · 加载失败 1</text>
+
+  <!-- FAB -->
+  <circle cx="330" cy="690" r="26" fill="#2F6FE0"/>
+  <path d="M330 678v24M318 690h24" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="330" cy="754" r="22" fill="#FFFFFF" stroke="#E3E8F0"/>
+  <g stroke="#4B5563" stroke-width="1.6" stroke-linecap="round">
+    <path d="M322 748h16M322 754h16M322 760h10"/>
+  </g>
+  <rect x="145" y="826" width="100" height="4" rx="2" fill="#D5DCE8"/>
+</svg>

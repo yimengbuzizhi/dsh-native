@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- 自适应图标 · 前景层（108dp 画布，内容留在中间 66dp 安全区） -->
+  <g transform="translate(256 256) scale(0.66) translate(-256 -256)">
+    <g stroke="#FFFFFF" stroke-width="17" stroke-linecap="round">
+      <line x1="196" y1="196" x2="176" y2="132"/>
+      <line x1="286" y1="186" x2="300" y2="124"/>
+    </g>
+    <circle cx="176" cy="130" r="15" fill="#FFFFFF"/>
+    <circle cx="300" cy="122" r="15" fill="#FFFFFF"/>
+    <path d="M124 318 C124 252 180 210 250 210 C318 210 362 252 372 306
+             C378 336 358 362 328 370 L172 374 C144 366 124 346 124 318 Z" fill="#FFFFFF"/>
+    <path d="M368 306 C398 292 416 262 420 228 C440 266 440 322 418 360
+             C410 332 392 316 368 314 Z" fill="#FFFFFF"/>
+    <path d="M236 212 C242 180 260 168 278 172 C270 188 264 200 262 214 Z" fill="#FFFFFF"/>
+    <circle cx="300" cy="296" r="13" fill="#12306E"/>
+    <path d="M140 330 C166 344 196 350 226 348" stroke="#12306E" stroke-width="9"
+          stroke-linecap="round" fill="none" opacity="0.85"/>
+  </g>
+</svg>

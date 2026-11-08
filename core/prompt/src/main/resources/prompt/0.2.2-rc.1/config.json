@@ -1,0 +1,6 @@
+{
+  "provider": "deepseek-account",
+  "model": "deepseek-flash",
+  "reasoningEffort": "max",
+  "maxTokens": 256000
+}

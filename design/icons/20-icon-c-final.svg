@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B1E25"/><stop offset="1" stop-color="#0E1014"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#D9E0EB"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4F8BFF"/><stop offset="1" stop-color="#2457C9"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="118" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="118" fill="none" stroke="#2B303A" stroke-width="2"/>
+
+  <!-- 天线（安卓元素） -->
+  <g stroke="url(#ink)" stroke-width="20" stroke-linecap="round">
+    <line x1="196" y1="190" x2="170" y2="104"/>
+    <line x1="304" y1="190" x2="330" y2="104"/>
+  </g>
+  <circle cx="168" cy="98" r="16" fill="url(#ink)"/>
+  <circle cx="332" cy="98" r="16" fill="url(#ink)"/>
+
+  <!-- 字母 D -->
+  <path fill-rule="evenodd" fill="url(#ink)"
+        d="M150 168 L250 168 C352 168 406 214 406 286 C406 358 352 404 250 404 L150 404 Z
+           M232 246 L252 246 C298 246 322 262 322 286 C322 310 298 326 252 326 L232 326 Z"/>
+
+  <!-- D 的窗口：品牌蓝 -->
+  <path d="M232 246 L252 246 C298 246 322 262 322 286 C322 310 298 326 252 326 L232 326 Z"
+        fill="url(#blue)"/>
+</svg>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="dbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B1E25"/><stop offset="1" stop-color="#0E1014"/>
+    </linearGradient>
+    <linearGradient id="dink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#D8DFEA"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="118" fill="url(#dbg)"/>
+
+  <!-- 天线 -->
+  <g stroke="url(#dink)" stroke-width="20" stroke-linecap="round">
+    <line x1="196" y1="206" x2="170" y2="120"/>
+    <line x1="316" y1="206" x2="342" y2="120"/>
+  </g>
+  <circle cx="168" cy="112" r="16" fill="url(#dink)"/>
+  <circle cx="344" cy="112" r="16" fill="url(#dink)"/>
+
+  <!-- D -->
+  <path fill-rule="evenodd" fill="url(#dink)"
+        d="M148 168 L246 168 C348 168 404 214 404 286 C404 358 348 404 246 404 L148 404 Z
+           M234 244 L252 244 C300 244 322 258 322 286 C322 314 300 328 252 328 L234 328 Z"/>
+
+  <!-- 鲸尾点缀 -->
+  <path d="M148 286 C174 266 194 244 202 218 C220 252 220 320 202 354 C194 328 174 306 148 286 Z"
+        fill="#2F6FE0"/>
+</svg>

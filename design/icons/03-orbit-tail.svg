@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#101C33"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="116" fill="url(#bg3)"/>
+
+  <!-- 轨道环 -->
+  <circle cx="256" cy="256" r="158" fill="none" stroke="#2563EB" stroke-width="18"/>
+  <circle cx="256" cy="256" r="158" fill="none" stroke="#60A5FA" stroke-width="18"
+          stroke-dasharray="150 843" stroke-linecap="round" transform="rotate(-50 256 256)"/>
+
+  <!-- 环上天线点（安卓元素） -->
+  <circle cx="256" cy="98" r="15" fill="#FFFFFF"/>
+  <circle cx="256" cy="98" r="5" fill="#2563EB"/>
+  <circle cx="377" cy="333" r="11" fill="#31C48D"/>
+
+  <!-- 小鲸鱼 -->
+  <g transform="translate(100 92) scale(0.55)">
+    <path d="M124 318 C124 252 180 210 250 210 C318 210 362 252 372 306
+             C378 336 358 362 328 370 L172 374 C144 366 124 346 124 318 Z"
+          fill="#FFFFFF"/>
+    <path d="M368 306 C398 292 416 262 420 228 C440 266 440 322 418 360
+             C410 332 392 316 368 314 Z" fill="#FFFFFF"/>
+    <path d="M236 212 C242 180 260 168 278 172 C270 188 264 200 262 214 Z" fill="#FFFFFF"/>
+    <circle cx="300" cy="296" r="14" fill="#0B1220"/>
+    <path d="M144 332 C170 346 200 352 230 350" stroke="#0B1220" stroke-width="9"
+          stroke-linecap="round" fill="none" opacity="0.85"/>
+  </g>
+
+  <!-- 水花 -->
+  <path d="M196 366 C220 354 242 352 264 358" stroke="#60A5FA" stroke-width="9"
+        stroke-linecap="round" fill="none" opacity="0.8"/>
+</svg>

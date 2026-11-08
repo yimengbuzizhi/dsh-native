@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
+  <rect width="390" height="844" fill="#080B12"/>
+
+  <text x="24" y="30" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#8E99AD">9:41</text>
+  <g fill="#8E99AD">
+    <rect x="300" y="21" width="3" height="7" rx="1"/><rect x="306" y="18" width="3" height="10" rx="1"/>
+    <rect x="312" y="15" width="3" height="13" rx="1"/><rect x="318" y="12" width="3" height="16" rx="1"/>
+    <rect x="330" y="14" width="22" height="11" rx="3" fill="none" stroke="#8E99AD" stroke-width="1.5"/>
+    <rect x="333" y="17" width="14" height="5" rx="1.5"/><rect x="355" y="17" width="2" height="5" rx="1"/>
+  </g>
+
+  <text x="20" y="82" font-family="Microsoft YaHei, sans-serif" font-size="28" font-weight="700" fill="#E9EEFB">插件</text>
+  <rect x="282" y="58" width="92" height="34" rx="10" fill="#2563EB"/>
+  <text x="328" y="80" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="13" font-weight="600" fill="#FFFFFF">安装</text>
+
+  <!-- 概览 -->
+  <rect x="16" y="106" width="358" height="66" rx="14" fill="#111725" stroke="#1C2536"/>
+  <g font-family="Microsoft YaHei, sans-serif">
+    <text x="36" y="134" font-size="20" font-weight="700" fill="#E9EEFB">21</text>
+    <text x="36" y="154" font-size="11" fill="#8E99AD">已启用</text>
+    <text x="120" y="134" font-size="20" font-weight="700" fill="#E9EEFB">2</text>
+    <text x="120" y="154" font-size="11" fill="#8E99AD">已禁用</text>
+    <text x="204" y="134" font-size="20" font-weight="700" fill="#F5A524">1</text>
+    <text x="204" y="154" font-size="11" fill="#8E99AD">加载失败</text>
+    <text x="288" y="134" font-size="20" font-weight="700" fill="#60A5FA">3</text>
+    <text x="288" y="154" font-size="11" fill="#8E99AD">需要权限</text>
+  </g>
+
+  <!-- 卡片：浏览器 -->
+  <rect x="16" y="188" width="358" height="92" rx="16" fill="#111725" stroke="#232C3E"/>
+  <rect x="30" y="202" width="40" height="40" rx="12" fill="#16233F"/>
+  <text x="50" y="227" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#60A5FA">B</text>
+  <text x="82" y="216" font-family="Microsoft YaHei, sans-serif" font-size="15" font-weight="600" fill="#E9EEFB">浏览器</text>
+  <text x="82" y="233" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8E99AD">内置浏览器 + 页面 Agent</text>
+  <rect x="82" y="242" width="52" height="20" rx="7" fill="#1A2233"/>
+  <text x="108" y="256" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#8E99AD">network</text>
+  <rect x="140" y="242" width="30" height="20" rx="7" fill="#1A2233"/>
+  <text x="155" y="256" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#8E99AD">ui</text>
+  <rect x="300" y="210" width="44" height="24" rx="12" fill="#2563EB"/>
+  <circle cx="333" cy="222" r="9" fill="#FFFFFF"/>
+  <text x="356" y="266" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#5E6A80">v2.1.0</text>
+
+  <!-- 卡片：虚拟屏 -->
+  <rect x="16" y="292" width="358" height="92" rx="16" fill="#111725" stroke="#232C3E"/>
+  <rect x="30" y="306" width="40" height="40" rx="12" fill="#122A22"/>
+  <text x="50" y="331" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#31C48D">V</text>
+  <text x="82" y="320" font-family="Microsoft YaHei, sans-serif" font-size="15" font-weight="600" fill="#E9EEFB">虚拟屏</text>
+  <text x="82" y="337" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8E99AD">Shower · 建屏 / 输入 / 截图</text>
+  <rect x="82" y="346" width="50" height="20" rx="7" fill="#1A2233"/>
+  <text x="107" y="360" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#8E99AD">shizuku</text>
+  <rect x="300" y="314" width="44" height="24" rx="12" fill="#2563EB"/>
+  <circle cx="333" cy="326" r="9" fill="#FFFFFF"/>
+  <text x="356" y="370" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#5E6A80">v1.4.0</text>
+
+  <!-- 卡片：天气（第三方） -->
+  <rect x="16" y="396" width="358" height="92" rx="16" fill="#111725" stroke="#232C3E"/>
+  <rect x="30" y="410" width="40" height="40" rx="12" fill="#1A2233"/>
+  <text x="50" y="435" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#C8D3E6">W</text>
+  <text x="82" y="424" font-family="Microsoft YaHei, sans-serif" font-size="15" font-weight="600" fill="#E9EEFB">天气</text>
+  <text x="82" y="441" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#8E99AD">AI 改造自社区插件</text>
+  <rect x="82" y="450" width="42" height="20" rx="7" fill="#1A2233"/>
+  <text x="103" y="464" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#8E99AD">network</text>
+  <rect x="300" y="418" width="44" height="24" rx="12" fill="#2563EB"/>
+  <circle cx="333" cy="430" r="9" fill="#FFFFFF"/>
+  <text x="356" y="474" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#5E6A80">v0.3.1</text>
+
+  <!-- 卡片：失败 -->
+  <rect x="16" y="500" width="358" height="104" rx="16" fill="#111725" stroke="#3A2230"/>
+  <rect x="30" y="514" width="40" height="40" rx="12" fill="#2A1620"/>
+  <text x="50" y="539" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="15" fill="#F05252">!</text>
+  <text x="82" y="528" font-family="Microsoft YaHei, sans-serif" font-size="15" font-weight="600" fill="#E9EEFB">屏幕录制</text>
+  <text x="82" y="545" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#F05252">加载失败：manifest 缺 permissions 字段</text>
+  <text x="82" y="566" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#5E6A80">可以把这个错误直接发给 AI，让它改。</text>
+  <rect x="300" y="522" width="44" height="24" rx="12" fill="#2A3446"/>
+  <circle cx="311" cy="534" r="9" fill="#8E99AD"/>
+  <text x="356" y="580" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="10" fill="#5E6A80">v1.0.2</text>
+
+  <!-- 底部说明 -->
+  <text x="20" y="640" font-family="Microsoft YaHei, sans-serif" font-size="11" fill="#5E6A80">插件由你提供，AI 改造后安装；没有市场，也没有一键装。</text>
+
+  <!-- 底部导航 -->
+  <rect x="0" y="760" width="390" height="84" fill="#0A0F19"/>
+  <rect x="0" y="760" width="390" height="1" fill="#161D2B"/>
+  <g font-family="Microsoft YaHei, sans-serif" font-size="10">
+    <text x="58" y="800" text-anchor="middle" fill="#5E6A80">聊天</text>
+    <text x="146" y="800" text-anchor="middle" fill="#60A5FA">控制台</text>
+    <text x="234" y="800" text-anchor="middle" fill="#5E6A80">会话</text>
+    <text x="322" y="800" text-anchor="middle" fill="#5E6A80">设置</text>
+  </g>
+  <g fill="none" stroke="#5E6A80" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M52 772h12a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4h-6l-5 4v-4a4 4 0 0 1-1-3v-7a4 4 0 0 1 0-4z"/>
+    <rect x="138" y="770" width="7" height="7" rx="2"/><rect x="148" y="770" width="7" height="7" rx="2"/>
+    <rect x="138" y="780" width="7" height="7" rx="2"/><rect x="148" y="780" width="7" height="7" rx="2"/>
+    <rect x="226" y="770" width="16" height="16" rx="4"/><path d="M230 774h8M230 778h8M230 782h5"/>
+    <circle cx="322" cy="778" r="7"/><path d="M317 785l-2 3"/>
+  </g>
+  <rect x="145" y="826" width="100" height="4" rx="2" fill="#3A4256"/>
+</svg>

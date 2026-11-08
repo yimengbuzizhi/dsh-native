@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSH Native · 首页（刚打开）</title>
+<style>
+  :root{
+    --brand:#2F6FE0;
+    --brand-2:#4F8BFF;
+    --brand-soft:#E6F0FF;
+    --tint:#F4F8FF;
+    --line:#DCE6F6;
+    --line-2:#EDF1F7;
+    --text:#17181A;
+    --sub:#6B7280;
+    --faint:#9AA3B2;
+    --green:#16A34A;
+    --green-soft:#E6F7EF;
+    --purple:#7C3AED;
+    --purple-soft:#F3E8FF;
+    --amber:#B26B00;
+    --amber-soft:#FEF3C7;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  html,body{margin:0;height:100%}
+  body{
+    background:#E9EBEF;
+    font-family:-apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    color:var(--text);
+    display:flex;align-items:center;justify-content:center;
+    min-height:100vh;padding:40px 0;
+  }
+  .phone{
+    position:relative;width:390px;height:844px;border-radius:44px;
+    background:#fff;overflow:hidden;
+    box-shadow:0 30px 80px rgba(20,30,50,.22), 0 0 0 10px #14161A, 0 0 0 11px #2A2E36;
+  }
+  /* 状态栏 */
+  .statusbar{
+    position:absolute;inset:0 0 auto 0;height:54px;display:flex;align-items:center;
+    justify-content:space-between;padding:0 24px;z-index:5;color:#fff;font-size:12px;font-weight:600;
+  }
+  .statusbar .icons{display:flex;align-items:center;gap:6px;opacity:.92}
+  .bar{width:3px;border-radius:2px;background:#fff}
+  .battery{width:22px;height:11px;border:1.4px solid #fff;border-radius:3px;position:relative}
+  .battery::after{content:"";position:absolute;left:1.6px;top:1.6px;width:14px;height:5.4px;background:#fff;border-radius:1px}
+  .battery::before{content:"";position:absolute;right:-3.4px;top:3px;width:2px;height:5px;background:#fff;border-radius:0 2px 2px 0}
+
+  /* 顶部渐变 */
+  .hero{
+    height:168px;padding:56px 22px 0;
+    background:
+      radial-gradient(120% 150% at 15% 0%, rgba(255,255,255,.22) 0%, rgba(255,255,255,0) 60%),
+      linear-gradient(135deg,#2F6FE0 0%,#3B82F6 55%,#60A5FA 100%);
+    color:#fff;position:relative;overflow:hidden;
+  }
+  .hero::after{
+    content:"";position:absolute;right:-40px;top:-60px;width:220px;height:220px;border-radius:50%;
+    background:radial-gradient(circle,rgba(255,255,255,.22),rgba(255,255,255,0) 65%);
+  }
+  .hero .row{display:flex;align-items:flex-start;justify-content:space-between}
+  .hello{font-size:12px;opacity:.8;letter-spacing:.4px;margin-bottom:6px}
+  .title{font-size:23px;font-weight:700;letter-spacing:.2px}
+  .avatar{width:38px;height:38px;border-radius:14px;background:rgba(255,255,255,.2);
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;backdrop-filter:blur(4px)}
+  .bell{width:38px;height:38px;border-radius:14px;background:rgba(255,255,255,.14);
+    display:flex;align-items:center;justify-content:center;margin-left:8px}
+
+  /* 运行状态卡（叠在渐变上） */
+  .status{
+    position:relative;z-index:4;margin:-58px 16px 0;background:#fff;border-radius:20px;
+    padding:14px 18px 12px;box-shadow:0 10px 28px rgba(24,40,80,.10);
+    border:1px solid #EEF2F9;
+  }
+  .status .top{display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green);position:relative}
+  .dot::after{content:"";position:absolute;inset:-4px;border-radius:50%;background:var(--green);opacity:.18;animation:pulse 2.2s ease-out infinite}
+  @keyframes pulse{0%{transform:scale(.8);opacity:.28}70%{transform:scale(1.8);opacity:0}100%{opacity:0}}
+  .status .name{font-size:15px;font-weight:700}
+  .status .more{margin-left:auto;font-size:12px;color:var(--faint)}
+  .status .meta{font-size:11.5px;color:var(--sub);margin:5px 0 12px}
+  .metrics{display:flex;border-top:1px solid var(--line-2);padding-top:12px}
+  .metric{flex:1}
+  .metric b{display:block;font-size:20px;font-weight:700;line-height:1.1}
+  .metric span{font-size:11px;color:var(--sub)}
+  .metric.accent b{color:var(--brand)}
+
+  /* 输入卡 */
+  .composer{
+    margin:12px 16px 0;background:var(--tint);border:1px solid var(--line);border-radius:18px;padding:12px 14px 10px;
+  }
+  .composer .ph{font-size:14px;color:#8A93A3}
+  .composer .bar2{display:flex;align-items:center;gap:10px;margin-top:14px}
+  .chip{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);
+    border-radius:999px;padding:7px 12px;font-size:11.5px;color:#3A4150}
+  .chip .caret{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid #8A93A3}
+  .composer .tools{display:flex;align-items:center;gap:14px;margin-left:auto;color:#6B7280}
+  .send{width:40px;height:40px;border-radius:50%;background:var(--brand);display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 16px rgba(47,111,224,.35);margin-left:4px}
+
+  /* 快捷入口 */
+  .section{padding:18px 20px 0;display:flex;align-items:baseline;justify-content:space-between}
+  .section h3{margin:0;font-size:13px;font-weight:700;color:#2A2F3A}
+  .section a{font-size:11px;color:var(--faint);text-decoration:none}
+  .quick{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:12px 16px 0}
+  .tile{background:#fff;border:1px solid var(--line-2);border-radius:16px;padding:10px 6px 8px;text-align:center;
+    box-shadow:0 2px 6px rgba(20,40,90,.04)}
+  .tile .ic{width:32px;height:32px;border-radius:12px;margin:0 auto 8px;display:flex;align-items:center;justify-content:center}
+  .tile .t{font-size:11.5px;color:#3A4150;font-weight:600}
+  .ic-blue{background:var(--brand-soft)} .ic-dark{background:#E9EDF3}
+  .ic-purple{background:var(--purple-soft)} .ic-green{background:var(--green-soft)}
+
+  /* 设备能力 */
+  .card{background:#fff;border:1px solid var(--line-2);border-radius:18px;margin:10px 16px 0;overflow:hidden}
+  .row2{display:flex;align-items:center;padding:10px 14px;gap:12px}
+  .row2 + .row2{border-top:1px solid #F2F4F8}
+  .row2 .sq{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:800}
+  .row2 .nm{font-size:13.5px;font-weight:600}
+  .row2 .ds{font-size:10.5px;color:var(--sub);margin-top:2px}
+  .row2 .st{margin-left:auto;font-size:10.5px;color:var(--green);display:flex;align-items:center;gap:5px}
+  .row2 .st i{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block}
+  .row2 .st.off{color:var(--faint)} .row2 .st.off i{background:#B9BFC9}
+
+  /* 最近 */
+  .recent{display:flex;align-items:center;gap:12px;margin:10px 16px 0;padding:10px 14px;background:var(--tint);
+    border:1px solid var(--line);border-radius:16px}
+  .recent .rt{font-size:12.5px;font-weight:600}
+  .recent .rs{font-size:10.5px;color:var(--sub);margin-top:2px}
+  .recent .go{margin-left:auto;color:#9AA3B2;font-size:16px}
+
+  /* 底部导航 */
+  .nav{
+    position:absolute;left:24px;right:24px;bottom:18px;height:56px;border-radius:29px;background:#fff;
+    box-shadow:0 12px 30px rgba(20,40,90,.16);display:flex;align-items:center;justify-content:space-around;
+    border:1px solid #EEF2F9;z-index:6;
+  }
+  .nav .item{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9.5px;color:#9AA3B2}
+  .nav .item.active{color:var(--brand)}
+  .nav .item .pin{width:44px;height:26px;border-radius:13px;display:flex;align-items:center;justify-content:center}
+  .nav .item.active .pin{background:var(--brand-soft)}
+  .homebar{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);width:110px;height:4px;border-radius:2px;background:#D5DAE3;z-index:7}
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <!-- 状态栏 -->
+  <div class="statusbar">
+    <span>21:26</span>
+    <div class="icons">
+      <div class="bar" style="height:7px"></div>
+      <div class="bar" style="height:10px"></div>
+      <div class="bar" style="height:13px"></div>
+      <div class="bar" style="height:16px"></div>
+      <div class="battery"></div>
+    </div>
+  </div>
+
+  <!-- 渐变头 -->
+  <div class="hero">
+    <div class="row">
+      <div>
+        <div class="hello">晚上好，欢迎回来</div>
+        <div class="title">今天想做点什么？</div>
+      </div>
+      <div style="display:flex">
+        <div class="bell">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>
+          </svg>
+        </div>
+        <div class="avatar">D</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 运行状态 -->
+  <div class="status">
+    <div class="top">
+      <span class="dot"></span>
+      <span class="name">运行中</span>
+      <span class="more">详情 ›</span>
+    </div>
+    <div class="meta">deepseek-chat · 42ms · 已连续运行 3 小时</div>
+    <div class="metrics">
+      <div class="metric"><b>12</b><span>会话</span></div>
+      <div class="metric"><b>23</b><span>插件</span></div>
+      <div class="metric"><b>30</b><span>工具</span></div>
+      <div class="metric accent"><b>3</b><span>待更新</span></div>
+    </div>
+  </div>
+
+  <!-- 输入 -->
+  <div class="composer">
+    <div class="ph">问点什么，或者让它干活…</div>
+    <div class="bar2">
+      <div class="chip">deepseek-chat <span class="caret"></span></div>
+      <div class="tools">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h16M4 12h10M4 17h7"/></svg>
+      </div>
+      <div class="send">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 快捷 -->
+  <div class="section"><h3>快速开始</h3><a>全部 ›</a></div>
+  <div class="quick">
+    <div class="tile">
+      <div class="ic ic-blue">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2F6FE0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H8l-5 3 1.5-4.5A8.5 8.5 0 1 1 21 11.5z"/></svg>
+      </div>
+      <div class="t">新对话</div>
+    </div>
+    <div class="tile">
+      <div class="ic ic-dark">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2A2F3A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="M7 10l3 3-3 3M13 16h4"/></svg>
+      </div>
+      <div class="t">终端</div>
+    </div>
+    <div class="tile">
+      <div class="ic ic-purple">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h6l2 3h10v9H3z"/></svg>
+      </div>
+      <div class="t">工作区</div>
+    </div>
+    <div class="tile">
+      <div class="ic ic-green">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#137333" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>
+      </div>
+      <div class="t">插件</div>
+    </div>
+  </div>
+
+  <!-- 设备能力 -->
+  <div class="section"><h3>设备能力</h3><a>管理 ›</a></div>
+  <div class="card">
+    <div class="row2">
+      <div class="sq" style="background:var(--brand-soft);color:#2F6FE0">S</div>
+      <div><div class="nm">Shizuku</div><div class="ds">ADB 级权限 · 已授权</div></div>
+      <div class="st"><i></i>正常</div>
+    </div>
+    <div class="row2">
+      <div class="sq" style="background:var(--green-soft);color:#137333">A</div>
+      <div><div class="nm">无障碍</div><div class="ds">读屏 / 点击 / 截图 · 已开启</div></div>
+      <div class="st"><i></i>正常</div>
+    </div>
+    <div class="row2">
+      <div class="sq" style="background:var(--purple-soft);color:#7C3AED">V</div>
+      <div><div class="nm">虚拟屏</div><div class="ds">Shower · 1080×2400 · 就绪</div></div>
+      <div class="st off"><i></i>待命</div>
+    </div>
+  </div>
+
+  <!-- 最近 -->
+  <div class="recent">
+    <div style="width:30px;height:30px;border-radius:10px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--brand)">12</div>
+    <div>
+      <div class="rt">继续：重构终端组件</div>
+      <div class="rs">12 轮 · 最后一条 14:32</div>
+    </div>
+    <div class="go">›</div>
+  </div>
+
+  <!-- 底部导航 -->
+  <div class="nav">
+    <div class="item">
+      <div class="pin"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H8l-5 3 1.5-4.5A8.5 8.5 0 1 1 21 11.5z"/></svg></div>
+      <div>聊天</div>
+    </div>
+    <div class="item active">
+      <div class="pin"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg></div>
+      <div>工作台</div>
+    </div>
+    <div class="item">
+      <div class="pin"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h10M4 17h7"/></svg></div>
+      <div>插件</div>
+    </div>
+    <div class="item">
+      <div class="pin"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a7 7 0 0 0-1.7-1L14.5 3h-5l-.3 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.5L5 11a7 7 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 1.7 1l.3 2.5h5l.3-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.5L19 13a7 7 0 0 0 .1-1z"/></svg></div>
+      <div>设置</div>
+    </div>
+  </div>
+
+  <div class="homebar"></div>
+</div>
+</body>
+</html>

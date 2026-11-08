@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B1E25"/>
+      <stop offset="1" stop-color="#0E1014"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#D8DFEA"/>
+    </linearGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="118" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="118" fill="none" stroke="#2A2E36" stroke-width="2"/>
+
+  <g filter="url(#sh)">
+    <!-- 天线（安卓元素） -->
+    <g stroke="url(#ink)" stroke-width="22" stroke-linecap="round">
+      <line x1="206" y1="196" x2="178" y2="112"/>
+      <line x1="306" y1="196" x2="334" y2="112"/>
+    </g>
+    <circle cx="176" cy="106" r="17" fill="url(#ink)"/>
+    <circle cx="336" cy="106" r="17" fill="url(#ink)"/>
+
+    <!-- 鲸鱼身体 -->
+    <path d="M118 306 C118 226 178 178 256 178 C334 178 394 226 394 306
+             C394 366 360 402 314 410 L198 410 C152 402 118 366 118 306 Z"
+          fill="url(#ink)"/>
+
+    <!-- 尾鳍 -->
+    <path d="M392 306 C420 292 436 264 440 232 C458 268 458 318 440 350
+             C432 326 414 312 392 310 Z" fill="url(#ink)"/>
+  </g>
+
+  <!-- 眼睛（像 Rikka 的竖椭圆） -->
+  <rect x="196" y="296" width="26" height="40" rx="13" fill="#111318"/>
+  <rect x="290" y="296" width="26" height="40" rx="13" fill="#111318"/>
+
+  <!-- 嘴 -->
+  <path d="M232 370 C246 378 266 378 280 370" stroke="#111318" stroke-width="10"
+        stroke-linecap="round" fill="none"/>
+</svg>

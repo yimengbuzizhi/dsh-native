@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
+  <rect width="390" height="844" fill="#0A0D12"/>
+
+  <text x="24" y="30" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#8A93A3">9:41</text>
+  <g fill="#8A93A3">
+    <rect x="300" y="21" width="3" height="7" rx="1"/><rect x="306" y="18" width="3" height="10" rx="1"/>
+    <rect x="312" y="15" width="3" height="13" rx="1"/><rect x="318" y="12" width="3" height="16" rx="1"/>
+    <rect x="330" y="14" width="22" height="11" rx="3" fill="none" stroke="#8A93A3" stroke-width="1.4"/>
+    <rect x="333" y="17" width="14" height="5" rx="1.5"/><rect x="355" y="17" width="2" height="5" rx="1"/>
+  </g>
+
+  <!-- 标签栏 -->
+  <rect x="0" y="44" width="390" height="44" fill="#12161E"/>
+  <rect x="12" y="52" width="104" height="28" rx="8" fill="#1C2230"/>
+  <text x="24" y="71" font-family="Consolas, monospace" font-size="11" fill="#E6EAF2">Local</text>
+  <text x="96" y="71" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#6B7280">×</text>
+
+  <rect x="124" y="52" width="116" height="28" rx="8" fill="#161B26"/>
+  <text x="136" y="71" font-family="Consolas, monospace" font-size="11" fill="#8A93A3">bash</text>
+  <text x="220" y="71" font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#6B7280">×</text>
+
+  <text x="258" y="71" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#8A93A3">＋</text>
+  <text x="356" y="71" text-anchor="end" font-family="Microsoft YaHei, sans-serif" font-size="16" fill="#8A93A3">⤢</text>
+
+  <!-- 终端内容 -->
+  <g font-family="Consolas, monospace" font-size="11.5">
+    <text x="16" y="120" fill="#6B7280">Last login: Fri Nov  6 21:26 on pts/0</text>
+    <text x="16" y="146" fill="#31C48D">dsh@phone</text>
+    <text x="82" y="146" fill="#6B7280">:</text>
+    <text x="90" y="146" fill="#60A5FA">~/projects/dsh-native</text>
+    <text x="252" y="146" fill="#6B7280">$</text>
+    <text x="266" y="146" fill="#E6EAF2">git status</text>
+
+    <text x="16" y="170" fill="#E6EAF2">On branch main</text>
+    <text x="16" y="188" fill="#E6EAF2">Changes not staged for commit:</text>
+    <text x="16" y="206" fill="#E6EAF2">  modified:   src/math.ts</text>
+    <text x="16" y="224" fill="#E6EAF2">  modified:   src/api.ts</text>
+    <text x="16" y="242" fill="#6B7280">no changes added to commit</text>
+
+    <text x="16" y="272" fill="#31C48D">dsh@phone</text>
+    <text x="82" y="272" fill="#6B7280">:</text>
+    <text x="90" y="272" fill="#60A5FA">~/projects/dsh-native</text>
+    <text x="252" y="272" fill="#6B7280">$</text>
+    <text x="266" y="272" fill="#E6EAF2">pnpm test</text>
+
+    <text x="16" y="296" fill="#8A93A3">&gt; vitest run</text>
+    <text x="16" y="314" fill="#31C48D">✓ src/math.test.ts (6)</text>
+    <text x="16" y="332" fill="#31C48D">✓ src/api.test.ts (3)</text>
+    <text x="16" y="350" fill="#E6EAF2">Test Files  2 passed (2)</text>
+    <text x="16" y="368" fill="#E6EAF2">Tests       9 passed (9)</text>
+    <text x="16" y="386" fill="#6B7280">Duration    1.24s</text>
+
+    <text x="16" y="416" fill="#31C48D">dsh@phone</text>
+    <text x="82" y="416" fill="#6B7280">:</text>
+    <text x="90" y="416" fill="#60A5FA">~/projects/dsh-native</text>
+    <text x="252" y="416" fill="#6B7280">$</text>
+    <rect x="266" y="405" width="7" height="14" fill="#31C48D"/>
+  </g>
+
+  <!-- 输出区底色渐变（示意滚动） -->
+  <rect x="0" y="560" width="390" height="1" fill="#151A22"/>
+
+  <!-- 快捷按键条 -->
+  <rect x="0" y="700" width="390" height="52" fill="#12161E"/>
+  <g font-family="Consolas, monospace" font-size="10.5">
+    <rect x="10" y="712" width="56" height="28" rx="8" fill="#1C2230"/>
+    <text x="38" y="730" text-anchor="middle" fill="#C9D1DF">Ctrl+C</text>
+    <rect x="72" y="712" width="36" height="28" rx="8" fill="#1C2230"/>
+    <text x="90" y="730" text-anchor="middle" fill="#C9D1DF">Esc</text>
+    <rect x="114" y="712" width="36" height="28" rx="8" fill="#1C2230"/>
+    <text x="132" y="730" text-anchor="middle" fill="#C9D1DF">Tab</text>
+    <rect x="156" y="712" width="34" height="28" rx="8" fill="#1C2230"/>
+    <text x="173" y="730" text-anchor="middle" fill="#C9D1DF">↑</text>
+    <rect x="196" y="712" width="34" height="28" rx="8" fill="#1C2230"/>
+    <text x="213" y="730" text-anchor="middle" fill="#C9D1DF">↓</text>
+    <rect x="236" y="712" width="34" height="28" rx="8" fill="#1C2230"/>
+    <text x="253" y="730" text-anchor="middle" fill="#C9D1DF">/</text>
+  </g>
+  <rect x="282" y="712" width="96" height="28" rx="8" fill="#1C2230"/>
+  <text x="330" y="730" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="10.5" fill="#C9D1DF">环境配置 ⚙</text>
+
+  <!-- 软键盘示意 -->
+  <rect x="0" y="752" width="390" height="92" fill="#1A1F29"/>
+  <g font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#C9D1DF">
+    <text x="30" y="790">q</text><text x="66" y="790">w</text><text x="102" y="790">e</text><text x="138" y="790">r</text>
+    <text x="174" y="790">t</text><text x="210" y="790">y</text><text x="246" y="790">u</text><text x="282" y="790">i</text>
+    <text x="318" y="790">o</text><text x="354" y="790">p</text>
+    <text x="30" y="822">a</text><text x="66" y="822">s</text><text x="102" y="822">d</text><text x="138" y="822">f</text>
+    <text x="174" y="822">g</text><text x="210" y="822">h</text><text x="246" y="822">j</text><text x="282" y="822">k</text>
+    <text x="318" y="822">l</text>
+  </g>
+  <rect x="145" y="834" width="100" height="4" rx="2" fill="#3A4256"/>
+</svg>

@@ -1,0 +1,32 @@
+.gradle/
+build/
+app/build/
+local.properties
+.tools/
+.idea/
+*.iml
+.DS_Store
+captures/
+*.hprof
+*.log
+*.apk
+*.aab
+
+.upstream/
+upstream/cache/
+*.zstd
+
+.thirdparty-src/
+
+parity/runs/
+parity/replay.log*
+parity/verify.log
+parity/dbg*.log*
+.kotlin/
+
+# native build artifacts
+.cxx/
+**/.cxx/
+
+# 开发截图（真机截图含个人数据，不公开）
+docs/shots/
