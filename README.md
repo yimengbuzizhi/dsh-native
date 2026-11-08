@@ -7,7 +7,7 @@
 > 请勿用于生产环境。目前所有发行版都是**预发布（pre-release）**。
 >
 > 非常需要各位用户的反馈：遇到 bug、功能缺失、体验问题，欢迎提
-> [Issues](../../issues)，你的反馈会直接影响后续开发方向。
+> [Issues](https://github.com/yimengbuzizhi/dsh-native/issues)，你的反馈会直接影响后续开发方向。
 
 在 Android 手机上运行的 AI Agent 客户端：**Kotlin + Jetpack Compose 原生 UI**，
 内置 Kotlin 原生 Agent 内核（不依赖 Node、不依赖 WebView）。
@@ -60,7 +60,7 @@
 ## 反馈与贡献
 
 - **项目仍在开发阶段，非常需要真实使用反馈**：BUG、卡顿、交互不顺、缺什么功能，都可以提
-  [Issues](../../issues)。
+  [Issues](https://github.com/yimengbuzizhi/dsh-native/issues)。
 - 提问题时尽量带上：手机型号 / Android 版本 / App 版本（设置 → 关于 → 版本）、复现步骤；
   闪退或设备工具异常时附 logcat 会很有帮助。
 - 欢迎 PR；提交前请确认 `./gradlew :app:assembleDebug` 能通过。
