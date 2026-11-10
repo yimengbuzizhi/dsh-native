@@ -12,15 +12,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 调试通道：`am start --es dsh_account_token <token>` 导入 DeepSeek 账号令牌（仅 debug 包生效）。
-        if (BuildConfig.DEBUG) {
-            intent?.getStringExtra("dsh_account_token")?.takeIf { it.isNotBlank() }?.let { token ->
-                getSharedPreferences("dsh", 0).edit()
-                    .putString("account_token", token.trim())
-                    .putString("provider", "account")
-                    .putString("provider_id", "deepseek-account")
-                    .apply()
-            }
-        }
+        // 2026-11-09：DeepSeek 账号登录已删除，这个通道一并移除。
         if (BuildConfig.DEBUG) {
             // 调试通道：`--es dsh_avatar <filesDir 里的绝对路径>` 直接指定助手头像（自动验收用）
             intent?.getStringExtra("dsh_avatar")?.takeIf { it.isNotBlank() }?.let { path ->
@@ -83,6 +75,10 @@ class MainActivity : ComponentActivity() {
             intent?.getStringExtra("dsh_attach_image")?.takeIf { it.isNotBlank() }?.let { path ->
                 getSharedPreferences("dsh", 0).edit().putString("debug_attach_image", path.trim()).apply()
             }
+            // M74 引用 chip 验收：`--es dsh_attach_text <绝对路径>` 把文本文件放进待发附件
+            intent?.getStringExtra("dsh_attach_text")?.takeIf { it.isNotBlank() }?.let { path ->
+                getSharedPreferences("dsh", 0).edit().putString("debug_attach_text", path.trim()).apply()
+            }
             // 旧版数据导入：`--es dsh_import_zip <路径>` 直接把导入页打开并预扫描（真机自动验收用）
             intent?.getStringExtra("dsh_import_zip")?.takeIf { it.isNotBlank() }?.let { path ->
                 getSharedPreferences("dsh", 0).edit().putString("debug_import_zip", path.trim()).apply()
@@ -106,6 +102,43 @@ class MainActivity : ComponentActivity() {
             // 不经过模型直接调一次已接入的插件工具（锁屏/无 UI 也能验宿主链路）
             intent?.getStringExtra("dsh_plugin_call")?.takeIf { it.isNotBlank() }?.let { name ->
                 getSharedPreferences("dsh", 0).edit().putString("debug_plugin_call", name.trim()).apply()
+            }
+            // 插件窗口验收（M70）：`--es dsh_client_plugin <插件id>` 打开插件自己的 dsh.client 界面
+            intent?.getStringExtra("dsh_client_plugin")?.takeIf { it.isNotBlank() }?.let { id ->
+                getSharedPreferences("dsh", 0).edit().putString("debug_client_plugin", id.trim()).apply()
+            }
+            // 「拉取模型」验收：`--es dsh_fetch_models <结果文件路径>` 拉一次供应商模型列表
+            intent?.getStringExtra("dsh_fetch_models")?.takeIf { it.isNotBlank() }?.let { path ->
+                getSharedPreferences("dsh", 0).edit().putString("debug_fetch_models", path.trim()).apply()
+            }
+            // 已勾选模型验收（M74）：`--es dsh_enabled_models "a,b,c"` 直接写 enabled_models
+            //（逗号/竖线分隔；用来在无 UI 操作时验「模型浮层只列已勾选」）
+            intent?.getStringExtra("dsh_enabled_models")?.takeIf { it.isNotBlank() }?.let { raw ->
+                val names = raw.split(',', '|').map { it.trim() }.filter { it.isNotEmpty() }
+                if (names.isNotEmpty()) {
+                    getSharedPreferences("dsh", 0).edit()
+                        .putString("enabled_models", names.joinToString("\n")).apply()
+                }
+            }
+            // 大肥鱼状态机演示（M70 起只驱动会话快照，原生悬浮窗已删）：
+            // `--es dsh_fish_demo thinking|working|waiting|success|error|idle`
+            intent?.getStringExtra("dsh_fish_demo")?.takeIf { it.isNotBlank() }?.let { demo ->
+                getSharedPreferences("dsh", 0).edit().putString("debug_fish_demo", demo.trim()).apply()
+            }
+            // 角色卡验收（M71）：`--es dsh_persona <base64(UTF-8 JSON)>`，
+            // JSON 可含 name / persona / opening / system（键不存在就不动对应字段）。
+            // M73：走 SettingsStore 写**当前使用的那份助手配置**（多份角色卡在 assistant_profiles JSON 里），
+            // 不能直接写旧单份键——那样只会改 legacy 字段，页面/提示词读的是 profiles。
+            intent?.getStringExtra("dsh_persona")?.takeIf { it.isNotBlank() }?.let { raw ->
+                runCatching {
+                    val text = String(android.util.Base64.decode(raw, android.util.Base64.NO_WRAP), Charsets.UTF_8)
+                    val json = org.json.JSONObject(text)
+                    val store = xin.dshaa.nativeapp.data.SettingsStore(getSharedPreferences("dsh", 0))
+                    json.optString("name").takeIf { it.isNotEmpty() }?.let { store.setAssistantName(it) }
+                    if (json.has("persona")) store.setAssistantPersona(json.optString("persona"))
+                    if (json.has("opening")) store.setAssistantOpening(json.optString("opening"))
+                    if (json.has("system")) store.setAssistantSystem(json.optString("system"))
+                }.onFailure { android.util.Log.w("DshPersona", "bad dsh_persona: ${it.message}") }
             }
             // AI 终端工具验收：`--ez dsh_terminal_selftest true` 不经过模型跑建会话 → echo →
             // 读写屏幕 → 超时/Ctrl+C → 隐藏执行 → 关会话，结果落 filesDir/terminal-selftest.log

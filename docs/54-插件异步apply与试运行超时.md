@@ -143,7 +143,7 @@ text={"config":{"city":"Shanghai","verbose":false,"limit":3,"mode":"safe","neste
 
 - `:app:assembleDebug` BUILD SUCCESSFUL；APK **98,124,413 B**，MD5 `16672920ECBD9F4797FA3B2293E141D6`；
   已装机（02:31，覆盖安装）。
-- 安装包：`<workspace>\.dsh\handoff\DSH-native-20261108-0231.apk`。
+- 安装包：`D:\dsh\.dsh\handoff\DSH-native-20261108-0231.apk`。
 - **02:31:32 已发 QQ 群 11316535**：群文件显示 `DSH-native-202...31.apk (93.58MB)`、**上传成功**；
   02:32 发了说明：Config 落盘/配置区（等解锁补截图）、参数默认值与校验、async apply、试运行 12s 超时、
   这版界面只多配置区、覆盖安装。

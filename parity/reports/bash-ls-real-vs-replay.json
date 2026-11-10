@@ -1,1 +1,1 @@
-{"scenario":"bash-ls-real-vs-replay","status":"PASS","linesA":70,"linesB":70,"dirA":"<workspace>\\native\\parity\\runs\\runA","dirB":"<workspace>\\native\\parity\\runs\\runB"}
+{"scenario":"bash-ls-real-vs-replay","status":"PASS","linesA":70,"linesB":70,"dirA":"D:\\dsh\\native\\parity\\runs\\runA","dirB":"D:\\dsh\\native\\parity\\runs\\runB"}

@@ -47,7 +47,12 @@ import java.util.concurrent.atomic.AtomicReference
  * - schemastery 参数会转成 JSON Schema（M29），但不套默认值：插件 `execute` 拿到的就是模型给的参数；
  * - 工具名全局唯一；和内置工具或别的插件重名时跳过并打日志（不覆盖内置工具）。
  */
-class PluginToolRuntime {
+class PluginToolRuntime(
+    /** 插件通知（M57）：`plugin.notify` 宿主方法；默认丢弃（试运行/单测没有通知中心）。 */
+    private val notifier: (title: String, body: String) -> Unit = { _, _ -> },
+    /** M67：设备/无障碍/截图等 app 侧能力；null = 不提供（单测/试运行）。 */
+    private val hostBridge: xin.dshaa.core.plugins.PluginHostBridge? = null,
+) {
 
     /** 一个已接入对话的插件工具。 */
     data class Binding(
@@ -135,7 +140,59 @@ class PluginToolRuntime {
     }
 
     /** 跑一次插件工具。任何异常都归一成 [PluginInvokeResult]，不让插件把整轮对话弄崩。 */
-    private fun run(binding: Binding, argsJson: String, timeoutMs: Long): PluginInvokeResult {
+    private fun run(binding: Binding, argsJson: String, timeoutMs: Long): PluginInvokeResult =
+        runWithScript(binding, timeoutMs) { module ->
+            PluginModule.invokeScript(
+                module,
+                binding.toolName,
+                argsJson,
+                binding.workspace.absolutePath,
+                binding.configJson,
+            )
+        }
+
+    /**
+     * 跑一次插件斜杠命令（M57 第二批）：与工具共用 QuickJS/沙箱/超时，只是脚本入口不同。
+     * 命令不进模型轮次，结果由调用方用 command notice 显示。
+     */
+    fun invokeCommand(
+        record: PluginRecord,
+        commandName: String,
+        rawInput: String,
+        workspace: File,
+        timeoutMs: Long = 30_000,
+    ): PluginInvokeResult {
+        val entry = File(record.path, record.main)
+        if (!entry.isFile) return PluginInvokeResult(false, error = "入口文件不在了：${record.main}")
+        val configJson = PluginSchema.effectiveText(record.configSchema, record.config, record.configDefaults)
+        val binding = Binding(
+            pluginId = record.id,
+            pluginName = record.name,
+            toolName = "command:$commandName",
+            description = "",
+            schema = JsonObject(emptyMap()),
+            entry = entry,
+            permissions = PluginPermissions.parseAll(record.permissions),
+            grantedPermissions = record.grantedPermissions,
+            workspace = workspace,
+            configJson = configJson,
+        )
+        return runWithScript(binding, timeoutMs) { module ->
+            PluginModule.commandScript(
+                module,
+                commandName,
+                rawInput,
+                workspace.absolutePath,
+                configJson,
+            )
+        }
+    }
+
+    private fun runWithScript(
+        binding: Binding,
+        timeoutMs: Long,
+        scriptFor: (xin.dshaa.core.plugins.TransformedModule) -> String,
+    ): PluginInvokeResult {
         val source = runCatching { binding.entry.readText(Charsets.UTF_8) }
             .getOrElse { return PluginInvokeResult(false, error = "读不了插件入口：${it.message}") }
         val module = runCatching { PluginModule.transform(source) }
@@ -145,16 +202,10 @@ class PluginToolRuntime {
             workspace = binding.workspace,
             permissions = binding.permissions,
             grantedPermissions = binding.grantedPermissions,
+            bridge = hostBridge,
         )
-        val script = runCatching {
-            PluginModule.invokeScript(
-                module,
-                binding.toolName,
-                argsJson,
-                binding.workspace.absolutePath,
-                binding.configJson,
-            )
-        }.getOrElse { return PluginInvokeResult(false, error = "生成插件调用脚本失败：${it.message}") }
+        val script = runCatching { scriptFor(module) }
+            .getOrElse { return PluginInvokeResult(false, error = "生成插件调用脚本失败：${it.message}") }
 
         // 异步宿主能力（net.fetch / shell.exec 的异步形态）在别的线程跑，完成后回灌 QuickJS。
         val hostExecutor = Executors.newCachedThreadPool { runnable ->
@@ -166,6 +217,15 @@ class PluginToolRuntime {
                 override fun callSync(method: String, payloadJson: String): String? {
                     if (method == "log") {
                         logPluginConsole(binding, payloadJson)
+                        return """{"ok":true}"""
+                    }
+                    if (method == "plugin.notify") {
+                        val payload = runCatching { Json.parseToJsonElement(payloadJson).jsonObject }.getOrNull()
+                        val title = payload?.get("title")?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                            ?: "插件通知"
+                        val body = payload?.get("body")?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                            ?: ""
+                        notifier(title, body)
                         return """{"ok":true}"""
                     }
                     return sandbox.call(method, payloadJson).payloadJson

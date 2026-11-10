@@ -1,7 +1,7 @@
 # 76 · Operit 悬浮窗 / 虚拟屏浮层 功能对照表
 
-> 2026-11-09 00:10｜基线：Operit 源码 `<workspace>\native\.thirdparty-src\Operit`（只读），
-> 原生仓库 `<workspace>\native` HEAD `f06f395` + 第四十六棒改动（§十八）。
+> 2026-11-09 00:10｜基线：Operit 源码 `D:\dsh\native\.thirdparty-src\Operit`（只读），
+> 原生仓库 `D:\dsh\native` HEAD `f06f395` + 第四十六棒改动（§十八）。
 > **状态以 §十七（第四十五棒）+ §十八（第四十六棒，逐 ID 回填）为准**；
 > §五-§十二 状态列是 2026-11-08 22:43 审计基线，只在 §18.4 有明确覆盖时才算数。
 >
@@ -604,7 +604,7 @@
 ### 17.5 下一棒直接可执行
 
 ```powershell
-cd <workspace>\native
+cd D:\dsh\native
 cmd /c "set JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot&& .tools\gradle-8.9\bin\gradle.bat :app:assembleDebug --console=plain > build-debug.log 2>&1"
 C:\Android\platform-tools\adb.exe install --no-streaming -r -t app\build\outputs\apk\debug\app-debug.apk
 C:\Android\platform-tools\adb.exe shell am force-stop xin.dshaa.nativeapp
@@ -905,7 +905,7 @@ C:\Android\platform-tools\adb.exe shell am start -n xin.dshaa.nativeapp/.MainAct
 ### 18.6 下一棒直接可执行
 
 ```powershell
-cd <workspace>\native
+cd D:\dsh\native
 cmd /c "set JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot&& .tools\gradle-8.9\bin\gradle.bat :app:assembleDebug --console=plain > build-debug.log 2>&1"
 C:\Android\platform-tools\adb.exe install --no-streaming -r -t app\build\outputs\apk\debug\app-debug.apk
 C:\Android\platform-tools\adb.exe shell am force-stop xin.dshaa.nativeapp

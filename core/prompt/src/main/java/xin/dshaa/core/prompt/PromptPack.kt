@@ -71,6 +71,17 @@ class PromptPack(
      *
      * [planMode] 为 true 时插入 `plan:policy` 段（上游 SYSTEM section order 500，在 persona 之后、
      * file-reference 之前；见 `SECTION_ORDERS.PLAN_POLICY`）。
+     *
+     * 角色卡与插件段（M71）：
+     * - [personaPrefix] 非空时**替换**基础段 `deployment:persona-prefix`（上游这一段由 `dsh-persona`
+     *   注册，预设里的那句 coding agent 文案只是默认值）；
+     * - [personaSuffix] 非空时作为 `deployment:persona-suffix` 追加（上游 order 10200，最后一段）；
+     * - [extraSections] 是插件 `ctx.systemPrompt.section` 注册的段，和宿主段一起按 order/name 排序；
+     *   DSH 里同一个段名只有一份，**后注册的覆盖前面的**（基础段 < 角色卡 < 插件），
+     *   所以插件写的人设段（同名 `deployment:persona-prefix`）会接管角色卡，而不是拼出两段人设。
+     * - [variables] 是插件 `ctx.systemPrompt.variable(name, fn)` 求值出的变量（M74）：段文本里的
+     *   `{{name}}` 用它替换；`{{model}}` / `{{provider}}` 仍由宿主提供；**未知变量原样保留**
+     *   （不静默清空——插件/用户还能看出漏了什么）。
      */
     fun systemFor(
         model: String,
@@ -78,23 +89,65 @@ class PromptPack(
         tools: Set<String>,
         platform: String = "android",
         planMode: Boolean = false,
+        personaPrefix: String = "",
+        personaSuffix: String = "",
+        extraSections: List<PromptSection> = emptyList(),
+        variables: Map<String, String> = emptyMap(),
     ): String {
-        val all = if (planMode && planPolicy.isNotEmpty()) {
-            sections + PromptSection(name = "plan:policy", order = PLAN_POLICY_ORDER, text = planPolicy)
-        } else {
-            sections
+        // 段名唯一：按来源顺序覆盖（基础段 < 角色卡 < 插件段 < plan:policy）
+        val merged = LinkedHashMap<String, PromptSection>()
+        sections.forEach { merged[it.name] = it }
+        if (personaPrefix.isNotBlank()) {
+            merged[PERSONA_PREFIX] = PromptSection(PERSONA_PREFIX, PERSONA_PREFIX_ORDER, text = personaPrefix)
         }
-        return all
+        if (personaSuffix.isNotBlank()) {
+            merged[PERSONA_SUFFIX] = PromptSection(PERSONA_SUFFIX, PERSONA_SUFFIX_ORDER, text = personaSuffix)
+        }
+        extraSections.forEach { merged[it.name] = it }
+        if (planMode && planPolicy.isNotEmpty()) {
+            merged["plan:policy"] = PromptSection(name = "plan:policy", order = PLAN_POLICY_ORDER, text = planPolicy)
+        }
+        return merged.values
             .filter { it.platform == "any" || it.platform == platform }
             .filter { it.requires == null || it.requires in tools }
             .sortedWith(compareBy({ it.order }, { it.name }))
-            .map { render(it.text, model, provider) }
+            .map { render(it.text, model, provider, variables) }
             .filter { it.isNotEmpty() }
             .joinToString("\n\n")
     }
 
-    private fun render(text: String, model: String, provider: String): String =
-        text.replace("{{model}}", model).replace("{{provider}}", provider)
+    /**
+     * 把 `{{name}}` 替换成宿主/插件变量（M74）。`systemFor` 内部用同一套；插件的
+     * `ctx.systemPrompt.context` 段是 user-role 快照，不走 system 拼装，所以单独暴露给上层调。
+     */
+    fun interpolate(
+        text: String,
+        model: String,
+        provider: String,
+        variables: Map<String, String> = emptyMap(),
+    ): String = render(text, model, provider, variables)
+
+    /**
+     * `{{name}}` 插值（M74）：宿主提供 `model` / `provider`，其余取插件 `variable` 快照。
+     * 未知变量**保留原样**——宁可让模型看到 `{{cosplay_active}}`，也不要悄悄变成空串。
+     */
+    private fun render(
+        text: String,
+        model: String,
+        provider: String,
+        variables: Map<String, String>,
+    ): String {
+        if (!text.contains("{{")) return text
+        return PLACEHOLDER.replace(text) { match ->
+            val name = match.groupValues[1]
+            when {
+                name == "model" -> model
+                name == "provider" -> provider
+                variables.containsKey(name) -> variables.getValue(name)
+                else -> match.value
+            }
+        }
+    }
 
     /**
      * Android 工具表：上游桌面版第 15 个工具是 `pwsh`，Android 换成 `bash`
@@ -154,6 +207,21 @@ class PromptPack(
 
         /** 上游 `SECTION_ORDERS.PLAN_POLICY`（plan:policy 段的位置：persona 之后、file-reference 之前）。 */
         const val PLAN_POLICY_ORDER = 500
+
+        /** 上游 `SECTION_ORDERS.PERSONA_PREFIX`：人设段（`dsh-persona` 注册）。 */
+        const val PERSONA_PREFIX = "deployment:persona-prefix"
+        const val PERSONA_PREFIX_ORDER = 0
+
+        /** 上游 `SECTION_ORDERS.PERSONA_SUFFIX`：人设尾段（最后一段，order 10200）。 */
+        const val PERSONA_SUFFIX = "deployment:persona-suffix"
+        const val PERSONA_SUFFIX_ORDER = 10200
+
+        /**
+         * 段文本里的变量占位符（`{{model}}` / `{{cosplay_active}}`）；M74。
+         * 注意：结尾的 `}}` **必须转义**——Android 的 ICU 正则把裸 `}}` 当语法错误直接抛
+         * PatternSyntaxException（JVM 单测不报，真机 PromptPack 类初始化就崩）。
+         */
+        private val PLACEHOLDER = Regex("\\{\\{([A-Za-z0-9_.:\\-]+)\\}\\}")
 
         /** docs/port/02 §3.3 bash 段全文（Android 专用，逐字来自 dsh-tool-bash）。 */
         private const val BASH_DESCRIPTION =

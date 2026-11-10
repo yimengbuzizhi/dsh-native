@@ -33,7 +33,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import xin.dshaa.core.llm.AuthMode
 import xin.dshaa.core.agents.AgentNotice
 import xin.dshaa.core.agents.AgentRecord
 import xin.dshaa.core.agents.AgentRegistry
@@ -65,6 +64,7 @@ import xin.dshaa.core.jobs.JobStatus
 import xin.dshaa.core.llm.LlmClient
 import xin.dshaa.core.llm.LlmConfig
 import xin.dshaa.core.llm.LlmEvent
+import xin.dshaa.core.llm.OpenAiClient
 import xin.dshaa.core.llm.WebSearchClient
 import xin.dshaa.core.model.BlockType
 import xin.dshaa.core.model.ChatMessage
@@ -114,10 +114,12 @@ import xin.dshaa.core.session.SessionRepository
 import xin.dshaa.core.session.SessionSession
 import xin.dshaa.core.skill.FileSystemSkills
 import xin.dshaa.core.skill.SkillCatalog
+import xin.dshaa.core.skill.SkillFrontmatter
 import xin.dshaa.core.skill.SkillLoad
 import xin.dshaa.core.skill.SkillRoot
 import xin.dshaa.core.skill.SkillSummary
 import xin.dshaa.core.skill.invokedSkillNames
+import xin.dshaa.core.skill.isSkillName
 import xin.dshaa.core.skill.renderSkillContent
 import xin.dshaa.core.tools.DefaultTools
 import xin.dshaa.core.tools.AgentEntry
@@ -133,15 +135,18 @@ import xin.dshaa.core.tools.ToolRegistry
 import xin.dshaa.core.tools.fs.sniffImageMediaType
 import xin.dshaa.core.tools.schedule.ScheduleTime
 import xin.dshaa.nativeapp.data.BackupManager
+import xin.dshaa.nativeapp.data.BundledSkills
 import xin.dshaa.nativeapp.data.PluginStore
 import xin.dshaa.nativeapp.data.PluginToolRuntime
 import xin.dshaa.nativeapp.data.SettingsStore
 import xin.dshaa.nativeapp.data.WorkspaceStore
+import xin.dshaa.nativeapp.fish.BigFish
 import xin.dshaa.nativeapp.data.WorkspaceUi
 import xin.dshaa.nativeapp.device.DeviceShell
 import xin.dshaa.nativeapp.device.a11y.A11y
 import com.ai.assistance.showerclient.ShellIdentity
 import xin.dshaa.nativeapp.device.tools.AndroidDeviceTools
+import xin.dshaa.nativeapp.memory.MemoryTools
 import xin.dshaa.nativeapp.device.tools.TerminalTools
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -196,7 +201,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     /** 插件工具接入（M27）：已启用且 schema 可用的工具会注册进 `ToolRegistry`。 */
-    private val pluginToolRuntime = PluginToolRuntime()
+    private val pluginToolRuntime = PluginToolRuntime(
+        notifier = { title, body ->
+            xin.dshaa.nativeapp.data.PluginNotifier.notify(app, title, body)
+        },
+        // M67：Operit 包的 Tools.* 需要设备/无障碍/截图等 app 侧能力。
+        hostBridge = xin.dshaa.nativeapp.data.AndroidPluginHostBridge(app),
+    )
 
     /** 当前由插件注册进工具表的名字（刷新时先注销这一批，再按最新清单注册）。 */
     private val pluginToolNames = mutableSetOf<String>()
@@ -211,6 +222,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 调试/截图用：启动即打开某个插件详情（`--es dsh_plugin_detail <id>`，只 debug 包）。 */
     var debugPluginDetailId by mutableStateOf<String?>(null)
+        private set
+
+    // ---- M67：随包内置的 Operit ToolPkg 目录（包管理 → 包） ----
+
+    private val operitBundled = xin.dshaa.nativeapp.data.OperitBundledPackages(app)
+
+    /** 「包」tab 的列表；第一次进 tab 时从 assets 扫出来。 */
+    var operitPackagesUi by mutableStateOf<List<xin.dshaa.nativeapp.data.OperitBundledPackage>>(emptyList())
+        private set
+
+    var operitPackagesBusy by mutableStateOf(false)
         private set
 
     val settings = SettingsStore(app.getSharedPreferences("dsh", 0))
@@ -302,6 +324,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var toolNo = 0
 
     private val client = LlmClient(tapFactory = captureRecorder?.let { rec -> { rec.newTap() } })
+    private val openAiClient = OpenAiClient()
     private val promptPack by lazy { PromptPack.load() }
 
     /**
@@ -321,8 +344,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 与 `bash`（每次新进程）互补：需要 `cd`、环境变量、交互式程序时用它。
      */
     private val terminalTools = TerminalTools(app)
+
+    /** 记忆库工具（M56，照搬 Operit 8 个记忆工具）。 */
+    private val memoryTools = MemoryTools(app)
+
     private val registry: ToolRegistry =
-        ToolRegistry(DefaultTools.registry().tools + androidDeviceTools.tools + terminalTools.tools)
+        ToolRegistry(DefaultTools.registry().tools + androidDeviceTools.tools + terminalTools.tools + memoryTools.tools)
 
     /**
      * goal 三件套的后端：读写**指定会话**的 goal/change 事件（见 GoalStore）。
@@ -618,6 +645,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 待发文件上限（单个）：超过就不读，直接提示。 */
     private val maxFileBytes = 512 * 1024
+    /** 图片/任意文件引用的上限（与 Operit 一样，文件只复制不解析）。 */
+    private val maxImageFileBytes = 50 * 1024 * 1024
+    private val maxAttachmentBytes = 50L * 1024 * 1024
+    private val imageFileExts = setOf("png", "jpg", "jpeg", "webp", "gif")
 
     /** 认作文本的后缀（未知后缀再看内容像不像文本）。 */
     private val textFileExts = setOf(
@@ -684,32 +715,102 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
         }.getOrNull()?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment ?: "附件"
         val declared = runCatching { resolver.getType(uri) }.getOrNull()
-        val bytes = runCatching {
-            resolver.openInputStream(uri)?.use { readAtMost(it, maxFileBytes + 1) }
-        }.getOrNull() ?: return "读取失败：$name"
-        if (bytes.isEmpty()) return "文件是空的：$name"
-        if (bytes.size > maxFileBytes) return "文件太大：$name（上限 ${maxFileBytes / 1024} KB）"
-        if (declared?.startsWith("image/") == true || sniffImageMediaType(bytes) != null) {
+        val ext = name.substringAfterLast('.', "").lowercase()
+
+        // 图片走原来的图片管线（模型直接看图）；上限 50MB，和 read_image 一致。
+        if (declared?.startsWith("image/") == true || ext in imageFileExts) {
+            val bytes = runCatching {
+                resolver.openInputStream(uri)?.use { readAtMost(it, maxImageFileBytes + 1) }
+            }.getOrNull() ?: return "读取失败：$name"
+            if (bytes.isEmpty()) return "文件是空的：$name"
+            if (bytes.size > maxImageFileBytes) return "图片太大：$name（上限 50MB）"
             return savePendingImage(state, bytes, declared, name)
         }
-        val ext = name.substringAfterLast('.', "").lowercase()
+
+        // 非图片先探 512KB：确认是文本就内联；文本超限/二进制 → 复制到工作区做路径引用。
+        val probe = runCatching {
+            resolver.openInputStream(uri)?.use { readAtMost(it, maxFileBytes + 1) }
+        }.getOrNull() ?: return "读取失败：$name"
+        if (probe.isEmpty()) return "文件是空的：$name"
         val textual = declared?.startsWith("text/") == true ||
             declared == "application/json" ||
             ext in textFileExts ||
-            looksLikeText(bytes)
-        if (!textual) {
-            return "暂不支持解析这类文件（PDF/Word/压缩包等）：可以复制文字进输入框，或先转成 .txt/.md"
+            looksLikeText(probe)
+        if (textual && probe.size <= maxFileBytes) {
+            val text = probe.toString(Charsets.UTF_8)
+            if (text.isBlank()) return "文件里没有可发送的文字：$name"
+            var finalName = name
+            var n = 2
+            while (state.pendingFiles.any { it.name == finalName }) {
+                finalName = "${name.substringBeforeLast('.')} ($n).${name.substringAfterLast('.')}"
+                n += 1
+            }
+            state.pendingFiles += PendingFile(finalName, text)
+            return null
         }
-        val text = bytes.toString(Charsets.UTF_8)
-        if (text.isBlank()) return "文件里没有可发送的文字：$name"
-        var finalName = name
-        var n = 2
-        while (state.pendingFiles.any { it.name == finalName }) {
-            finalName = "${name.substringBeforeLast('.')} ($n).${name.substringAfterLast('.')}"
-            n += 1
+
+        // Operit 的做法：任何文件都复制到本地，消息里只放 <attachment id=路径 …/>，
+        // 模型用 read / read_image 工具按路径读。鲸歌复制到工作区 .dsh/attachments，
+        // 这样现有 read / read_image 的 workspace 路径守卫不用放宽。
+        return try {
+            val (relative, bytes) = withContext(Dispatchers.IO) {
+                copyAttachmentToWorkspace(uri, name)
+            }
+            val mime = declared?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
+                ?: runCatching { android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) }.getOrNull()
+                ?: "application/octet-stream"
+            var finalName = name
+            var n = 2
+            while (state.pendingFiles.any { it.name == finalName }) {
+                finalName = "${name.substringBeforeLast('.')} ($n).${name.substringAfterLast('.')}"
+                n += 1
+            }
+            state.pendingFiles += PendingFile(
+                name = finalName,
+                text = "",
+                path = relative,
+                mime = mime,
+                size = bytes,
+            )
+            null
+        } catch (e: Exception) {
+            "无法引用这个文件：${e.message ?: e.javaClass.simpleName}"
         }
-        state.pendingFiles += PendingFile(finalName, text)
-        return null
+    }
+
+    /** 原样复制到 `<workspace>/.dsh/attachments/`，返回（相对工作区的路径, 字节数）。 */
+    private fun copyAttachmentToWorkspace(uri: Uri, name: String): Pair<String, Long> {
+        val dir = File(workspace, ".dsh/attachments").apply { mkdirs() }
+        val safe = name
+            .replace(Regex("""[\\/:*?"<>|\p{Cntrl}]"""), "_")
+            .take(100)
+            .ifBlank { "attachment" }
+        val target = File(dir, "${System.currentTimeMillis()}-$safe")
+        val resolver = getApplication<Application>().contentResolver
+        val input = resolver.openInputStream(uri) ?: error("读不到文件：$name")
+        var total = 0L
+        try {
+            input.use { ins ->
+                target.outputStream().use { outs ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = ins.read(buffer)
+                        if (read <= 0) break
+                        total += read
+                        if (total > maxAttachmentBytes) {
+                            error("文件太大（上限 ${maxAttachmentBytes / 1024 / 1024} MB）")
+                        }
+                        outs.write(buffer, 0, read)
+                    }
+                }
+            }
+            if (total == 0L) error("文件是空的：$name")
+            val relative = target.relativeTo(workspace).path.replace('\\', '/')
+            return relative to total
+        } catch (e: Exception) {
+            runCatching { target.delete() }
+            throw e
+        }
     }
 
     /** 没声明 mime 的未知后缀：没有 NUL、UTF-8 解出来不乱码就当文本。 */
@@ -719,6 +820,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val decoded = sample.toByteArray().toString(Charsets.UTF_8)
         return decoded.none { it == '\uFFFD' }
     }
+
+    /** `<attachment …>` 属性值转义（路径/文件名里可能有引号或 &）。 */
+    private fun xmlAttr(value: String): String = value
+        .replace("&", "&amp;")
+        .replace("\"", "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
 
     /**
      * 归一化 + 落盘 + 加入待发列表；返回面向用户的错误文案（null = 成功）。
@@ -974,6 +1082,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         tools = offeredToolNames(),
                         // 计划模式：system 里动态带 plan:policy 段（上游 PLAN_POLICY，order 500）
                         planMode = planState.selected(),
+                        // 角色卡（M71）：人设替换 deployment:persona-prefix，系统提示词追加到
+                        // deployment:persona-suffix（order 10200）；插件注册的段落按 order 一起排、
+                        // 同名段插件覆盖（插件的人设/上下文走同一条路，不往最后再糊一段）。
+                        personaPrefix = personaPrefixText(),
+                        personaSuffix = settings.assistantSystem,
+                        extraSections = pluginPromptSections(),
+                        variables = pluginPromptVariables(),
                     )
                 },
                 runtimeContext = { runtimeContextText() },
@@ -987,7 +1102,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             emit(LlmEvent.Failed(fakeOverflow, code = "invalid_request_error", status = 400))
                         }
                     } else {
-                        client.stream(request, config)
+                        if (settings.protocol == "openai") {
+                            openAiClient.stream(request, config)
+                        } else {
+                            client.stream(request, config)
+                        }
                     }
                 },
                 sessions = object : SessionGateway {
@@ -1043,7 +1162,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // 时间上下文（M42）：设置开关 + 设备时区（Android 单一客户端，browser 时区恒为设备时区）
                 timeContext = { timeContextConfig() },
                 // 自动压缩（M44）：模型配置页声明的上下文窗口；0/未知 = 不自动压缩
-                contextWindow = { settings.contextWindow.takeIf { it > 0 } },
+                contextWindow = { settings.effectiveContextWindow.takeIf { it > 0 } },
                 log = { message -> Log.i("DshCompact", message) },
                 plan = live.plan,
                 onPlanChanged = { syncPlanUi() },
@@ -1074,9 +1193,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var skillsWarnings by mutableStateOf<List<String>>(emptyList())
         private set
 
+    /** 包管理页「导入技能」的一次性结果（Snackbar 用）。 */
+    var skillNotice by mutableStateOf<String?>(null)
+        private set
+
     init {
         // 悬浮窗的桥：服务里的 Compose 面板通过它读写同一个 ViewModel
         ChatMirror.host = this
+        BundledSkills.ensureInstalled(getApplication())
         refreshSessions()
         refreshSkills()
         // 已装插件在冷启动时就接进工具表（不用等用户进插件页点一下）
@@ -1238,6 +1362,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val argsRaw = sp.getString("debug_plugin_args", null)
             sp.edit().remove("debug_plugin_call").remove("debug_plugin_args").apply()
             viewModelScope.launch {
+                // 冷启动后系统绑定无障碍服务要几百毫秒到一两秒；调试通道在 ViewModel init 里就跑，
+                // 会抢在 A11y.attach 之前拿到「无障碍未连接」。这里只给**调试通道**加一点等待（M68）。
+                kotlinx.coroutines.delay(2_500)
                 syncPluginTools()
                 val tool = registry.tools.firstOrNull { it.name == debugPluginCall }
                 val result = if (tool == null) {
@@ -1252,8 +1379,49 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 Log.i(
                     "DshPlugin",
                     "debug call name=$debugPluginCall args=${argsRaw.orEmpty().take(500)} " +
-                        "isError=${result.isError} text=${result.text.take(1200)}",
+                        "isError=${result.isError} text=${result.text.take(4000)}",
                 )
+            }
+        }
+        // 调试通道：`--es dsh_client_plugin <插件id>` → 打开插件自己的 dsh.client 界面（M70）
+        sp.getString("debug_client_plugin", null)?.takeIf { it.isNotBlank() }?.let { id ->
+            sp.edit().remove("debug_client_plugin").apply()
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(2_500)
+                val record = pluginStore.list().firstOrNull { it.id == id }
+                val message = if (record == null) {
+                    "没有这个插件：$id"
+                } else {
+                    xin.dshaa.nativeapp.pluginui.ClientPluginWindows.open(getApplication(), record)
+                }
+                Log.i("DshClientHost", "debug open plugin window id=$id -> $message")
+            }
+        }
+        // 调试通道：`--es dsh_fish_demo thinking|working|waiting|success|error` → 给悬浮窗摆一个状态
+        // （真机截图验收用，不需要真的跑一轮模型）。
+        sp.getString("debug_fish_demo", null)?.takeIf { it.isNotBlank() }?.let { demo ->
+            sp.edit().remove("debug_fish_demo").apply()
+            when (demo) {
+                "thinking" -> BigFish.onTurnStart(settings.reasoningEffort, "鲸歌适配大肥鱼")
+                "working" -> BigFish.onStatus("运行工具 read…")
+                "waiting" -> BigFish.onWaiting("bash")
+                "success" -> BigFish.onTurnEnd(null)
+                "error" -> BigFish.onTurnEnd("HTTP 401：API key 无效")
+                else -> BigFish.onIdle()
+            }
+            Log.i("DshBigFish", "debug fish demo=$demo")
+        }
+        // 调试通道：`--es dsh_fetch_models <绝对路径>` → 拉一次供应商模型列表，结果写文件        // （2026-11-09 用户要求「拉取模型」；锁屏/无 UI 也能验端点、密钥与解析）。
+        sp.getString("debug_fetch_models", null)?.takeIf { it.isNotBlank() }?.let { outPath ->
+            sp.edit().remove("debug_fetch_models").apply()
+            viewModelScope.launch {
+                val result = fetchModels()
+                val text = result.fold(
+                    onSuccess = { names -> "ok ${names.size}\n" + names.joinToString("\n") },
+                    onFailure = { error -> "error ${error.message}" },
+                )
+                runCatching { File(outPath).writeText(text) }
+                Log.i("DshModels", text.take(1200))
             }
         }
         // 调试通道：`--ez dsh_terminal_selftest true` 不经过模型，按 registry 调 6 个终端工具，
@@ -1287,6 +1455,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 附件验收：`--es dsh_attach_image <绝对路径>` 先把图片放进待发列表（可与 dsh_send 连用）
         val debugAttach = sp.getString("debug_attach_image", null)
         if (!debugAttach.isNullOrBlank()) sp.edit().remove("debug_attach_image").apply()
+        // M74：`--es dsh_attach_text <绝对路径>` 把文本文件放进待发附件（验聊天页引用 chip）
+        val debugAttachText = sp.getString("debug_attach_text", null)
+        if (!debugAttachText.isNullOrBlank()) sp.edit().remove("debug_attach_text").apply()
         val openSessionId = sp.getString("debug_open_session", null)
         if (!openSessionId.isNullOrBlank()) {
             // 调试通道：`--es dsh_open_session <id>` 打开已有会话；可与 `dsh_send` 连用验历史重放
@@ -1296,6 +1467,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (!auto.isNullOrBlank()) {
                     sp.edit().remove("debug_send").apply()
                     attachDebugImage(debugAttach)
+                    attachDebugText(debugAttachText)
                     submit(auto)
                 }
             }
@@ -1337,6 +1509,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             viewModelScope.launch {
                 attachDebugImage(debugAttach)
+                attachDebugText(debugAttachText)
                 submit(auto)
             }
         }
@@ -1352,6 +1525,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val bytes = withContext(Dispatchers.IO) { runCatching { file.readBytes() }.getOrNull() } ?: return
         val state = chat ?: return
         state.attachError = savePendingImage(state, bytes, null, file.name)
+    }
+
+    /**
+     * 调试通道：`--es dsh_attach_text <绝对路径>` 把设备上一个文本文件读进待发附件，
+     * 走的是和「附件 → 文件」同一条 [attachTextFile]（M74 引用 chip 验收用）。
+     */
+    private suspend fun attachDebugText(path: String?) {
+        if (path.isNullOrBlank()) return
+        val file = File(path)
+        val text = withContext(Dispatchers.IO) { runCatching { file.readText(Charsets.UTF_8) }.getOrNull() } ?: return
+        attachTextFile(file.name, text)
     }
 
     fun refreshSessions() {
@@ -1846,6 +2030,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (state.readOnly) return
         if (active == planState.selected()) return
         if (state.streaming || handle == null) {
+            // 还没发第一条消息（没有会话文件）时「开→关」= 撤销待生效，不留下「下一步生效」的计划条
+            if (handle == null && active == planState.active) {
+                planState.pending = null
+                planState.narrate = false
+                syncPlanUi()
+                return
+            }
             planState.pending = active
             planState.narrate = true
             syncPlanUi()
@@ -1868,6 +2059,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (active == planState.selected()) return PlanSelection.NOOP
         val existing = handle
         if (state.streaming || (existing == null && !createSession)) {
+            // 同上：新会话第一条消息前的「开→关」直接撤销，不留 pending
+            if (existing == null && !createSession && active == planState.active) {
+                planState.pending = null
+                planState.narrate = false
+                syncPlanUi()
+                return PlanSelection.CANCELLED
+            }
             planState.pending = active
             planState.narrate = true
             syncPlanUi()
@@ -1975,6 +2173,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (command.name == "plan") {
             executePlanCommand(command, state)
+            return true
+        }
+        // P5（M57 第二批）：插件用 ctx.commands.register 注册的斜杠命令。
+        // 命令不进模型轮次，结果用 command notice 显示（与 DSH 一致）。
+        val pluginCommand = pluginsUi.asSequence()
+            .filter { it.enabled }
+            .flatMap { record -> record.commands.asSequence().map { record to it } }
+            .firstOrNull { it.second.name == command.name }
+        if (pluginCommand != null) {
+            val (record, pluginCmd) = pluginCommand
+            viewModelScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    pluginToolRuntime.invokeCommand(record, pluginCmd.name, command.rawInput, workspace)
+                }
+                val text = if (result.ok) {
+                    result.text.ifBlank { "插件命令 /${pluginCmd.name} 已完成" }
+                } else {
+                    "插件命令失败：${result.error ?: "未知错误"}"
+                }
+                showCommandNotice(state, text)
+                Log.i("DshCmd", "plugin command /${pluginCmd.name} from ${record.id} ok=${result.ok}")
+            }
             return true
         }
         if (command.name == "model") {
@@ -2363,10 +2583,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             state.attachError = "当前模型未开启识图：设置 → 模型与参数配置 → 「模型支持识图」打开后再发"
             return
         }
-        // 文件正文作为额外 text 块跟在用户文字后面（同一个 user/message，顺序固定）
+        // 文件：文本内联；非文本/超大文件按 Operit 形状放 <attachment>，模型用 read/read_image 读。
         val blocks = buildList {
             if (trimmed.isNotEmpty()) add(trimmed)
-            files.forEach { add("[附件: ${it.name}]\n\n${it.text}") }
+            files.forEach { file ->
+                val path = file.path
+                if (path != null) {
+                    add(
+                        """<attachment id="${xmlAttr(path)}" filename="${xmlAttr(file.name)}" """ +
+                            """type="${xmlAttr(file.mime ?: "application/octet-stream")}" size="${file.size}"/>""",
+                    )
+                } else {
+                    add("[附件: ${file.name}]\n\n${file.text}")
+                }
+            }
+            if (files.any { it.isReference }) {
+                add(ATTACHMENT_REFERENCE_HINT)
+            }
         }
         // 待发附件一次性交给这一轮（失败时 send 提前返回，草稿与图片都还在）
         if (images.isNotEmpty()) state.pendingImages.clear()
@@ -2522,20 +2755,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         override fun setStreaming(streaming: Boolean) {
             state.streaming = streaming
+            // 大肥鱼（M59）：一轮开始 → THINKING；收口在 startTurn 的 finally 里（那里才是
+            // 真正「turn end」的时刻，引擎有些取消路径不会经过 setStreaming(false)）。
+            if (streaming) BigFish.onTurnStart(settings.reasoningEffort, workspace.name)
         }
 
         override fun setStatus(text: String?) {
             state.statusText = text
+            BigFish.onStatus(text)
             // 通知栏里同步当前步骤（没有前台服务时 start() 是空操作，实例不存在就直接 return）
             if (text != null) TurnKeepAliveService.start(getApplication(), text)
         }
 
         override fun setError(text: String?) {
             state.error = text
+            if (text != null) BigFish.onError(text)
         }
 
         override fun setUsage(text: String?) {
             state.usageText = text
+        }
+
+        /** M72：数字版用量 → BigFish 按轮累加，turn/end 随快照喂给客户端插件。 */
+        override fun setTokenUsage(inputTokens: Int, outputTokens: Int) {
+            BigFish.onTokenUsage(inputTokens, outputTokens)
         }
 
         override fun setGoal(view: GoalView?) {
@@ -2611,6 +2854,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             } finally {
                 state.streaming = false
                 state.statusText = null
+                // 大肥鱼：turn/end（成功 → SUCCESS 脉冲；state.error 非空 → ERROR）。
+                // M66：把本轮最终回复正文一并塞进快照，鲸鱼娘挂件按上游规则取最后一段逐句播报。
+                val finalReply = state.messages
+                    .lastOrNull { it.role == MessageRole.ASSISTANT && it.error == null }
+                    ?.content
+                    ?.filter { it.type == BlockType.TEXT }
+                    ?.joinToString("\n") { it.text }
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                BigFish.onTurnEnd(state.error, finalReply)
                 Log.i("DshTurn", "turn end after ${System.currentTimeMillis() - startedAt}ms")
                 live.job = null
                 if (runningState === state) runningState = null
@@ -2684,6 +2937,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * M70：打开插件**自己的**浏览器半侧（`dsh.client` 的 client.js），走通用客户端插件宿主，
+     * 不再按插件写死原生窗口。结果（成功/为什么不能跑）回写到插件页顶部的 notice。
+     */
+    fun openClientPluginWindow(record: PluginRecord) {
+        val message = xin.dshaa.nativeapp.pluginui.ClientPluginWindows.open(getApplication(), record)
+        pluginNotice = message
+    }
+
+    /**
      * 按最新插件清单重建「插件工具 → 工具表」的映射。
      *
      * 先注销上一批名字（停用/删除/改名都靠这一步收回工具），再按清单注册。
@@ -2749,6 +3011,44 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         syncPluginTools()
     }
 
+    // ---- M67：内置 Operit 包（包管理 → 包） ----
+
+    /** 扫描 `assets/operit-packages/` 下的 .js（第一次进「包」tab 时调用；结果缓存到 [operitPackagesUi]）。 */
+    fun loadOperitPackages() {
+        if (operitPackagesBusy || operitPackagesUi.isNotEmpty()) return
+        operitPackagesBusy = true
+        viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) { operitBundled.load() }
+            operitPackagesUi = list
+            operitPackagesBusy = false
+            Log.i(
+                "DshPlugin",
+                "内置 Operit 包 ${list.size} 个：可用 ${list.count { it.status == xin.dshaa.nativeapp.data.OperitStatus.READY }}、" +
+                    "部分可用 ${list.count { it.status == xin.dshaa.nativeapp.data.OperitStatus.PARTIAL }}、" +
+                    "需要 Key ${list.count { it.status == xin.dshaa.nativeapp.data.OperitStatus.NEEDS_ENV }}",
+            )
+        }
+    }
+
+    /**
+     * 安装一个内置 Operit 包：现拼 `package.json + <包>.js` 的 zip，走和导入 zip 完全相同的链路
+     * （ToolPkg 包装、试运行、工具注册）。网络/命令/设备权限仍要用户到插件页确认。
+     */
+    fun installOperitPackage(pluginId: String) {
+        if (pluginsBusy) return
+        val pkg = operitPackagesUi.firstOrNull { it.pluginId == pluginId } ?: return
+        pluginsBusy = true
+        pluginNotice = null
+        viewModelScope.launch {
+            val result = operitBundled.install(pluginStore, pkg)
+            pluginsUi = pluginStore.list()
+            pluginNotice = result.message
+            pluginsBusy = false
+            syncPluginTools()
+            Log.i("DshPlugin", "内置包安装 ${pkg.pluginId} ok=${result.ok} ${result.message}")
+        }
+    }
+
     /** 插件页「确认授权」：危险能力逐项放行（红框确认后调用）。 */
     fun grantPluginPermission(id: String, raw: String) {
         val result = pluginStore.grant(id, raw)
@@ -2782,6 +3082,53 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             skillsComplete = snapshot.complete
             skillsWarnings = withContext(Dispatchers.IO) { skills.lastWarnings() }
         }
+    }
+
+    /**
+     * 包管理页「导入技能」（Operit 技能 Tab 的导入入口）：
+     * 选一个 SKILL.md → 校验 frontmatter → 写到 `files/skills/<name>.md` → 重扫。
+     *
+     * 写平铺 .md 而不是目录型技能：DSH 的文件系统 provider 两种都认，单文件最好搬。
+     */
+    fun importSkill(uri: Uri) {
+        viewModelScope.launch {
+            val message = withContext(Dispatchers.IO) {
+                runCatching {
+                    val resolver = getApplication<Application>().contentResolver
+                    val displayName = runCatching {
+                        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                            ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                    }.getOrNull()?.takeIf { it.isNotBlank() } ?: "SKILL.md"
+                    if (!displayName.endsWith(".md", ignoreCase = true)) {
+                        error("只支持 SKILL.md 文本文件（当前是 $displayName）")
+                    }
+                    val bytes = resolver.openInputStream(uri)?.use { readAtMost(it, 2 * 1024 * 1024) }
+                        ?: error("读不到文件：$displayName")
+                    if (bytes.size >= 2 * 1024 * 1024) error("文件太大（上限 2 MB）")
+                    val text = bytes.toString(Charsets.UTF_8)
+                    val parsed = SkillFrontmatter.parse(text)
+                        ?: error("不是 SKILL.md：缺少 YAML frontmatter（第一行必须是 ---）")
+                    val name = parsed.data["name"]?.takeIf { it.isNotEmpty() }
+                        ?: error("frontmatter 缺少 name")
+                    if (!isSkillName(name)) error("技能名不合法（要 kebab-case）：$name")
+                    if (parsed.data["description"].isNullOrEmpty()) error("frontmatter 缺少 description")
+                    val dir = File(getApplication<Application>().filesDir, "skills").apply { mkdirs() }
+                    if (File(dir, name).isDirectory) {
+                        error("已存在同名目录技能「$name」，先删掉旧目录再导入")
+                    }
+                    val target = File(dir, "$name.md")
+                    val overwritten = target.exists()
+                    target.writeText(text, Charsets.UTF_8)
+                    if (overwritten) "已覆盖技能 $name" else "已导入技能 $name"
+                }.getOrElse { "导入技能失败：${it.message}" }
+            }
+            skillNotice = message
+            refreshSkills()
+        }
+    }
+
+    fun dismissSkillNotice() {
+        skillNotice = null
     }
 
     /**
@@ -3096,6 +3443,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         model = settings.model,
                         provider = providerLabel(),
                         tools = offeredToolNames(),
+                        personaPrefix = personaPrefixText(),
+                        personaSuffix = settings.assistantSystem,
+                        extraSections = pluginPromptSections(),
+                        variables = pluginPromptVariables(),
                     )
                 },
                 runtimeContext = { runtimeContextText(record.depth, cwd) },
@@ -3120,7 +3471,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 skillCatalog = { s -> skillCatalogNotice(s) },
                 // 子代理同样带时间上下文（上游 time-context 对每个 agent 都生效）
                 timeContext = { timeContextConfig() },
-                contextWindow = { settings.contextWindow.takeIf { it > 0 } },
+                contextWindow = { settings.effectiveContextWindow.takeIf { it > 0 } },
                 log = { message -> Log.i("DshCompact", message) },
                 plan = PlanModeState(),
             ),
@@ -3314,6 +3665,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         state.pendingApproval = null
         approvalDeferred?.complete(allow)
         approvalDeferred = null
+        BigFish.onApprovalResolved()
     }
 
     /** 模型提问：挂起工具循环，等 UI 收集答案后 complete。 */
@@ -3346,6 +3698,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             arguments = call.arguments,
             summary = summarizeTool(call.name, call.arguments),
         )
+        BigFish.onWaiting(call.name)
         return try {
             deferred.await()
         } finally {
@@ -3366,13 +3719,69 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * 从供应商拉取模型列表（模型配置页「拉取模型」，2026-11-09 用户要求）。
+     *
+     * - Anthropic 官方 / 自定义 Anthropic 端点：`GET {base}/v1/models` + `x-api-key` + `anthropic-version`；
+     * - DeepSeek / OpenAI 兼容端点：`GET {root}/v1/models` + `Authorization: Bearer`，其中
+     *   `root` = base 去掉 `/anthropic`（DeepSeek 的模型目录在 OpenAI 兼容端点上）。
+     * 两种响应的模型条目都按 `data[].id` 解析。
+     */
+    suspend fun fetchModels(): Result<List<String>> = withContext(Dispatchers.IO) {
+        val cfg = llmConfig()
+        if (cfg.apiKey.isBlank()) {
+            return@withContext Result.failure(IllegalStateException("未配置 API 密钥"))
+        }
+        val anthropicStyle = settings.providerId == SettingsStore.PROVIDER_ANTHROPIC
+        val base = cfg.baseUrl.trim().trimEnd('/')
+        val root = if (base.endsWith("/anthropic")) base.removeSuffix("/anthropic") else base
+        val url = when {
+            root.endsWith("/v1/models") -> root
+            root.endsWith("/v1") -> "$root/models"
+            else -> "$root/v1/models"
+        }
+        runCatching {
+            val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "GET"
+                if (anthropicStyle) {
+                    setRequestProperty("x-api-key", cfg.apiKey)
+                    setRequestProperty("anthropic-version", LlmConfig.ANTHROPIC_VERSION)
+                } else {
+                    setRequestProperty("Authorization", "Bearer ${cfg.apiKey}")
+                }
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("User-Agent", "whale-song")
+                connectTimeout = 15_000
+                readTimeout = 20_000
+            }
+            try {
+                val code = conn.responseCode
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) error("HTTP $code：${text.take(200)}")
+                val items = org.json.JSONObject(text).optJSONArray("data")
+                    ?: error("响应里没有 data 数组")
+                val names = buildList {
+                    for (i in 0 until items.length()) {
+                        val id = items.optJSONObject(i)?.optString("id").orEmpty()
+                        if (id.isNotBlank()) add(id)
+                    }
+                }.distinct()
+                if (names.isEmpty()) error("模型列表为空")
+                names.sorted()
+            } finally {
+                conn.disconnect()
+            }
+        }
+    }
+
+    /**
      * 测试连接：发一条最小请求（max_tokens=32，无工具、无 system），只验证端点/密钥/模型名。
      * 对应 Operit 模型配置页的「测试连接」。
      */
     suspend fun testConnection(): String = withContext(Dispatchers.IO) {
         val cfg = llmConfig()
         if (cfg.apiKey.isBlank()) {
-            return@withContext "连接失败：未配置${if (settings.providerId == SettingsStore.PROVIDER_DEEPSEEK_ACCOUNT) "账号令牌" else " API 密钥"}"
+            return@withContext "连接失败：未配置 API 密钥"
         }
         val request = ApiRequest(
             model = settings.model,
@@ -3382,7 +3791,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
         var reply = StringBuilder()
         var failure: String? = null
-        client.stream(request, cfg).collect { event ->
+        val events = if (settings.protocol == "openai") {
+            openAiClient.stream(request, cfg)
+        } else {
+            client.stream(request, cfg)
+        }
+        events.collect { event ->
             when (event) {
                 is LlmEvent.TextDelta -> reply.append(event.text)
                 is LlmEvent.Failed -> failure = event.message
@@ -3396,12 +3810,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun providerLabel(): String =
-        if (settings.providerId == SettingsStore.PROVIDER_DEEPSEEK_ACCOUNT) "deepseek-account" else "deepseek"
+    private fun providerLabel(): String = when (settings.providerId) {
+        SettingsStore.PROVIDER_ANTHROPIC -> "anthropic"
+        SettingsStore.PROVIDER_OPENAI,
+        SettingsStore.PROVIDER_OPENAI_COMPATIBLE -> "openai"
+        else -> "deepseek"
+    }
 
     private fun llmConfig(): LlmConfig = LlmConfig(
-        apiKey = if (settings.providerId == SettingsStore.PROVIDER_DEEPSEEK_ACCOUNT) settings.accountToken else settings.apiKey,
-        authMode = if (settings.providerId == SettingsStore.PROVIDER_DEEPSEEK_ACCOUNT) AuthMode.ACCOUNT else AuthMode.API_KEY,
+        apiKey = settings.apiKey,
         baseUrl = settings.baseUrl,
         model = settings.model,
         maxTokens = settings.maxTokens,
@@ -3598,6 +4015,67 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (settings.timeContext) TimeContext.Config(zone = ZoneId.systemDefault()) else null
 
     /**
+     * 角色卡人设（M71）：上游 `dsh-persona` 的 `deployment:persona-prefix`（order 0）。
+     * 空 = 用上游默认段（"You are a coding agent powered by the {{model}} model."）；
+     * 非空 = 整段替换，并在前面补一句名字，让模型知道自己在这个 App 里叫什么。
+     */
+    private fun personaPrefixText(): String {
+        val persona = settings.assistantPersona.trim()
+        if (persona.isEmpty()) return ""
+        val name = settings.assistantName.trim()
+        return buildString {
+            if (name.isNotEmpty()) {
+                append("你的名字是「").append(name).append("」。")
+                append("\n\n")
+            }
+            append(persona)
+        }
+    }
+
+    /**
+     * 插件用 `ctx.systemPrompt.section` 注册的段（M57）：交给 [PromptPack.systemFor] 和宿主段一起
+     * 按 order/name 排序，同名段后注册的覆盖前面的（插件人设走同一条路，不额外拼在最后）。
+     * `complete:true` 会整体接管 system，手机版不启用（权限过大）。
+     */
+    private fun pluginPromptSections(): List<xin.dshaa.core.prompt.PromptSection> =
+        pluginsUi
+            .filter { it.enabled }
+            .flatMap { it.promptSections.filterNot { section -> section.complete } }
+            .map { section ->
+                xin.dshaa.core.prompt.PromptSection(
+                    name = section.name,
+                    order = section.order,
+                    text = section.text,
+                )
+            }
+
+    /**
+     * 插件用 `ctx.systemPrompt.variable(name, fn)` 求值出的变量（M74）：段文本里的 `{{name}}`
+     * 由 [PromptPack.systemFor] 替换。只取**启用中**插件的变量；同名的后注册覆盖（和段一致）。
+     */
+    private fun pluginPromptVariables(): Map<String, String> {
+        val merged = LinkedHashMap<String, String>()
+        pluginsUi.filter { it.enabled }.forEach { merged.putAll(it.promptVariables) }
+        return merged
+    }
+
+    /**
+     * 插件用 `ctx.systemPrompt.context` 注册的运行时上下文：DSH 里它是 **user-role 快照**
+     * （不是 system），所以并进 [runtimeContextText] 的同一个 user 消息，按 order/name 排序。
+     * M74：段文本里的 `{{name}}` 和 system 段一样做变量替换（插件常在两处写同一套占位符）。
+     */
+    private fun pluginContextText(): String {
+        val variables = pluginPromptVariables()
+        return pluginsUi
+            .filter { it.enabled }
+            .flatMap { it.contexts }
+            .sortedWith(compareBy({ it.order }, { it.name }))
+            .map { promptPack.interpolate(it.text.trim(), settings.model, providerLabel(), variables) }
+            .filter { it.isNotEmpty() }
+            .joinToString("\n\n")
+    }
+
+    /**
      * 运行时上下文快照（逐字对齐上游模板；Android 固定 danger-full-access + 审批策略按设置映射）。
      * 子代理额外追加：固定权限范围自述 + 深度用尽提示（上游 `SUBAGENT_DELEGATION_CONTEXT` /
      * `tool:subagent:depth` 两个 context contribution）。
@@ -3628,6 +4106,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (depth > 0 && depth >= MAX_AGENT_DEPTH) {
                 append("\n\n")
                 append(AgentRegistry.depthContext("subagent", depth, MAX_AGENT_DEPTH))
+            }
+            // 插件上下文（ctx.systemPrompt.context）就在这条 user 快照末尾（M71）
+            val pluginContext = pluginContextText()
+            if (pluginContext.isNotEmpty()) {
+                append("\n\n")
+                append(pluginContext)
             }
         }
     }

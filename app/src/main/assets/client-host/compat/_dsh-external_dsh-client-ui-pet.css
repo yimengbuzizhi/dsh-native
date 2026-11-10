@@ -1,0 +1,18 @@
+/*
+ * 宿主兼容样式：dsh-client-ui-pet（@dsh-external/dsh-client-ui-pet）。
+ *
+ * 只修 WebView 里才会出现的布局时序问题，不改插件逻辑：
+ * mount() 恢复吸附点时，<img> 还没撑开高度，pet.getBoundingClientRect().height = 0，
+ * 于是 snapPoints() 的 corner-br 被算成 top = innerHeight - 0 - 16 = 364，
+ * 宠物只剩 16px 露在窗口里（之后 top/bottom 同时存在，高度还会被压成 0）。
+ *
+ * - min-height：mount 前就给根元素高度，吸附点按 130px 计算；
+ * - 插件一旦写过 inline top（拖拽/吸附），就不要再保留 bottom，否则高度被压扁。
+ */
+[data-dsh-pet='root'] {
+  min-height: 130px;
+}
+
+[data-dsh-pet='root'][style*='top:'] {
+  bottom: auto !important;
+}

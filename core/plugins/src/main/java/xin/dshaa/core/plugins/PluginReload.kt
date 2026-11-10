@@ -43,6 +43,14 @@ object PluginReload {
             config = if (schema != null) PluginSchema.prune(schema, record.config) else "{}",
             configDefaults = PluginSchema.effectiveText(schema, "{}", manifest.configDefaults?.toString()),
             configError = run.configError,
+            clientUi = manifest.clientUi,
+            bundlePatch = manifest.bundlePatch,
+            enginesDsh = manifest.enginesDsh,
+            promptSections = run.promptSections,
+            contexts = run.contexts,
+            promptVariables = run.promptVariables,
+            commands = run.commands,
+            unsupported = run.unsupported,
         )
     }
 }

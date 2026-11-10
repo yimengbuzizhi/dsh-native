@@ -5,14 +5,14 @@
 >
 > **依据版本（已交叉核对）**
 > - **上游权威源**：`@deepseek-ai/dsh@0.2.2-rc.1`，pnpm 提升目录（329 包，扁平）
->   `<workspace>\native\.upstream\oracle\node_modules\.pnpm\node_modules\@deepseek-ai\`（下称 `<UP>`）。
+>   `D:\dsh\native\.upstream\oracle\node_modules\.pnpm\node_modules\@deepseek-ai\`（下称 `<UP>`）。
 >   ⚠ 不要走 `node_modules\@deepseek-ai\dsh\node_modules`（符号链接，PowerShell 解析会失败）。
 > - **旧内核对照**：`@deepseek-ai/dsh@0.2.1-rc.2` 全量树
->   `<workspace>\rebuild-v17\buildenv-pc\devhome\dshroot\lib\node_modules\@deepseek-ai\dsh\node_modules\@deepseek-ai\`（309 包，下称 `<TREE>`）。
+>   `D:\dsh\rebuild-v17\buildenv-pc\devhome\dshroot\lib\node_modules\@deepseek-ai\dsh\node_modules\@deepseek-ai\`（309 包，下称 `<TREE>`）。
 > - **实际输出（wire 级）**：桌面版 0.2.2 真机会话夹具
->   `<workspace>\native\parity\fixtures\desktop-0.2.2\`（`system-message.json` / `request-header.json` / `tools.json`），
->   以及已打包资源 `<workspace>\native\core\prompt\src\main\resources\prompt\0.2.2-rc.1\`。
-> - **手机改版**：`<workspace>\release-src\dsh-patches\overlay-021\`（15 个补丁包，**不改协议层**，见 §9.3）。
+>   `D:\dsh\native\parity\fixtures\desktop-0.2.2\`（`system-message.json` / `request-header.json` / `tools.json`），
+>   以及已打包资源 `D:\dsh\native\core\prompt\src\main\resources\prompt\0.2.2-rc.1\`。
+> - **手机改版**：`D:\dsh\release-src\dsh-patches\overlay-021\`（15 个补丁包，**不改协议层**，见 §9.3）。
 >
 > 结论：0.2.1 → 0.2.2 的**请求体键序、请求头集合、SSE 事件集、五个核心工具 schema 全部逐字不变**；
 > 新增的只有两个 prompt 段位（`apply_patch`/`schedule`）和一个默认关闭的工具。差异清单见 §0.1。
@@ -989,7 +989,7 @@ core/prompt/src/main/java/xin/dshaa/core/prompt/PromptPack.kt  # 只负责加载
 
 ### 8.3 生成流程（工具机跑，仓库里只放产物）
 
-1. **抓取**（已有脚本雏形 `<workspace>\native\extract-fixture.cjs`）：从一条真实会话的 `session.v4.jsonl.zstd` 里取
+1. **抓取**（已有脚本雏形 `D:\dsh\native\extract-fixture.cjs`）：从一条真实会话的 `session.v4.jsonl.zstd` 里取
    - **最后一条** `type=="system/message"`（不是第一条！第一条可能早于插件挂载）的 `data.message.content[*].text` 拼接 → `system.txt`
    - `type=="request/header"` 的 `data.header.tools` → `tools.json`
    - 同事件的 `data.header.config` → `config.json`
@@ -1016,8 +1016,8 @@ core/prompt/src/main/java/xin/dshaa/core/prompt/PromptPack.kt  # 只负责加载
 ## 9. 取材台账（实际读过的文件与行号）
 
 > 两组路径前缀：
-> `<UP>` = `<workspace>\native\.upstream\oracle\node_modules\.pnpm\node_modules\@deepseek-ai`（**0.2.2-rc.1，权威**）
-> `<TREE>` = `<workspace>\rebuild-v17\buildenv-pc\devhome\dshroot\lib\node_modules\@deepseek-ai\dsh\node_modules\@deepseek-ai`（0.2.1-rc.2，对照）
+> `<UP>` = `D:\dsh\native\.upstream\oracle\node_modules\.pnpm\node_modules\@deepseek-ai`（**0.2.2-rc.1，权威**）
+> `<TREE>` = `D:\dsh\rebuild-v17\buildenv-pc\devhome\dshroot\lib\node_modules\@deepseek-ai\dsh\node_modules\@deepseek-ai`（0.2.1-rc.2，对照）
 > 若同一项两版都在，行号以 `<UP>` 为准，`<TREE>` 仅用于确认差异。
 
 ### 9.0 上游 0.2.2-rc.1 关键位置（权威）
@@ -1103,7 +1103,7 @@ core/prompt/src/main/java/xin/dshaa/core/prompt/PromptPack.kt  # 只负责加载
 | `<TREE>\dsh-deepseek-llm-api-extensions\lib\types\index.js` | 43-116 | 顶层扩展字段注册表 |
 | `<TREE>\dsh-base\cordis.patch.yml` | 全 529 行 | 基础插件表（工具挂载全貌） |
 | `<TREE>\dsh-web-app\presets\standard.patch.yml` | 全 128 行 | 默认 preset 的工具集与 persona |
-| `<workspace>\release-src\config\cordis.patch.yml` | 1-79 | 手机版差异（禁 bash-sandbox/pwsh-sandbox、加设备插件） |
+| `D:\dsh\release-src\config\cordis.patch.yml` | 1-79 | 手机版差异（禁 bash-sandbox/pwsh-sandbox、加设备插件） |
 
 ### 9.3 手机改版（overlay-021）与上游的差异
 

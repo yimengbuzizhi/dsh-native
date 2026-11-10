@@ -97,6 +97,14 @@ interface TurnUi {
     /** token 用量文案（如 `123 in / 45 out`）。 */
     fun setUsage(text: String?)
 
+    /**
+     * 本 step 的 token 用量（数字版，M72）。
+     *
+     * [setUsage] 只给文案（界面用），宿主侧统计（鲸鱼娘挂件的「投喂 token 换功德」）需要数字；
+     * 引擎每个 step 成功收口时调一次，宿主按轮累加。默认空实现，宿主不关心时不用管。
+     */
+    fun setTokenUsage(inputTokens: Int, outputTokens: Int) {}
+
     /** 目标条快照（null = 没有目标）。 */
     fun setGoal(view: GoalView?)
 

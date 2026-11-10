@@ -561,6 +561,8 @@ class TurnEngine(private val deps: EngineDeps) {
                 assistant = assistant.copy(streaming = false)
                 ui.updateMessage(assistantIndex, assistant)
                 ui.setUsage(if (inputTokens + outputTokens > 0) "$inputTokens in / $outputTokens out" else null)
+                // 数字版用量（M72）：客户端插件（鲸鱼娘挂件）按上游规则把 token 折成功德。
+                if (inputTokens + outputTokens > 0) ui.setTokenUsage(inputTokens, outputTokens)
 
                 val toolCalls = calls.values.sortedBy { it.index }.mapNotNull { c ->
                     if (c.name == null || c.id == null) null else ToolCall(c.id!!, c.name!!, c.args.toString().ifBlank { "{}" })

@@ -23,14 +23,11 @@ import java.util.concurrent.TimeUnit
  * DeepSeek 的 Anthropic Messages 通道。
  * 与上游 `dsh-llm-deepseek` 一致：`{baseURL}/v1/messages` + `x-api-key`。
  */
-enum class AuthMode { API_KEY, ACCOUNT }
-
 data class LlmConfig(
     val apiKey: String,
-    val authMode: AuthMode = AuthMode.API_KEY,
     val baseUrl: String = DEFAULT_BASE_URL,
     val model: String = "deepseek-flash",
-    val maxTokens: Int = 256_000,
+    val maxTokens: Int = 8_192,
     val temperature: Double? = null,
 ) {
     companion object {
@@ -88,7 +85,7 @@ class LlmClient(
         val httpRequest = Request.Builder()
             .url(messagesUrl(config.baseUrl))
             .post(body)
-            .apply { if (config.authMode == AuthMode.ACCOUNT) header("x-dsh-auth-token", config.apiKey) else header("x-api-key", config.apiKey) }
+            .header("x-api-key", config.apiKey)
             .header("anthropic-version", LlmConfig.ANTHROPIC_VERSION)
             .header("Content-Type", "application/json")
             .header("Accept", "text/event-stream")

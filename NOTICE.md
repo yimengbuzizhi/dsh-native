@@ -6,7 +6,7 @@
 
 - 仓库：https://github.com/AAswordman/Operit
 - 许可：LGPL-3.0
-- 本地只读副本（开发时使用，不随本仓库分发）
+- 本地只读副本：`native/.thirdparty-src/Operit`（gitignored，不随本仓库分发）
 - 复制/改写清单（2026-11-07，照 `docs/16-Operit源码精读-UI.md` 的精读结论）：
 
 | 本项目文件 | Operit 来源 | 性质 |
@@ -38,6 +38,21 @@
 - 用途：workflow 的 JS 引擎（`core:js` + `core:workflow`）；JNI 桥 `core/js/src/main/cpp/js_bridge.cpp` 为自写。
 - 参考了 Operit `quickjs/quickjs_jni.cpp` 的 JNI 形态（LGPL-3.0，未逐行复制）。
 
+
+### Operit 自带包（ToolPkg，M67 起随 App 打包）
+
+- 目录：`app/src/main/assets/operit-packages/`（31 个 `.js` 原样 + `LICENSE` + `NOTICE.md`）
+- 来源：https://github.com/AAswordman/Operit 的 `app/src/main/assets/packages/*.js`，
+  检出提交 `d16211b`；许可 LGPL-3.0（见该目录 `LICENSE`）。
+- 由 `core/plugins/ToolPkg.kt` + `core/plugins/ToolPkgTools.kt` 的 `Tools.*` / OkHttp / toolCall
+  兼容层执行，**包内源码未修改**；安装入口在「包管理 → 包」tab。
+
+### 客户端插件宿主的运行时（M70 起）
+
+- `app/src/main/assets/client-host/vendor/react.js` / `react-dom.js`：React 18.3.1 UMD
+  （MIT，Copyright (c) Meta Platforms, Inc. and affiliates），用于加载 DSH 插件的 `dsh.client` 界面。
+- 宿主页 `client-host/index.html` / `host.js` / `adapters/*` / `compat/*` 均为本项目自写；
+  **插件本体不随 APK 分发**，由用户自行导入到 `files/plugins/`。
 
 ## RikkaHub（me.rerere.rikkahub）
 

@@ -89,10 +89,7 @@ class WebSearchClient(
         val request = Request.Builder()
             .url(messagesUrl(config.baseUrl))
             .post(body.toString().toRequestBody(JSON))
-            .apply {
-                if (config.authMode == AuthMode.ACCOUNT) header("x-dsh-auth-token", config.apiKey)
-                else header("x-api-key", config.apiKey)
-            }
+            .header("x-api-key", config.apiKey)
             .header("anthropic-version", LlmConfig.ANTHROPIC_VERSION)
             .header("Content-Type", "application/json")
             .build()

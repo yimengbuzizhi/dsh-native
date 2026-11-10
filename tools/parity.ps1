@@ -31,7 +31,7 @@ param(
     [string]$B,
     [string]$Report = 'parity\reports\verify.json',
 
-    [string]$Device = '100.112.121.100:35757',
+    [string]$Device = '192.0.2.10:35757',
     [string]$Adb = 'C:\Android\platform-tools\adb.exe',
     [string]$Package = 'xin.dshaa.nativeapp',
     [string]$JdkHome = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot',

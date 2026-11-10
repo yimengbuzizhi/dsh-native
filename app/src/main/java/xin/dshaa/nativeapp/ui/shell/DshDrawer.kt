@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Workspaces
 import androidx.compose.material3.AlertDialog
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import xin.dshaa.core.model.SessionSummary
 import xin.dshaa.nativeapp.chat.SessionBadge
+import xin.dshaa.nativeapp.data.AssistantProfile
 import xin.dshaa.nativeapp.data.WorkspaceUi
 import xin.dshaa.nativeapp.ui.Screen
 import xin.dshaa.ui.design.component.DshAvatar
@@ -91,6 +93,10 @@ fun DshDrawer(
     workspaces: List<WorkspaceUi>,
     assistantName: String,
     assistantAvatar: String,
+    assistantProfiles: List<AssistantProfile> = emptyList(),
+    activeAssistantId: String = "",
+    onSwitchAssistant: (String) -> Unit = {},
+    onManageAssistants: () -> Unit = {},
     model: String,
     toolCount: Int,
     badgeFor: (String?) -> SessionBadge?,
@@ -106,6 +112,7 @@ fun DshDrawer(
 ) {
     val c = DshTheme2.colors
     var workspaceSheet by remember { mutableStateOf(false) }
+    var assistantSheet by remember { mutableStateOf(false) }
     var menuFor by remember { mutableStateOf<SessionSummary?>(null) }
     var renameFor by remember { mutableStateOf<SessionSummary?>(null) }
     var deleteFor by remember { mutableStateOf<SessionSummary?>(null) }
@@ -181,6 +188,49 @@ fun DshDrawer(
                         )
                     }
                     Icon(Icons.Rounded.ExpandMore, "切换工作区", tint = c.sub, modifier = Modifier.size(20.dp))
+                }
+            }
+
+            // ---- 助手切换器（M73）：工作区下面、新对话上面，和上面那格同一种卡片 ----
+            Spacer(Modifier.height(8.dp))
+            Surface(
+                onClick = { assistantSheet = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = c.surfaceAlt,
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(c.brandSoft),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Rounded.Person, null, tint = c.brand, modifier = Modifier.size(19.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            assistantName.ifBlank { "鲸歌" },
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = c.text,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            buildString {
+                                append("助手配置")
+                                if (assistantProfiles.size > 1) append(" · 共 ${assistantProfiles.size} 份")
+                                append(" · 点这里切换")
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = c.faint,
+                            maxLines = 1,
+                        )
+                    }
+                    Icon(Icons.Rounded.ExpandMore, "切换助手配置", tint = c.sub, modifier = Modifier.size(20.dp))
                 }
             }
 
@@ -283,6 +333,22 @@ fun DshDrawer(
             onManage = {
                 workspaceSheet = false
                 onManageWorkspaces()
+            },
+        )
+    }
+
+    if (assistantSheet) {
+        AssistantSwitcherSheet(
+            profiles = assistantProfiles,
+            activeId = activeAssistantId,
+            onDismiss = { assistantSheet = false },
+            onSwitch = { id ->
+                assistantSheet = false
+                onSwitchAssistant(id)
+            },
+            onManage = {
+                assistantSheet = false
+                onManageAssistants()
             },
         )
     }
@@ -514,6 +580,74 @@ private fun WorkspaceSwitcherSheet(
                     },
                 )
             }
+        }
+    }
+}
+
+/** 助手配置切换面板（M73）：列出全部角色卡，点一条就切过去。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AssistantSwitcherSheet(
+    profiles: List<AssistantProfile>,
+    activeId: String,
+    onDismiss: () -> Unit,
+    onSwitch: (String) -> Unit,
+    onManage: () -> Unit,
+) {
+    val c = DshTheme2.colors
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = c.surface,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("助手", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = c.text)
+                Spacer(Modifier.weight(1f))
+                Text("${profiles.size} 份", style = MaterialTheme.typography.labelMedium, color = c.faint)
+            }
+            Text(
+                "切换当前使用的角色卡：人设进 deployment:persona-prefix、系统提示词进 persona-suffix，下一轮请求生效。",
+                style = MaterialTheme.typography.bodySmall,
+                color = c.sub,
+                modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
+            )
+            LazyColumn(Modifier.heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(profiles, key = { it.id }) { profile ->
+                    val isActive = profile.id == activeId
+                    Surface(
+                        onClick = { if (!isActive) onSwitch(profile.id) else onDismiss() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isActive) c.brandSoft else c.surfaceAlt,
+                    ) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            DshAvatar(avatar = profile.avatar, name = profile.name, size = 36.dp, corner = 12.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    profile.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isActive) c.brand else c.text,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    profile.summary(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = c.faint,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            if (isActive) Icon(Icons.Rounded.Check, "当前使用", tint = c.brand, modifier = Modifier.size(19.dp))
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            SheetButton("管理助手配置", Icons.Rounded.Settings, primary = true, modifier = Modifier.fillMaxWidth()) { onManage() }
         }
     }
 }

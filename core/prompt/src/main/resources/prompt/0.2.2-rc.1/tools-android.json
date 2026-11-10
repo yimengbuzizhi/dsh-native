@@ -235,5 +235,130 @@
       "required": ["session_id"],
       "additionalProperties": false
     }
+  },
+  {
+    "name": "query_memory",
+    "description": "Search the local memory library (a knowledge graph of saved memories). Returns matching memories as blocks with Title/Content/Source/Tags/Created separated by ---. Use it when the user refers to something you may have saved before, or before create_memory to avoid duplicates. Query is split on whitespace; use | for alternatives; * returns everything in scope.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": { "type": "string", "description": "Keywords to search for. Required and must not be empty." },
+        "folder_path": { "type": "string", "description": "Optional folder path to restrict the search (subfolders included)." },
+        "limit": { "type": "integer", "description": "Maximum memories to return (default 20; * without limit returns everything)." },
+        "threshold": { "type": "number", "description": "Optional relevance threshold; defaults to 0, matching Operit's tool default." }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_memory_by_title",
+    "description": "Read one memory by its exact title. For a document memory, pass chunk_index (1-based) or chunk_range like \"3-7\" or a query to read matching chunks instead of the whole document.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Exact memory title." },
+        "chunk_index": { "type": "integer", "description": "Optional 1-based chunk index for document memories." },
+        "chunk_range": { "type": "string", "description": "Optional chunk range for document memories, e.g. \"3-7\"." },
+        "query": { "type": "string", "description": "Optional query to select matching chunks inside a document." },
+        "limit": { "type": "integer", "description": "Maximum chunks to include (default 20)." }
+      },
+      "required": ["title"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "create_memory",
+    "description": "Create a memory node in the local memory library. Use it to save durable facts, user preferences, project decisions and important context that should survive this conversation. Never save secrets, API keys or tokens.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Short unique title." },
+        "content": { "type": "string", "description": "Full memory content." },
+        "content_type": { "type": "string", "description": "Optional MIME type (default text/plain)." },
+        "source": { "type": "string", "description": "Optional source label (default ai_created)." },
+        "folder_path": { "type": "string", "description": "Optional folder path such as 工作/项目A." },
+        "tags": { "type": "string", "description": "Optional comma-separated tags (e.g. Person,Concept)." }
+      },
+      "required": ["title", "content"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "update_memory",
+    "description": "Update an existing memory identified by old_title. Only provided fields change; content, folder and tags keep their previous values when omitted.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "old_title": { "type": "string", "description": "Exact title of the memory to update." },
+        "new_title": { "type": "string", "description": "Optional new title." },
+        "content": { "type": "string", "description": "Optional new content." },
+        "content_type": { "type": "string", "description": "Optional new MIME type." },
+        "source": { "type": "string", "description": "Optional new source label." },
+        "credibility": { "type": "number", "description": "Optional credibility 0..1." },
+        "importance": { "type": "number", "description": "Optional importance 0..1." },
+        "folder_path": { "type": "string", "description": "Optional folder path; empty string moves the memory to uncategorized." },
+        "tags": { "type": "string", "description": "Optional comma-separated tags; replaces the old tag list." }
+      },
+      "required": ["old_title"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "delete_memory",
+    "description": "Delete a memory by exact title, together with its links and document chunks. Irreversible.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Exact title of the memory to delete." }
+      },
+      "required": ["title"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "link_memories",
+    "description": "Create a typed semantic link between two memories. This builds the knowledge graph and improves retrieval.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "source_title": { "type": "string", "description": "Exact title of the source memory." },
+        "target_title": { "type": "string", "description": "Exact title of the target memory." },
+        "link_type": { "type": "string", "description": "Relation type such as related/causes/explains/part_of/contradicts (default related)." },
+        "weight": { "type": "number", "description": "Link strength 0..1 (default 0.7)." },
+        "description": { "type": "string", "description": "Optional context about the relationship." }
+      },
+      "required": ["source_title", "target_title"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "query_memory_links",
+    "description": "Query links in the memory graph by link_id, source_title, target_title and/or link_type. Use it before updating or deleting a link.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "link_id": { "type": "integer", "description": "Optional exact link id." },
+        "source_title": { "type": "string", "description": "Optional exact source memory title." },
+        "target_title": { "type": "string", "description": "Optional exact target memory title." },
+        "link_type": { "type": "string", "description": "Optional relation type filter." },
+        "limit": { "type": "integer", "description": "Maximum links to return (default 20)." }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "move_memory",
+    "description": "Move memories to a folder. Provide titles (comma separated) or source_folder_path; target_folder_path is required. The folder path is created implicitly.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "titles": { "type": "string", "description": "Optional comma-separated memory titles to move." },
+        "source_folder_path": { "type": "string", "description": "Optional source folder: moves all memories directly in it." },
+        "target_folder_path": { "type": "string", "description": "Required target folder path." }
+      },
+      "required": ["target_folder_path"],
+      "additionalProperties": false
+    }
   }
 ]

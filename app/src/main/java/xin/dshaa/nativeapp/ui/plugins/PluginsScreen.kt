@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
@@ -106,6 +107,8 @@ fun PluginsScreen(
     workspacePath: String,
     initialDetailId: String? = null,
     onOpenDrawer: () -> Unit,
+    /** 从设置进来时顶栏改成返回箭头（M74）。 */
+    onBack: (() -> Unit)? = null,
     onRefresh: () -> Unit,
     onImport: (Uri) -> Unit,
     onToggle: (String, Boolean) -> Unit,
@@ -114,6 +117,8 @@ fun PluginsScreen(
     onGrant: (String, String) -> Unit,
     onSetConfig: (String, String) -> Unit,
     onDismissNotice: () -> Unit,
+    /** M70：打开插件自己的 `dsh.client` 界面（通用宿主，不再是按插件写死的原生窗口）。 */
+    onOpenPluginWindow: (PluginRecord) -> Unit = {},
 ) {
     val c = DshTheme2.colors
     // 详情按 id 从最新的 plugins 里取：授权/重新加载后弹层立刻翻状态，不拿旧 record。
@@ -142,10 +147,14 @@ fun PluginsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(40.dp).clip(CircleShape).clickable { onOpenDrawer() },
+                Modifier.size(40.dp).clip(CircleShape).clickable { if (onBack != null) onBack() else onOpenDrawer() },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.Menu, "菜单", tint = c.text, modifier = Modifier.size(23.dp))
+                if (onBack != null) {
+                    Icon(Icons.Rounded.ArrowBack, "返回设置", tint = c.text, modifier = Modifier.size(23.dp))
+                } else {
+                    Icon(Icons.Rounded.Menu, "菜单", tint = c.text, modifier = Modifier.size(23.dp))
+                }
             }
             Spacer(Modifier.width(4.dp))
             Column(Modifier.weight(1f)) {
@@ -249,6 +258,7 @@ fun PluginsScreen(
             },
             onGrant = { raw -> onGrant(record.id, raw) },
             onSetConfig = { text -> onSetConfig(record.id, text) },
+            onOpenWindow = { onOpenPluginWindow(record) },
         )
     }
 
@@ -475,7 +485,7 @@ private fun PluginCard(
 }
 
 @Composable
-private fun PluginDetailDialog(
+internal fun PluginDetailDialog(
     record: PluginRecord,
     injectedTools: Set<String>,
     onDismiss: () -> Unit,
@@ -483,6 +493,7 @@ private fun PluginDetailDialog(
     onDelete: () -> Unit,
     onGrant: (String) -> Unit,
     onSetConfig: (String) -> Unit,
+    onOpenWindow: (() -> Unit)? = null,
 ) {
     val c = DshTheme2.colors
     val error = record.error
@@ -518,6 +529,88 @@ private fun PluginDetailDialog(
                     DetailField("插件目录", record.path)
                     DetailField("入口", record.main)
                     DetailField("工具数", "${record.tools.size} 个 · 已接入对话 ${injectedTools.size} 个")
+                    if (record.clientUi) {
+                        // M71：原生替身（大肥鱼 / 3D 鲸鱼娘 / 鲸鱼娘挂件）全部删除，
+                        // dsh.client 只走通用客户端插件宿主（跑插件自己的代码）。
+                        DetailField(
+                            "界面扩展",
+                            "含浏览器半侧（dsh.client）：鲸歌用通用客户端插件宿主跑插件自己的 client.js" +
+                                "（下方「打开插件窗口」），不再按插件重画；桌面专属的原生 Helper（Electron/Qt/PowerShell）" +
+                                "不能在 Android 执行。",
+                        )
+                        if (onOpenWindow != null) {
+                            Spacer(Modifier.height(8.dp))
+                            TextButton(onClick = onOpenWindow) {
+                                Icon(
+                                    Icons.Rounded.KeyboardArrowRight,
+                                    null,
+                                    tint = c.brand,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("打开插件窗口", color = c.brand)
+                            }
+                        }
+                    }
+                    record.bundlePatch?.let { DetailField("组合包补丁", it) }
+                    if (record.bundleChildren.isNotEmpty()) {
+                        Text(
+                            "组合包 insert（只展示，不自动安装）",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = c.sub,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        record.bundleChildren.forEach { child ->
+                            Text(
+                                "· ${child.name}" +
+                                    (if (child.id != child.name) "（id ${child.id}）" else "") +
+                                    (if (child.disabled) " · 默认停用" else "") +
+                                    (if (child.inject.isNotEmpty()) " · inject ${child.inject.joinToString(",")}" else ""),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (child.disabled) c.faint else c.sub,
+                            )
+                        }
+                        if (record.bundleNotes.isNotEmpty()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "未执行的补丁条目：" + record.bundleNotes.joinToString("；"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = c.warn,
+                            )
+                        }
+                        Spacer(Modifier.height(10.dp))
+                    }
+                    record.enginesDsh?.let { DetailField("要求 DSH 版本", it) }
+                    if (record.promptSections.isNotEmpty()) {
+                        DetailField(
+                            "提示词段",
+                            record.promptSections.joinToString("\n") { "· ${it.name}（order ${it.order}）" } +
+                                if (record.promptSections.any { it.complete }) "\n（complete=true 手机版不启用）" else "",
+                        )
+                    }
+                    if (record.commands.isNotEmpty()) {
+                        DetailField(
+                            "命令",
+                            record.commands.joinToString("\n") { "· /${it.name}${if (it.description.isBlank()) "" else " — ${it.description}"}" } +
+                                "\n（输入 /名字 直接执行，结果走命令提示条，不进模型历史）",
+                        )
+                    }
+                    if (record.unsupported.isNotEmpty()) {
+                        Text(
+                            "用到但鲸歌未支持的能力",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = c.warn,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            record.unsupported.joinToString("、"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = c.warn,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
                     if (record.permissions.isNotEmpty()) {
                         Text(
                             "权限（manifest 声明）",

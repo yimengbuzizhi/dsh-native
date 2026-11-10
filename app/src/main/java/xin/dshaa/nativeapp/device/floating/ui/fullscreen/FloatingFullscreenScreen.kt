@@ -262,7 +262,7 @@ fun FloatingFullscreenScreen(
                         reverseLayout = true,
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        items(messages.takeLast(100), key = { it.id }) { message ->
+                        items(messages.takeLast(100).asReversed(), key = { it.id }) { message ->
                             FullscreenMessage(message)
                         }
                     }

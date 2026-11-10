@@ -4,4 +4,7 @@
     <files-path name="files" path="." />
     <!-- 聊天输入条「拍照」的临时原图（cache/camera/chat-*.jpg），交给系统相机写入 -->
     <cache-path name="cache" path="." />
+    <!-- M67：插件 Tools.Files.open/share 要分享共享存储里的文件（工作区就是 /sdcard） -->
+    <external-path name="external" path="." />
+    <root-path name="root" path="." />
 </paths>

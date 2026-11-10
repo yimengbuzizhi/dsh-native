@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Terminal
@@ -75,6 +76,8 @@ import java.util.Locale
 fun JobsScreen(
     jobs: List<JobUi>,
     onOpenDrawer: () -> Unit,
+    /** 从设置进来时顶栏改成返回箭头（M74）。 */
+    onBack: (() -> Unit)? = null,
     onRefresh: () -> Unit,
     onStop: (String) -> Unit,
     onPeek: (String) -> JobUi?,
@@ -122,10 +125,14 @@ fun JobsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(40.dp).clip(CircleShape).clickable { onOpenDrawer() },
+                Modifier.size(40.dp).clip(CircleShape).clickable { if (onBack != null) onBack() else onOpenDrawer() },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.Menu, "菜单", tint = c.text, modifier = Modifier.size(23.dp))
+                if (onBack != null) {
+                    Icon(Icons.Rounded.ArrowBack, "返回设置", tint = c.text, modifier = Modifier.size(23.dp))
+                } else {
+                    Icon(Icons.Rounded.Menu, "菜单", tint = c.text, modifier = Modifier.size(23.dp))
+                }
             }
             Spacer(Modifier.width(4.dp))
             Column(Modifier.weight(1f)) {

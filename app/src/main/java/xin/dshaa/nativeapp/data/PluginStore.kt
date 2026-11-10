@@ -2,6 +2,7 @@ package xin.dshaa.nativeapp.data
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -12,6 +13,7 @@ import xin.dshaa.core.js.JsOutcome
 import xin.dshaa.core.js.JsStatus
 import xin.dshaa.core.js.QuickJs
 import xin.dshaa.core.plugins.ArchiveRead
+import xin.dshaa.core.plugins.BundlePatchParser
 import xin.dshaa.core.plugins.ManifestRead
 import xin.dshaa.core.plugins.PackageParse
 import xin.dshaa.core.plugins.PluginDryRun
@@ -22,6 +24,8 @@ import xin.dshaa.core.plugins.PluginRecord
 import xin.dshaa.core.plugins.PluginRegistryFile
 import xin.dshaa.core.plugins.PluginReload
 import xin.dshaa.core.plugins.PluginSchema
+import xin.dshaa.core.plugins.PluginFile
+import xin.dshaa.core.plugins.ToolPkg
 import java.io.File
 
 /**
@@ -184,6 +188,11 @@ class PluginStore(private val context: Context) {
                 config = if (newSchema != null) PluginSchema.prune(newSchema, record.config) else "{}",
                 configDefaults = PluginSchema.effectiveText(newSchema, "{}", record.configDefaults),
                 configError = run.configError,
+                promptSections = run.promptSections,
+                contexts = run.contexts,
+                promptVariables = run.promptVariables,
+                commands = run.commands,
+                unsupported = run.unsupported,
             )
         }
         registry.upsert(updated)
@@ -235,10 +244,33 @@ class PluginStore(private val context: Context) {
         dir.deleteRecursively()
         if (!dir.mkdirs()) return Result(false, "建不了插件目录（存储满了/没权限）")
 
-        val writeError = runCatching { writeFiles(dir, parsed.files) }.exceptionOrNull()
+        // M63：Operit 自带包（METADATA + exports）在这里包成 DSH 插件；原文件留档 toolpkg-original.js。
+        val files = parsed.files.toMutableList()
+        val mainIndex = files.indexOfFirst { it.path == manifest.main }
+        if (mainIndex >= 0) {
+            val original = files[mainIndex].bytes
+            val source = original.toString(Charsets.UTF_8)
+            if (ToolPkg.isToolPkg(source)) {
+                files[mainIndex] = PluginFile(manifest.main, ToolPkg.wrap(source).toByteArray(Charsets.UTF_8))
+                if (files.none { it.path == "toolpkg-original.js" }) {
+                    files.add(PluginFile("toolpkg-original.js", original))
+                }
+                Log.i("DshPlugin", "toolpkg wrapped id=${manifest.id}")
+            }
+        }
+
+        val writeError = runCatching { writeFiles(dir, files) }.exceptionOrNull()
         if (writeError != null) {
             dir.deleteRecursively()
             return Result(false, "写文件失败：${writeError.message ?: writeError.javaClass.simpleName}")
+        }
+
+        // M61：组合包补丁只读解析（cordis.patch.yml 的 insert 行）。鲸歌没有 npm 安装环境，
+        // 不按 name 装子插件，只在详情里列出组合包的组成和未执行的条目。
+        val bundle = manifest.bundlePatch?.let { relative ->
+            PluginPackage.normalizePath(relative)?.let { safe ->
+                File(dir, safe).takeIf { it.isFile }?.let { BundlePatchParser.parseFile(it) }
+            }
         }
 
         val run = dryRunForConfig(
@@ -282,12 +314,27 @@ class PluginStore(private val context: Context) {
             config = config,
             configDefaults = configDefaults,
             configError = run.configError,
+            clientUi = manifest.clientUi,
+            bundlePatch = manifest.bundlePatch,
+            enginesDsh = manifest.enginesDsh,
+            bundleChildren = bundle?.children.orEmpty(),
+            bundleNotes = bundle?.notes.orEmpty(),
+            presets = bundle?.presets.orEmpty(),
+            promptSections = run.promptSections,
+            contexts = run.contexts,
+            promptVariables = run.promptVariables,
+            commands = run.commands,
+            unsupported = run.unsupported,
         )
         registry.upsert(record)
         val suffix = when {
             run.error != null -> "；试运行报错（见详情）"
             run.tools.isEmpty() -> "；没有注册工具（可能只是 hook 插件）"
             else -> "；注册 ${run.tools.size} 个工具：" + run.tools.take(3).joinToString("、") { it.name }
+        } + if (bundle != null && bundle.children.isNotEmpty()) {
+            "；组合包 insert ${bundle.children.size} 个子插件"
+        } else {
+            ""
         }
         return Result(true, "已导入 ${manifest.name} ${manifest.version}$suffix")
     }

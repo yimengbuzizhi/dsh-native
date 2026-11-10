@@ -18,7 +18,7 @@ import kotlin.test.assertNull
 /**
  * 时间上下文（M42）的逐字断言：文本格式、projection 折叠、节流、source 形状。
  *
- * 期望值来自桌面真会话（`C:\Users\Administrator\.dsh\sessions` 里 243 条 time-context 事件）
+ * 期望值来自桌面真会话（`C:\Users\user\.dsh\sessions` 里 243 条 time-context 事件）
  * 与上游 `dsh-time-context/lib/index.js`：
  * - `2026-11-08T04:09:37+08:00[Asia/Shanghai]`（seq 19 的 turn 1 step 1）；
  * - `Elapsed since the preceding step context: 10m 3s`（同一会话 step 134）；

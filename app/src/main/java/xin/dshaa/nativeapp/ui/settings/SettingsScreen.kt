@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FolderZip
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -37,17 +38,24 @@ import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material.icons.rounded.Workspaces
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import xin.dshaa.nativeapp.BuildConfig
+import xin.dshaa.nativeapp.data.GitHubAuth
 import xin.dshaa.nativeapp.data.SettingsStore
 import xin.dshaa.ui.design.component.MiniChip
 import xin.dshaa.ui.design.component.SettingsCard
@@ -63,9 +71,14 @@ import xin.dshaa.ui.design.theme.DshTheme2
 fun SettingsScreen(
     settings: SettingsStore,
     onOpenDrawer: () -> Unit,
+    /** 滚动位置由外层持有：进二级页再返回时不再跳回顶部（M74，用户 23:00 第 3 条）。 */
+    scrollState: androidx.compose.foundation.ScrollState = rememberScrollState(),
+    /** 宽屏侧边栏常驻时隐藏 ☰（抽屉已经一直显示）。 */
+    menuVisible: Boolean = true,
     onOpenModelConfig: () -> Unit,
     onOpenAssistant: () -> Unit,
     onOpenBehavior: () -> Unit,
+    onOpenPrivacy: () -> Unit,
     onOpenBackup: () -> Unit,
     onOpenMigration: () -> Unit,
     onOpenSkills: () -> Unit,
@@ -78,6 +91,9 @@ fun SettingsScreen(
     onOpenAbout: () -> Unit,
 ) {
     val c = DshTheme2.colors
+    val context = LocalContext.current
+    val github = remember { GitHubAuth.get(context) }
+    var showGitHubLogin by remember { mutableStateOf(false) }
     val provider = SettingsStore.providerOf(settings.providerId)
     Column(Modifier.fillMaxSize().background(c.background)) {
         // Operit 顶栏：☰ + 页面标题
@@ -85,25 +101,23 @@ fun SettingsScreen(
             Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(40.dp).clip(CircleShape).clickable { onOpenDrawer() }, contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Menu, "菜单", tint = c.text, modifier = Modifier.size(23.dp))
+            if (menuVisible) {
+                Box(Modifier.size(40.dp).clip(CircleShape).clickable { onOpenDrawer() }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Menu, "菜单", tint = c.text, modifier = Modifier.size(23.dp))
+                }
+                Spacer(Modifier.width(4.dp))
             }
-            Spacer(Modifier.width(4.dp))
             Text("设置", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = c.text)
         }
 
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Column(Modifier.fillMaxSize().verticalScroll(scrollState).padding(horizontal = 16.dp, vertical = 8.dp)) {
             // ======= 账号 =======
             SettingsGroup(icon = Icons.Rounded.AccountCircle, title = "账号") {
                 SettingsNavRow(
-                    icon = Icons.Rounded.Person,
-                    title = "DeepSeek 账号",
-                    subtitle = if (settings.accountToken.isNotBlank()) {
-                        "已登录 · 令牌尾号 ${settings.accountToken.takeLast(4)}"
-                    } else {
-                        "未登录 · 可导入桌面版令牌"
-                    },
-                    onClick = onOpenModelConfig,
+                    icon = Icons.Rounded.AccountCircle,
+                    title = "GitHub 账号",
+                    subtitle = github.user?.let { "已登录 · ${it.login}" } ?: "未登录 · 点击登录 GitHub",
+                    onClick = { showGitHubLogin = true },
                 )
                 SettingsNavRow(
                     icon = Icons.Rounded.Api,
@@ -154,10 +168,16 @@ fun SettingsScreen(
             // 2026-11-09：工具箱整页下线，权限与能力入口收进这里） =======
             SettingsGroup(icon = Icons.Rounded.Build, title = "功能与工具") {
                 SettingsNavRow(
-                    icon = Icons.Rounded.Extension,
-                    title = "插件",
-                    subtitle = "本地导入、试运行、配置与权限",
-                    onClick = { onOpenFeature(xin.dshaa.nativeapp.ui.Screen.Plugins) },
+                    icon = Icons.Rounded.Memory,
+                    title = "记忆库",
+                    subtitle = "记忆图谱 / 文件夹 / 标签 / 文档；AI 可读写",
+                    onClick = { onOpenFeature(xin.dshaa.nativeapp.ui.Screen.Memory) },
+                )
+                SettingsNavRow(
+                    icon = Icons.Rounded.Widgets,
+                    title = "包管理",
+                    subtitle = "插件 / 技能 / MCP：导入、启停与配置",
+                    onClick = { onOpenFeature(xin.dshaa.nativeapp.ui.Screen.Packages) },
                 )
                 SettingsNavRow(
                     icon = Icons.Rounded.Person,
@@ -244,18 +264,10 @@ fun SettingsScreen(
                     trailing = { MiniChip("只读") },
                 )
                 SettingsNavRow(
-                    icon = Icons.Rounded.Star,
-                    title = "技能",
-                    subtitle = "SKILL.md 目录：发现、优先级与加载（skill 工具）",
-                    onClick = onOpenSkills,
-                    trailing = { MiniChip("M19") },
-                )
-                SettingsNavRow(
                     icon = Icons.Rounded.DeleteSweep,
                     title = "隐私与数据清理",
-                    subtitle = "清理 Cookie / 临时文件",
-                    onClick = onOpenBehavior,
-                    trailing = { MiniChip("待做") },
+                    subtitle = "清网页缓存 / Cookie / 临时文件；密钥、会话、插件不动",
+                    onClick = onOpenPrivacy,
                 )
             }
 
@@ -270,5 +282,9 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (showGitHubLogin) {
+        GitHubLoginDialog(github) { showGitHubLogin = false }
     }
 }

@@ -66,6 +66,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Flag
@@ -157,6 +158,7 @@ import xin.dshaa.core.input.formatFileMention
 import xin.dshaa.core.input.inputTrigger
 import xin.dshaa.core.skill.SkillSummary
 import xin.dshaa.core.tools.schedule.ScheduleTime
+import xin.dshaa.nativeapp.chat.ATTACHMENT_REFERENCE_HINT
 import xin.dshaa.nativeapp.chat.ChatSessionState
 import xin.dshaa.nativeapp.chat.PendingApproval
 import xin.dshaa.nativeapp.chat.PendingImage
@@ -181,6 +183,8 @@ fun ChatScreen(
     state: ChatSessionState,
     assistantName: String,
     assistantAvatar: String,
+    /** 角色卡开场白（M71）：空会话显示的第一句话；空 = 默认提示语。 */
+    assistantOpening: String = "",
     expandThinking: Boolean,
     /** 附件 id → 本地图片路径（read_image 的缩略图用；null = 附件缺失）。 */
     imagePath: (String) -> String?,
@@ -189,6 +193,8 @@ fun ChatScreen(
      * 聊天页是 App 的落地页，返回键不再用来「退出聊天」。
      */
     onOpenDrawer: () -> Unit,
+    /** 宽屏侧边栏常驻时隐藏 ☰（M74）。 */
+    menuVisible: Boolean = true,
     /** 右上角「新对话」：开一个空草稿（不建会话文件，第一条消息才落盘）。 */
     onNewChat: () -> Unit = {},
     /** 相册选图（Photo Picker 多选，逐张回调；VM 负责归一化落盘）。 */
@@ -238,12 +244,27 @@ fun ChatScreen(
     onToggleWebSearch: (Boolean) -> Unit = {},
     /** 模型面板底部的「打开模型配置」（设置 → 模型与参数配置）。 */
     onOpenModelSettings: () -> Unit = {},
+    /** 输入条「包」引用：可选插件 / 技能 / MCP（照 Operit PackageSelectorDialog）。 */
+    plugins: List<xin.dshaa.core.plugins.PluginRecord> = emptyList(),
+    skills: List<SkillSummary> = emptyList(),
+    onEnablePlugin: (String) -> Unit = {},
     /** 最近保存过的模型名（输入条模型下拉直接切）。 */
-    recentModels: List<String> = emptyList(),
+    enabledModels: List<String> = emptyList(),
     onSwitchModel: (String) -> Unit = {},
     /** 工具审批方式（M40）：`/permission` 打开的面板与设置 → 行为共用同一份值。 */
     approvalMode: String = "ask",
     onSetApprovalMode: (String) -> Unit = {},
+    /** 输入条设置菜单（M58，照 Operit）：思考模式/程度、Max 模式、行为、记忆空间、插件入口。 */
+    reasoningEffort: String = "high",
+    onSetReasoningEffort: (String) -> Unit = {},
+    maxMode: Boolean = false,
+    onSetMaxMode: (Boolean) -> Unit = {},
+    onSetExpandThinking: (Boolean) -> Unit = {},
+    timeContext: Boolean = true,
+    onSetTimeContext: (Boolean) -> Unit = {},
+    memorySpaceName: String = "Default",
+    onOpenMemoryLibrary: () -> Unit = {},
+    onOpenPlugins: () -> Unit = {},
 ) {
     val c = DshTheme2.colors
     val context = LocalContext.current
@@ -519,11 +540,13 @@ fun ChatScreen(
                     Icon(Icons.Rounded.KeyboardArrowDown, "下一处", tint = if (matches.isEmpty()) c.faint else c.sub, modifier = Modifier.size(20.dp))
                 }
             } else {
-                Box(
-                    Modifier.size(40.dp).clip(CircleShape).clickable { onOpenDrawer() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Rounded.Menu, "打开侧边栏", tint = c.text, modifier = Modifier.size(23.dp))
+                if (menuVisible) {
+                    Box(
+                        Modifier.size(40.dp).clip(CircleShape).clickable { onOpenDrawer() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Rounded.Menu, "打开侧边栏", tint = c.text, modifier = Modifier.size(23.dp))
+                    }
                 }
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -667,7 +690,7 @@ fun ChatScreen(
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (visible.isEmpty()) {
-                EmptyChat(assistantName, assistantAvatar)
+                EmptyChat(assistantName, assistantAvatar, assistantOpening)
             } else {
                 // LazyColumn：长会话（含 41 条导入会话、5000+ 消息）只组合可见项；
                 // key 用消息 id，搜索跳转/流式追加都不会错位。
@@ -820,6 +843,9 @@ fun ChatScreen(
                 onCaptureScreenshot = onCaptureScreenshot,
                 onRemovePendingImage = onRemovePendingImage,
                 onOpenFilePicker = { runCatching { filePicker.launch(arrayOf("*/*")) } },
+                plugins = plugins,
+                skills = skills,
+                onEnablePlugin = onEnablePlugin,
                 onRemovePendingFile = onRemovePendingFile,
                 onOpenGoal = { goalOpen = true },
                 onOpenSchedules = {
@@ -832,10 +858,21 @@ fun ChatScreen(
                 webSearchEnabled = webSearchEnabled,
                 onToggleWebSearch = onToggleWebSearch,
                 onOpenModelSettings = onOpenModelSettings,
-                recentModels = recentModels,
+                enabledModels = enabledModels,
                 onSwitchModel = onSwitchModel,
                 approvalMode = approvalMode,
                 onSetApprovalMode = onSetApprovalMode,
+                reasoningEffort = reasoningEffort,
+                onSetReasoningEffort = onSetReasoningEffort,
+                maxMode = maxMode,
+                onSetMaxMode = onSetMaxMode,
+                expandThinking = expandThinking,
+                onSetExpandThinking = onSetExpandThinking,
+                timeContext = timeContext,
+                onSetTimeContext = onSetTimeContext,
+                memorySpaceName = memorySpaceName,
+                onOpenMemoryLibrary = onOpenMemoryLibrary,
+                onOpenPlugins = onOpenPlugins,
                 inputFocus = inputFocus,
             )
         }
@@ -1991,7 +2028,15 @@ private fun UserMessage(
     onLongPress: (ChatMessage) -> Unit,
 ) {
     val c = DshTheme2.colors
-    val text = message.content.filter { it.type == BlockType.TEXT }.joinToString("\n") { it.text }
+    // M74（用户 23:23）：引用的附件 / 插件包 / 记忆在发送时是**整段文本块**（模型要看全文），
+    // 但聊天气泡里不该铺开一大长串。这里把附件块单独抽出来渲染成一条可折叠的引用 chip：
+    // 默认只显示「名字 · 大小/行数」，点一下才展开原文。
+    val textBlocks = message.content.filter { it.type == BlockType.TEXT }.map { it.text }
+    val quoted = textBlocks.mapNotNull { parseQuotedAttachment(it) }
+    val text = textBlocks
+        .filter { parseQuotedAttachment(it) == null && it.trim() != ATTACHMENT_REFERENCE_HINT }
+        .joinToString("\n")
+        .trim()
     // 用户随消息发出的图片（docs/42）：附件按 id 从存储找回路径；丢失的只留一句提示
     val imageBlocks = message.content.filter { it.type == BlockType.IMAGE }
     val images = imageBlocks.mapNotNull { block ->
@@ -2037,6 +2082,10 @@ private fun UserMessage(
                         color = c.text,
                     )
                 }
+                quoted.forEachIndexed { index, item ->
+                    if (index > 0 || text.isNotBlank()) Spacer(Modifier.height(6.dp))
+                    QuotedAttachmentChip(item)
+                }
                 if (missing > 0) {
                     Text(
                         "（$missing 张图片已丢失）",
@@ -2049,6 +2098,131 @@ private fun UserMessage(
         Spacer(Modifier.height(4.dp))
         Text(formatMessageTime(message.createdAt), style = MaterialTheme.typography.labelSmall, color = c.faint)
         previewPath?.let { path -> ImagePreviewDialog(path = path, onDismiss = { previewPath = null }) }
+    }
+}
+
+/** 一条被引用的附件（M74）：聊天页只显示摘要，点开看原文；模型侧内容不变。 */
+private class QuotedAttachment(
+    val name: String,
+    val sizeLabel: String,
+    /** null = 只有路径引用（正文在模型侧用 read 读），没有可展开的原文。 */
+    val body: String?,
+)
+
+/**
+ * 识别发送时拼进用户消息的附件块（`AppViewModel.send` 的两种形状）：
+ * - `[附件: name]\n\n<全文>`（文本内联/插件包/记忆引用）
+ * - `<attachment id="…" filename="…" type="…" size="…"/>`（按路径引用，模型用工具读）
+ * 普通文本返回 null。
+ */
+private fun parseQuotedAttachment(text: String): QuotedAttachment? {
+    val trimmed = text.trimStart()
+    if (trimmed.startsWith("[附件: ")) {
+        val close = trimmed.indexOf(']')
+        if (close <= 0) return null
+        val name = trimmed.substring("[附件: ".length, close).trim()
+        val body = trimmed.substring(close + 1).trimStart('\n', ' ', '\t')
+        val lines = body.count { it == '\n' } + 1
+        val size = body.toByteArray().size.toLong()
+        return QuotedAttachment(
+            name = name.ifBlank { "附件" },
+            sizeLabel = listOf(formatAttachmentBytes(size), "$lines 行").joinToString(" · "),
+            body = body.ifBlank { null },
+        )
+    }
+    if (trimmed.startsWith("<attachment ")) {
+        val filename = ATTACHMENT_ATTR("filename").find(trimmed)?.groupValues?.get(1).orEmpty()
+        val size = ATTACHMENT_ATTR("size").find(trimmed)?.groupValues?.get(1)?.toLongOrNull()
+        return QuotedAttachment(
+            name = filename.ifBlank { "附件" },
+            sizeLabel = if (size != null) {
+                "${formatAttachmentBytes(size)} · 已复制到工作区（模型用 read 读取）"
+            } else {
+                "已复制到工作区（模型用 read 读取）"
+            },
+            body = null,
+        )
+    }
+    return null
+}
+
+private fun ATTACHMENT_ATTR(key: String) = Regex("$key=\"([^\"]*)\"")
+
+private fun formatAttachmentBytes(bytes: Long): String = when {
+    bytes >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024.0)
+    bytes >= 1024 -> String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0)
+    else -> "$bytes B"
+}
+
+/**
+ * 引用附件 chip：一行摘要 + 点开看全文（默认折叠）。长引用不再把气泡顶成一大长串，
+ * 但内容还在消息里（会话文件、模型请求都没变）。
+ */
+@Composable
+private fun QuotedAttachmentChip(item: QuotedAttachment) {
+    val c = DshTheme2.colors
+    val expandable = item.body != null
+    var expanded by remember(item.name, item.body?.hashCode()) { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(c.surface.copy(alpha = if (c.isDark) 0.35f else 0.6f))
+            .border(1.dp, c.line.copy(alpha = 0.6f), RoundedCornerShape(10.dp)),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .let { base -> if (expandable) base.clickable { expanded = !expanded } else base }
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.AttachFile, null, tint = c.brandBright, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    item.name,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = c.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (expandable) "${item.sizeLabel} · 点开看原文" else item.sizeLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = c.faint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (expandable) {
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    if (expanded) "收起" else "展开",
+                    tint = c.faint,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        if (expanded) {
+            item.body?.let { body ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp)
+                        .background(c.background.copy(alpha = 0.5f))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        body,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = c.sub,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -2789,7 +2963,7 @@ private fun compactArgs(name: String, args: String): String {
 }
 
 @Composable
-private fun EmptyChat(assistantName: String, assistantAvatar: String) {
+private fun EmptyChat(assistantName: String, assistantAvatar: String, assistantOpening: String = "") {
     val c = DshTheme2.colors
     Column(
         Modifier.fillMaxSize().padding(horizontal = 24.dp),
@@ -2800,6 +2974,21 @@ private fun EmptyChat(assistantName: String, assistantAvatar: String) {
         Spacer(Modifier.height(18.dp))
         Text(assistantName.ifBlank { "DSH" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = c.text)
         Spacer(Modifier.height(6.dp))
+        if (assistantOpening.isNotBlank()) {
+            // 角色卡开场白（M71）：像一条 AI 气泡，但不进会话历史（不伪造 assistant 消息）
+            Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                color = c.surface,
+            ) {
+                Text(
+                    assistantOpening,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = c.text,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+        }
         Text("说需求，或者让它直接动手。", style = MaterialTheme.typography.bodyMedium, color = c.sub)
     }
 }

@@ -52,7 +52,7 @@ schemastery 的 schema 是**函数对象**（可调用、可链式），`JSON.st
 **怎么保证抄对了**：在 node 里拿真实 `@deepseek-ai/schemastery@3.18.2` 和我们的实现跑同一组 schema
 （object + required + union-of-const + natural + array + nested object + dict + 非 const union + lazy），
 把两边 `toJSON()` 的图去掉 uid 数值后逐字段比较：**8/8 ALL MATCH**（脚本在
-`<workspace>\.dsh\handoff\zaschema-oracle.mjs`，不进仓库）。
+`D:\dsh\.dsh\handoff\zaschema-oracle.mjs`，不进仓库）。
 
 ### 2. Kotlin 转换 `SchemasterySchema.kt`
 
@@ -189,14 +189,14 @@ SSE 只到 `message_start`），所以没有「模型调用插件 → 最终回�
 ### 3. 清理
 
 设备上的测试插件、`plugins.json`、临时 zip、`run1`、`m29run` 全部删除，插件页回到空态；
-fixture 留在 `<workspace>\.dsh\handoff\plugins-fixtures\`：
+fixture 留在 `D:\dsh\.dsh\handoff\plugins-fixtures\`：
 `dsh-plugin-zfull.zip`、`dsh-plugin-zunsupported.zip`、`dsh-tool-todo-real.zip`（旧的一批也在）。
 
 ### 4. 构建 / 发包
 
 - `:app:assembleDebug` BUILD SUCCESSFUL，APK **98,124,413 B**，MD5 `8CAB1BF3ED323718961ED728348EB4EC`；
   已装机（02:06）。dex 里确认含 `__zsProto` / `SchemasterySchema` / `additionalProperties`。
-- 安装包：`<workspace>\.dsh\handoff\DSH-native-20261108-0212.apk`。
+- 安装包：`D:\dsh\.dsh\handoff\DSH-native-20261108-0212.apk`。
 - **02:11:42 已发 QQ 群 11316535**：群文件显示 `DSH-native-202...12.apk (93.58MB)`、**上传成功**；
   02:12 发了说明：插件参数支持 schemastery、修 zod 解构链、真实 todo 包可导入（同名内置工具不覆盖）、
   这版没改界面、覆盖安装、界面美化欢迎截图具体意见（先复现再改）。
@@ -231,7 +231,7 @@ fixture 留在 `<workspace>\.dsh\handoff\plugins-fixtures\`：
 
 ```powershell
 # 构建 / 测试
-cd <workspace>\native
+cd D:\dsh\native
 cmd /c "set JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot&& .tools\gradle-8.9\bin\gradle.bat :app:assembleDebug --console=plain > build-debug.log 2>&1"
 .tools\gradle-8.9\bin\gradle.bat :core:plugins:test :core:tools:test :core:engine:test :core:prompt:test :core:parity:test
 
@@ -239,7 +239,7 @@ cmd /c "set JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot&&
 C:\Android\platform-tools\adb.exe install --no-streaming -r -t app\build\outputs\apk\debug\app-debug.apk
 
 # 导入 zfull（锁屏可用；每次 am start 前先 force-stop）
-adb push <workspace>\.dsh\handoff\plugins-fixtures\dsh-plugin-zfull.zip /data/local/tmp/zfull.zip
+adb push D:\dsh\.dsh\handoff\plugins-fixtures\dsh-plugin-zfull.zip /data/local/tmp/zfull.zip
 adb shell "run-as xin.dshaa.nativeapp cp /data/local/tmp/zfull.zip files/zfull.zip"
 adb shell am force-stop xin.dshaa.nativeapp
 adb shell "am start -n xin.dshaa.nativeapp/.MainActivity --es dsh_plugin_zip /data/user/0/xin.dshaa.nativeapp/files/zfull.zip"
@@ -251,6 +251,6 @@ $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('{"action":"add"
 adb shell "am start -n xin.dshaa.nativeapp/.MainActivity --es dsh_plugin_call zfull_run --es dsh_plugin_args_b64 $b64"
 
 # 本地对照（需要 node）：真实 schemastery vs 宿主最小实现
-node <workspace>\.dsh\handoff\zaschema-oracle.mjs
-node <workspace>\.dsh\handoff\m29-todo-check.mjs   # 真实 dsh-tool-todo 的试运行
+node D:\dsh\.dsh\handoff\zaschema-oracle.mjs
+node D:\dsh\.dsh\handoff\m29-todo-check.mjs   # 真实 dsh-tool-todo 的试运行
 ```

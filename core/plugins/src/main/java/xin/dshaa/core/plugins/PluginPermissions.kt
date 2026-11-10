@@ -13,7 +13,9 @@ package xin.dshaa.core.plugins
  * | `net:<host>` | 指定域名 + 子域名，仅 https | 需确认 |
  * | `net:any` | 任意 https 域名（本机/内网默认拒绝） | 需确认 |
  * | `shell` | 以 App 身份执行 shell | 需确认（红框） |
- * | `ui` / `notify` / `device` | 本版尚未实现 | 不授予（界面明说） |
+ * | `device` | 设备信息 / 应用 / 无障碍手势 / 截图 | 需确认（M67 起实现） |
+ * | `memory` | 读写鲸歌记忆库（M68） | 需确认 |
+ * | `ui` / `notify` | 本版尚未实现 | 不授予（界面明说） |
  *
  * 认不出的写法一律 [PluginPermissionKind.UNKNOWN]，**不猜、不授予**（宁可不支持，也不放大权限）。
  */
@@ -26,6 +28,7 @@ enum class PluginPermissionKind(val title: String) {
     UI("界面扩展"),
     NOTIFY("通知"),
     DEVICE("设备控制"),
+    MEMORY("记忆库"),
     UNKNOWN("未识别"),
 }
 
@@ -44,6 +47,7 @@ data class PluginPermission(
             PluginPermissionKind.SHELL,
             PluginPermissionKind.NOTIFY,
             PluginPermissionKind.DEVICE,
+            PluginPermissionKind.MEMORY,
             -> true
             else -> false
         }
@@ -60,6 +64,8 @@ data class PluginPermission(
             PluginPermissionKind.NET_HOST,
             PluginPermissionKind.NET_ANY,
             PluginPermissionKind.SHELL,
+            PluginPermissionKind.DEVICE,
+            PluginPermissionKind.MEMORY,
             -> true
             else -> false
         }
@@ -84,7 +90,12 @@ data class PluginPermission(
                 "以 App 身份执行 shell 命令（不是 root）。命令能读写 App 能访问的一切，风险最高。"
             PluginPermissionKind.UI -> "注册插件自己的页面/弹窗（本版还没实现，授权也不会生效）。"
             PluginPermissionKind.NOTIFY -> "发系统通知（本版还没实现，授权也不会生效）。"
-            PluginPermissionKind.DEVICE -> "无障碍 / Shizuku / 虚拟屏等设备能力（本版禁止插件使用）。"
+            PluginPermissionKind.DEVICE ->
+                "读设备信息与应用列表、启动/停止应用、读系统设置、用无障碍点按/滑动/截图（M67 起生效）。" +
+                    "不会给 root/Shizuku，也不会静默安装应用。"
+            PluginPermissionKind.MEMORY ->
+                "读写鲸歌记忆库：新增/修改/删除记忆、移动文件夹、建立/修改/删除记忆之间的链接（M68 起生效）。" +
+                    "记忆库里有用户自己存的内容，授权前请确认这个插件可信。"
             PluginPermissionKind.UNKNOWN -> "认不出的权限写法，不会被授予。"
         }
 }
@@ -106,6 +117,7 @@ object PluginPermissions {
     const val UI = "ui"
     const val NOTIFY = "notify"
     const val DEVICE = "device"
+    const val MEMORY = "memory"
 
     private val HOST_PATTERN =
         Regex("""^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$""")
@@ -126,6 +138,8 @@ object PluginPermissions {
                 PluginPermission(NOTIFY, PluginPermissionKind.NOTIFY)
             lower == DEVICE || lower.startsWith("device:") ->
                 PluginPermission(DEVICE, PluginPermissionKind.DEVICE)
+            lower == MEMORY || lower == "memory:rw" || lower == "memory:write" ->
+                PluginPermission(MEMORY, PluginPermissionKind.MEMORY)
             lower == SHELL || lower == "shell:exec" || lower == "exec" ->
                 PluginPermission(SHELL, PluginPermissionKind.SHELL)
             lower == NET_ANY || lower == "net:*" ->
@@ -206,6 +220,9 @@ object PluginPermissions {
 
     fun netAnyGranted(granted: Collection<String>): Boolean =
         NET_ANY in granted.map { it.trim().lowercase() }
+
+    fun memoryGranted(granted: Collection<String>): Boolean =
+        MEMORY in granted.map { it.trim().lowercase() }
 
     /**
      * 工作区是不是「共享存储根 / 整个存储」这种宽边界。

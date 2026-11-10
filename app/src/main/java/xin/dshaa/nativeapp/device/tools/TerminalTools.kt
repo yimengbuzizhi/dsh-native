@@ -56,6 +56,22 @@ class TerminalTools(private val app: Application) {
             override suspend fun execute(args: JsonObject, ctx: ToolContext): ToolResult = block(args, ctx)
         }
 
+    /**
+     * M68：给 Operit `Tools.System.terminal.*` 兼容层复用**同一套**会话逻辑。
+     *
+     * 为什么不另写一份：创建/执行/收输出/Pty 超时/Ctrl+C 落定的细节都在上面这些方法里，
+     * 复制一份只会让两条链路慢慢分叉（一条修了另一条没修）。这里只做名字到方法的映射，
+     * 参数沿用内置工具的 snake_case（`session_id` / `command` / `timeout_ms` / `input` / `control`）。
+     */
+    suspend fun invokeForHost(action: String, args: JsonObject): ToolResult = when (action) {
+        "create" -> createSession(args)
+        "exec" -> executeInSession(args)
+        "input" -> inputInSession(args)
+        "screen" -> sessionScreen(args)
+        "close" -> closeSession(args)
+        else -> ToolResult.err("未知的终端操作：$action")
+    }
+
     // ---------------- create_terminal_session ----------------
 
     private suspend fun createSession(args: JsonObject): ToolResult {

@@ -255,6 +255,66 @@ object PluginModule {
         return PluginInvokeResult(ok = ok, text = text, error = error)
     }
 
+    /**
+     * 生成「执行插件斜杠命令」的脚本（M57 第二批，DSH `ctx.commands.register`）。
+     *
+     * 与 [invokeScript] 同一条链路：重跑模块 → `apply(ctx)` → 调
+     * `__dshDefs['command:<name>'].handler({agent, rawInput, attachments})`。
+     * 返回值 `{ok:true,text}` / `{ok:false,error}`；handler 返回 `{kind:'error',text}` 也算失败。
+     */
+    fun commandScript(
+        module: TransformedModule,
+        commandName: String,
+        rawInput: String,
+        cwd: String? = null,
+        configJson: String = "{}",
+    ): String {
+        val name = kotlinx.serialization.json.JsonPrimitive(commandName).toString()
+        val input = kotlinx.serialization.json.JsonPrimitive(rawInput).toString()
+        return moduleScript(module, cwd, configJson) + EXPORTS_APPLY + """
+  const __cmdName = $name;
+  const __cmdInput = $input;
+  function __dshCommandFailure(err) {
+    const message = (err && err.message !== undefined)
+      ? (String(err.name || 'Error') + ': ' + String(err.message))
+      : String(err);
+    return (err && err.stack) ? (message + '\n' + String(err.stack)) : message;
+  }
+  function __dshRunCommand() {
+    const __cmdDef = __dshDefs['command:' + __cmdName];
+    if (!__cmdDef || typeof __cmdDef.handler !== 'function') {
+      return JSON.stringify({ ok: false, error: '插件没有注册命令 ' + __cmdName });
+    }
+    try {
+      const __result = __cmdDef.handler({
+        agent: undefined,
+        rawInput: __cmdInput,
+        attachments: []
+      });
+      return Promise.resolve(__result).then(
+        function(value) {
+          if (value && value.kind === 'error') {
+            return JSON.stringify({ ok: false, error: String(value.text || '命令失败') });
+          }
+          if (value && typeof value.text === 'string') {
+            return JSON.stringify({ ok: true, text: value.text });
+          }
+          if (typeof value === 'string') {
+            return JSON.stringify({ ok: true, text: value });
+          }
+          try { return JSON.stringify({ ok: true, text: JSON.stringify(value, null, 2) }); }
+          catch (e) { return JSON.stringify({ ok: true, text: String(value) }); }
+        },
+        function(err) { return JSON.stringify({ ok: false, error: __dshCommandFailure(err) }); }
+      );
+    } catch (err) {
+      return JSON.stringify({ ok: false, error: __dshCommandFailure(err) });
+    }
+  }
+  return Promise.resolve(__dshApply).then(__dshRunCommand);
+"""
+    }
+
     /** QuickJS 跑插件模块的公共前半段：注入宿主符号 → 执行模块 → 收集 exports。 */
     private fun moduleScript(module: TransformedModule, cwd: String?, configJson: String): String {
         val sb = StringBuilder()
@@ -314,6 +374,35 @@ object PluginModule {
         val configSchema = configSchemaObject?.let { PluginSchema.normalize(it)?.toString() }
         val configError = obj.string("configError")
             ?: if (configSchemaObject != null && configSchema == null) "Config 参数形状认不出（这个类型还不能转成 JSON Schema）" else null
+        fun sections(key: String): List<PluginPromptSection> = runCatching {
+            obj[key]?.jsonArray?.mapNotNull { element ->
+                val item = element.jsonObject
+                val name = item.string("name") ?: return@mapNotNull null
+                PluginPromptSection(
+                    name = name,
+                    order = item["order"]?.let { runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() } ?: 100,
+                    text = item.string("text").orEmpty(),
+                    complete = item["complete"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    } ?: false,
+                )
+            }.orEmpty()
+        }.getOrDefault(emptyList())
+        val commands = runCatching {
+            obj["commands"]?.jsonArray?.mapNotNull { element ->
+                val item = element.jsonObject
+                val name = item.string("name") ?: return@mapNotNull null
+                PluginCommand(name = name, description = item.string("description").orEmpty())
+            }.orEmpty()
+        }.getOrDefault(emptyList())
+        // M74：`ctx.systemPrompt.variable` 求值出的快照（name -> 文本），供 `{{name}}` 替换
+        val promptVariables = runCatching {
+            (obj["promptVariables"] as? kotlinx.serialization.json.JsonObject)
+                ?.mapNotNull { (key, element) ->
+                    val text = runCatching { element.jsonPrimitive.contentOrNull }.getOrNull() ?: return@mapNotNull null
+                    key to text
+                }?.toMap().orEmpty()
+        }.getOrDefault(emptyMap())
         return PluginDryRun(
             name = obj.string("name"),
             version = obj.string("version"),
@@ -325,6 +414,11 @@ object PluginModule {
             error = errors.joinToString("\n").ifBlank { null },
             configSchema = configSchema,
             configError = configError,
+            promptSections = sections("promptSections"),
+            contexts = sections("contexts"),
+            promptVariables = promptVariables,
+            commands = commands,
+            unsupported = obj.stringList("unsupported"),
         )
     }
 
@@ -435,7 +529,11 @@ object PluginModule {
      * 「跑不跑得起来、注册了什么」，不因为这些服务没实现就误报失败。
      */
     private val PRELUDE = """
-  const __dsh = { name: null, version: null, inject: [], tools: [], errors: [], imports: [], relativeImports: [], applied: false, configSchema: null, configError: null };
+  const __dsh = { name: null, version: null, inject: [], tools: [], errors: [], imports: [], relativeImports: [], applied: false, configSchema: null, configError: null, promptSections: [], contexts: [], promptVariables: {}, commands: [], unsupported: [] };
+  function __dshUnsupported(name) {
+    if (__dsh.unsupported.indexOf(name) < 0) { __dsh.unsupported.push(name); }
+    return __noop;
+  }
   const __dshDefs = {};
   function __dshSchema(value) {
     if (value === undefined || value === null) { return null; }
@@ -451,6 +549,51 @@ object PluginModule {
     return null;
   }
   const __noop = function(){};
+  // ── 全局计时器（M63）：Operit 的 time.js 等包用 setTimeout ───────────────
+  // QuickJS 没有自己的事件循环线程；借宿主异步能力 `timer.wait`（宿主线程等待）在
+  // Promise 完成时回调，和 net.fetch 走同一条异步通道。
+  let __dshTimerSeq = 1;
+  const __dshTimers = {};
+  function __dshTimerCallback(handler, extra) {
+    if (typeof handler === 'function') { return function(){ return handler.apply(null, extra); }; }
+    return function(){ return (0, eval)(String(handler)); };
+  }
+  function setTimeout(handler, delay) {
+    const id = __dshTimerSeq++;
+    const extra = Array.prototype.slice.call(arguments, 2);
+    const fn = __dshTimerCallback(handler, extra);
+    const wait = Math.max(0, Number(delay) || 0);
+    __dshTimers[id] = true;
+    __dshCallAsync('timer.wait', JSON.stringify({ ms: wait })).then(function() {
+      if (__dshTimers[id] !== true) { return; }
+      delete __dshTimers[id];
+      try { fn(); } catch (e) { try { console.error('setTimeout callback failed', e); } catch (_) {} }
+    }, function() { delete __dshTimers[id]; });
+    return id;
+  }
+  function clearTimeout(id) { if (id !== undefined && id !== null) { delete __dshTimers[id]; } }
+  function setInterval(handler, delay) {
+    const id = __dshTimerSeq++;
+    const extra = Array.prototype.slice.call(arguments, 2);
+    const fn = __dshTimerCallback(handler, extra);
+    const wait = Math.max(1, Number(delay) || 0);
+    let runs = 0;
+    __dshTimers[id] = true;
+    const tick = function() {
+      if (__dshTimers[id] !== true) { return; }
+      try { fn(); } catch (e) {}
+      runs += 1;
+      if (runs >= 1000) { delete __dshTimers[id]; return; }
+      __dshCallAsync('timer.wait', JSON.stringify({ ms: wait })).then(tick, function() { delete __dshTimers[id]; });
+    };
+    __dshCallAsync('timer.wait', JSON.stringify({ ms: wait })).then(tick, function() { delete __dshTimers[id]; });
+    return id;
+  }
+  function clearInterval(id) { clearTimeout(id); }
+  function setImmediate(handler) {
+    return setTimeout.apply(null, [handler, 0].concat(Array.prototype.slice.call(arguments, 1)));
+  }
+  function clearImmediate(id) { clearTimeout(id); }
   function __permissive(extra) {
     const base = function(){ return base; };
     if (extra) { for (const key in extra) { base[key] = extra[key]; } }
@@ -690,7 +833,46 @@ object PluginModule {
       return target[prop];
     }
   });
-  const __defineTool = function(def) { return def; };
+  // DSH 的 defineTool 参数 DSL：{ path: { type:'string', required:true, description } }。
+  // 鲸歌工具表要的是 JSON Schema，这里在注册前转一层；已经是 JSON Schema 的原样放行。
+  function __dshParamSchema(p) {
+    if (!p || typeof p !== 'object') { return { type: 'string' }; }
+    if (p.type === 'object' && p.properties) { return p; }
+    const out = {};
+    if (p.type) { out.type = p.type; }
+    if (p.description !== undefined) { out.description = String(p.description); }
+    if (p.enum !== undefined) { out.enum = p.enum; }
+    if (p.default !== undefined) { out.default = p.default; }
+    if (p.items !== undefined) { out.items = __dshParamSchema(p.items); }
+    if (p.properties !== undefined) {
+      out.type = 'object';
+      out.properties = {};
+      for (const k in p.properties) { out.properties[k] = __dshParamSchema(p.properties[k]); }
+      if (p.required) { out.required = p.required; }
+    }
+    return out;
+  }
+  function __dshParametersSchema(params) {
+    if (!params || typeof params !== 'object') { return null; }
+    if (params.type === 'object' && params.properties) { return params; }
+    const properties = {};
+    const required = [];
+    for (const key in params) {
+      const def = params[key];
+      properties[key] = __dshParamSchema(def);
+      if (def && def.required === true) { required.push(key); }
+    }
+    const schema = { type: 'object', properties: properties };
+    if (required.length > 0) { schema.required = required; }
+    return schema;
+  }
+  const __defineTool = function(def) {
+    if (def && typeof def === 'object') {
+      const converted = __dshParametersSchema(def.parameters);
+      if (converted) { def.parameters = converted; }
+    }
+    return def;
+  };
   const __toolsRegister = function(def) {
     if (def && typeof def.name === 'string') {
       if (__dsh.tools.map(function(t) { return t.name; }).indexOf(def.name) < 0) {
@@ -719,15 +901,108 @@ object PluginModule {
       list: function() { return []; },
       names: function() { return __dsh.tools.map(function(t) { return t.name; }); }
     }),
-    sessionProjections: __permissive({ register: __noop }),
-    llm: __permissive({ register: __noop }),
-    ui: __permissive({ registerRoute: __noop, registerView: __noop }),
-    effect: function() { return __noop; },
-    on: function() { return __noop; },
+    // P4（M57）：提示词段 / 动态上下文。text 允许是函数：注册时用当前 ctx 求值一次
+    //（手机端没有「每轮请求再进 JS 求值」的常驻运行时，函数型按静态快照处理）。
+    systemPrompt: __permissive({
+      section: function(options) {
+        if (!options || typeof options.name !== 'string' || !options.name) { return __noop; }
+        let text = options.text;
+        if (typeof text === 'function') {
+          try { text = text(__ctx); } catch (e) { text = ''; }
+        }
+        __dsh.promptSections.push({
+          name: String(options.name),
+          order: (typeof options.order === 'number') ? options.order : 100,
+          text: (text === undefined || text === null) ? '' : String(text),
+          complete: options.complete === true
+        });
+        return __noop;
+      },
+      context: function(options) {
+        if (!options || typeof options.name !== 'string' || !options.name) { return __noop; }
+        let text = options.text;
+        if (typeof text === 'function') {
+          try { text = text(__ctx); } catch (e) { text = ''; }
+        }
+        __dsh.contexts.push({
+          name: String(options.name),
+          order: (typeof options.order === 'number') ? options.order : 100,
+          text: (text === undefined || text === null) ? '' : String(text)
+        });
+        return __noop;
+      },
+      // M74：动态变量 `variable(name, fn)`——段文本里写 `{{name}}`，由 PromptPack 渲染时替换。
+      // 上游是每轮请求前求值；手机端没有常驻 JS 运行时，按 apply 时求值一次存快照
+      //（和上面函数型 text 的处理一致）。也容忍 `variable({name, value/fn})` 的写法。
+      variable: function(name, value) {
+        let key = name;
+        let fn = value;
+        if (name && typeof name === 'object') {
+          key = name.name;
+          fn = (name.value !== undefined) ? name.value : name.fn;
+        }
+        if (typeof key !== 'string' || !key) { return __noop; }
+        let resolved = fn;
+        if (typeof resolved === 'function') {
+          try { resolved = resolved(__ctx); } catch (e) { resolved = ''; }
+        }
+        // 异步变量求不出值：不写空字符串覆盖，直接跳过（PromptPack 会保留 `{{name}}` 原样）
+        if (resolved && typeof resolved === 'object' && typeof resolved.then === 'function') { return __noop; }
+        if (resolved !== null && typeof resolved === 'object') {
+          try { resolved = JSON.stringify(resolved); } catch (e) { resolved = String(resolved); }
+        }
+        __dsh.promptVariables[String(key)] = (resolved === undefined || resolved === null) ? '' : String(resolved);
+        return __noop;
+      },
+      suppressRuntimeContext: function() { return __dshUnsupported('systemPrompt.suppressRuntimeContext'); }
+    }),
+    // P5（M57）：斜杠命令。handler 在 commandScript 里被调用，不进模型轮次。
+    commands: __permissive({
+      register: function(def) {
+        if (!def || typeof def.name !== 'string') { return __noop; }
+        const name = String(def.name).replace(/^\//, '');
+        if (!/^[a-z0-9_-]{1,64}$/.test(name)) { return __noop; }
+        if (__dsh.commands.map(function(c) { return c.name; }).indexOf(name) >= 0) { return __noop; }
+        __dsh.commands.push({ name: name, description: (def.description === undefined || def.description === null) ? '' : String(def.description) });
+        if (typeof def.handler === 'function') { __dshDefs['command:' + name] = def; }
+        return __noop;
+      }
+    }),
+    // P6（M57，鲸歌私有扩展点）：通知。DSH 本身没有 ctx.notifications，社区插件用
+    // 浏览器 Notification；这里两者都收敛到宿主 Android 通知。
+    whale: __permissive({
+      notify: function(options) {
+        const opts = options || {};
+        return __dshHostJson('plugin.notify', {
+          title: String(opts.title || '鲸歌插件'),
+          body: String(opts.body || ''),
+          level: String(opts.level || 'info')
+        });
+      }
+    }),
+    sessionProjections: __permissive({ register: function() { return __dshUnsupported('sessionProjections'); } }),
+    llm: __permissive({ register: function() { return __dshUnsupported('llm.register'); } }),
+    ui: __permissive({
+      registerRoute: function() { return __dshUnsupported('ui.registerRoute'); },
+      registerView: function() { return __dshUnsupported('ui.registerView'); }
+    }),
+    effect: function() { return __dshUnsupported('ctx.effect'); },
+    on: function() { return __dshUnsupported('ctx.on'); },
     plugin: function() { return undefined; },
     logger: { info: __noop, warn: __noop, error: __noop, debug: __noop },
     config: {}
   });
+  // 社区通知插件直接 `new Notification(...)`：没有 DOM，收敛到宿主通知。
+  function Notification(title, options) {
+    const opts = options || {};
+    __dshHostJson('plugin.notify', {
+      title: String(title || '鲸歌插件'),
+      body: String(opts.body || ''),
+      level: 'info'
+    });
+  }
+  Notification.permission = 'granted';
+  Notification.requestPermission = function() { return Promise.resolve('granted'); };
   const __exec = __permissive({
     signal: { aborted: false },
     agent: undefined,
@@ -749,13 +1024,41 @@ object PluginModule {
       };
     }
     if (name === 'node:fs' || name === 'fs') {
-      return __permissive({
-        readFileSync: function() { return ''; },
-        existsSync: function() { return false; },
-        writeFileSync: __noop,
-        mkdirSync: __noop,
-        promises: __permissive({ readFile: function() { return Promise.resolve(''); } })
-      });
+      // 真给沙箱 fs（不是空实现）：DSH 工具插件里 import fs 是很常见的写法。
+      return __dshFs;
+    }
+    if (name === 'node:fs/promises' || name === 'fs/promises') {
+      return __dshFs.promises;
+    }
+    if (name === 'node:child_process' || name === 'child_process') {
+      return {
+        execSync: function(cmd, options) {
+          const r = __dshHostOk('shell.exec', {
+            command: String(cmd),
+            timeoutMs: (options && options.timeout) || undefined
+          });
+          return (r.stdout === undefined || r.stdout === null) ? '' : String(r.stdout);
+        },
+        exec: function(cmd, options, callback) {
+          const cb = (typeof options === 'function') ? options : callback;
+          try {
+            const out = this.execSync(cmd, (typeof options === 'object') ? options : undefined);
+            if (typeof cb === 'function') { cb(null, out, ''); }
+          } catch (e) {
+            if (typeof cb === 'function') { cb(e, '', ''); }
+          }
+          return undefined;
+        },
+        spawn: __permissive({ on: __noop, stdout: __permissive({ on: __noop }), stderr: __permissive({ on: __noop }) })
+      };
+    }
+    if (name === 'node:os' || name === 'os') {
+      return {
+        platform: function() { return 'android'; },
+        homedir: function() { return '/'; },
+        tmpdir: function() { return '/data/local/tmp'; },
+        EOL: '\n'
+      };
     }
     return __permissive({});
   }
@@ -968,6 +1271,8 @@ object PluginModule {
         url: r.url,
         headers: r.headers,
         text: function() { return Promise.resolve(r.body); },
+        // 非标准字段：Operit 的 OkHttp shim（ToolPkg）按 response.body 取文本，补一份。
+        body: r.body,
         json: function() { return Promise.resolve().then(function() { return JSON.parse(r.body || 'null'); }); }
       };
     });

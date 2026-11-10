@@ -8,6 +8,13 @@ import xin.dshaa.core.model.ChatMessage
 import xin.dshaa.core.model.ImageRef
 
 /**
+ * 引用「按路径引用」的附件时，跟在 `<attachment …/>` 后面的那句模型提示（M74）。
+ * 定义在 chat 包里给 [AppViewModel.send] 和聊天页渲染共用，避免两处文案漂移。
+ */
+const val ATTACHMENT_REFERENCE_HINT =
+    "（带 <attachment> 的附件已复制到工作区，可用 read / read_image 工具按路径读取。）"
+
+/**
  * 一个聊天会话的 **Compose 状态容器**（2026-11-07 替换原来的 `ChatUiState` data class + StateFlow）。
  *
  * 为什么改成这个：旧实现用 `StateFlow<ChatUiState>` + 每次 `copy(messages = list)`，
@@ -87,9 +94,22 @@ class ChatSessionState(modelName: String) {
 /** 一张已落盘、等待随下一条消息发出的图片（[path] 供输入条缩略图直接解码）。 */
 data class PendingImage(val ref: ImageRef, val path: String)
 
-/** 一个待发的文本文件（内存里拿着正文；[chars] 用于输入条上显示大小）。 */
-data class PendingFile(val name: String, val text: String) {
+/**
+ * 一个待发的文本文件（内存里拿着正文；[chars] 用于输入条上显示大小）。
+ *
+ * 2026-11-09：对齐 Operit「所有文件都能引用」——非文本/超大文件不再拒绝，
+ * 原样复制到工作区 `.dsh/attachments/`，这里只记 [path]/[mime]/[size]，
+ * 发送时拼成 `<attachment …/>` 让模型用 read / read_image 工具读。
+ */
+data class PendingFile(
+    val name: String,
+    val text: String,
+    val path: String? = null,
+    val mime: String? = null,
+    val size: Long = 0,
+) {
     val chars: Int get() = text.length
+    val isReference: Boolean get() = path != null
 }
 
 /** 斜杠命令要打开的输入条面板：模型面板 / 审批方式面板 / 帮助面板（M41）。 */

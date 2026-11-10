@@ -12,10 +12,12 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +44,8 @@ import xin.dshaa.nativeapp.ui.agents.SubagentsScreen
 import xin.dshaa.nativeapp.ui.chat.ChatScreen
 import xin.dshaa.nativeapp.ui.device.AccessibilityScreen
 import xin.dshaa.nativeapp.ui.jobs.JobsScreen
+import xin.dshaa.nativeapp.memory.MemoryScreen
+import xin.dshaa.nativeapp.ui.packages.PackagesScreen
 import xin.dshaa.nativeapp.ui.plugins.PluginsScreen
 import xin.dshaa.nativeapp.ui.screen.VirtualScreenPage
 import xin.dshaa.nativeapp.ui.sessions.SessionsScreen
@@ -50,6 +54,7 @@ import xin.dshaa.nativeapp.ui.settings.BackupScreen
 import xin.dshaa.nativeapp.ui.settings.BehaviorScreen
 import xin.dshaa.nativeapp.ui.settings.DataMigrationScreen
 import xin.dshaa.nativeapp.ui.settings.ModelConfigScreen
+import xin.dshaa.nativeapp.ui.settings.PrivacyScreen
 import xin.dshaa.nativeapp.ui.settings.SettingsScreen
 import xin.dshaa.nativeapp.ui.settings.SkillsScreen
 import xin.dshaa.nativeapp.ui.settings.WorkspacesScreen
@@ -66,11 +71,13 @@ enum class Screen(val label: String, val icon: ImageVector) {
     VirtualScreen("虚拟屏", Icons.Rounded.PlayArrow),
     Accessibility("无障碍", Icons.Rounded.CheckCircle),
     Plugins("插件", Icons.Rounded.Extension),
+    Packages("包管理", Icons.Rounded.Widgets),
+    Memory("记忆库", Icons.Rounded.Memory),
     Settings("设置", Icons.Rounded.Settings),
 }
 
 /** 二级页（设置里的独立页面，Operit 用独立路由）。 */
-enum class SubScreen { ModelConfig, Assistant, Behavior, Backup, DataMigration, Skills, Workspaces, Permissions }
+enum class SubScreen { ModelConfig, Assistant, Behavior, Backup, DataMigration, Skills, Workspaces, Permissions, Privacy }
 
 /**
  * 应用外壳（2026-11-07 第二次重做，仿 RikkaHub）：
@@ -127,6 +134,15 @@ private fun DshAppContent(vm: AppViewModel) {
         screenName = screen.name
         subScreenName = null
     }
+    /** 从功能页直接回设置（M74；这些页原来只能开抽屉，用户 23:00 第 1 条）。 */
+    val backToSettings: () -> Unit = {
+        screenName = Screen.Settings.name
+        subScreenName = null
+    }
+    // 宽屏（平板 / 折叠屏展开）侧边栏常驻：600dp 是 Material 的 compact/expanded 断点
+    val wideLayout = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
+    // 设置页的滚动位置提到这里：进出二级页不再被重置到顶部（用户 23:00 第 3 条）
+    val settingsScroll = androidx.compose.foundation.rememberScrollState()
 
     // 落地页必须是聊天：冷启动 / 删除当前会话后回来，都补一个空草稿（不建会话文件）。
     androidx.compose.runtime.LaunchedEffect(screenName, vm.chat == null) {
@@ -141,7 +157,9 @@ private fun DshAppContent(vm: AppViewModel) {
         when {
             drawerState.isOpen -> closeDrawer()
             subScreen != null -> subScreenName = null
-            screenName != null -> screenName = null
+            // 功能页回到设置（用户 23:00 第 1 条：此前直接回聊天，等于丢掉了来路）
+            screenName == Screen.Settings.name -> screenName = null
+            screenName != null -> backToSettings()
             else -> vm.closeChat()
         }
     }
@@ -173,10 +191,8 @@ private fun DshAppContent(vm: AppViewModel) {
         vm.consumeDebugScreen()
     }
 
-    androidx.compose.material3.ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = true,
-        drawerContent = {
+    // 抽屉内容：窄屏是滑出的 Modal 抽屉；宽屏（平板/折叠屏展开，>=600dp）常驻在左侧（M74，用户 23:00 第 5 条）
+    val drawerContent: @Composable () -> Unit = {
             DshDrawer(
                 currentSessionId = vm.chat?.sessionId,
                 sessions = vm.sessions,
@@ -184,6 +200,14 @@ private fun DshAppContent(vm: AppViewModel) {
                 workspaces = vm.workspaces,
                 assistantName = vm.settings.assistantName,
                 assistantAvatar = vm.settings.assistantAvatar,
+                assistantProfiles = vm.settings.assistantProfiles,
+                activeAssistantId = vm.settings.activeAssistantId,
+                onSwitchAssistant = { id -> vm.settings.setActiveAssistant(id) },
+                onManageAssistants = {
+                    closeDrawer()
+                    screenName = Screen.Settings.name
+                    subScreenName = SubScreen.Assistant.name
+                },
                 model = vm.settings.model,
                 toolCount = vm.toolCount,
                 badgeFor = { id -> vm.badgeFor(id) },
@@ -227,8 +251,10 @@ private fun DshAppContent(vm: AppViewModel) {
                 onRenameSession = { id, title -> vm.renameSession(id, title) },
                 onDeleteSession = { id -> vm.deleteSession(id) },
             )
-        },
-    ) {
+    }
+
+    // 屏幕主体：宽屏时和常驻抽屉并排，窄屏时铺满
+    val body: @Composable () -> Unit = {
         Box(Modifier.fillMaxSize().background(c.background)) {
             when (screenName) {
                 null -> {
@@ -238,15 +264,20 @@ private fun DshAppContent(vm: AppViewModel) {
                             state = current,
                             assistantName = vm.settings.assistantName,
                             assistantAvatar = vm.settings.assistantAvatar,
+                            assistantOpening = vm.settings.assistantOpening,
                             expandThinking = vm.settings.expandThinking,
                             imagePath = { id -> vm.imagePathFor(id) },
                             onOpenDrawer = openDrawer,
+                            menuVisible = !wideLayout,
                             onNewChat = { vm.newChat() },
                             onAttachImage = { uri -> vm.attachImage(uri) },
                             onAttachPhoto = { file -> vm.attachPhoto(file) },
                             onCaptureScreenshot = { vm.attachScreenshot() },
                             onRemovePendingImage = { id -> vm.removePendingImage(id) },
                             onAttachFile = { uri -> vm.attachFile(uri) },
+                            plugins = vm.pluginsUi,
+                            skills = vm.skillsUi,
+                            onEnablePlugin = { id -> vm.setPluginEnabled(id, true) },
                             onRemovePendingFile = { name -> vm.removePendingFile(name) },
                             onSubmit = { vm.submit(it) },
                             onStop = { vm.stop() },
@@ -281,10 +312,20 @@ private fun DshAppContent(vm: AppViewModel) {
                                 screenName = Screen.Settings.name
                                 subScreenName = SubScreen.ModelConfig.name
                             },
-                            recentModels = vm.settings.recentModels,
+                            enabledModels = vm.settings.enabledModels,
                             onSwitchModel = { vm.switchModel(it) },
                             approvalMode = vm.settings.approvalMode,
                             onSetApprovalMode = { vm.settings.setApprovalMode(it) },
+                            reasoningEffort = vm.settings.reasoningEffort,
+                            onSetReasoningEffort = { vm.settings.setReasoningEffort(it) },
+                            maxMode = vm.settings.maxMode,
+                            onSetMaxMode = { vm.settings.setMaxMode(it) },
+                            onSetExpandThinking = { vm.settings.setExpandThinking(it) },
+                            timeContext = vm.settings.timeContext,
+                            onSetTimeContext = { vm.settings.setTimeContext(it) },
+                            memorySpaceName = "Default",
+                            onOpenMemoryLibrary = { screenName = Screen.Memory.name },
+                            onOpenPlugins = { screenName = Screen.Plugins.name },
                         )
                     } else {
                         // 一帧空白：LaunchedEffect 马上会建草稿
@@ -298,6 +339,7 @@ private fun DshAppContent(vm: AppViewModel) {
                     assistantAvatar = vm.settings.assistantAvatar,
                     badgeFor = { id -> vm.badgeFor(id) },
                     onOpenDrawer = openDrawer,
+                    onBack = backToSettings,
                     onOpen = { summary ->
                         screenName = null
                         vm.openSession(summary)
@@ -315,6 +357,7 @@ private fun DshAppContent(vm: AppViewModel) {
                     maxDepth = vm.agentMaxDepth,
                     loading = vm.subagentsLoading,
                     onOpenDrawer = openDrawer,
+                    onBack = backToSettings,
                     onRefresh = { vm.refreshSubagents() },
                     onOpen = { vm.openSubagentSession(it.id) },
                     onStop = { vm.stopSubagent(it.id) },
@@ -323,6 +366,7 @@ private fun DshAppContent(vm: AppViewModel) {
                 Screen.Jobs.name -> JobsScreen(
                     jobs = vm.jobs,
                     onOpenDrawer = openDrawer,
+                    onBack = backToSettings,
                     onRefresh = { vm.refreshJobs() },
                     onStop = { vm.stopJob(it) },
                     onPeek = { vm.peekJob(it) },
@@ -336,6 +380,7 @@ private fun DshAppContent(vm: AppViewModel) {
                     workspacePath = vm.workspacePath,
                     initialDetailId = vm.debugPluginDetailId,
                     onOpenDrawer = openDrawer,
+                    onBack = backToSettings,
                     onRefresh = { vm.refreshPlugins() },
                     onImport = { uri -> vm.importPlugin(uri) },
                     onToggle = { id, enabled -> vm.setPluginEnabled(id, enabled) },
@@ -344,11 +389,43 @@ private fun DshAppContent(vm: AppViewModel) {
                     onGrant = { id, raw -> vm.grantPluginPermission(id, raw) },
                     onSetConfig = { id, text -> vm.savePluginConfig(id, text) },
                     onDismissNotice = { vm.dismissPluginNotice() },
+                    onOpenPluginWindow = { record -> vm.openClientPluginWindow(record) },
                 )
 
-                Screen.Terminal.name -> TerminalPage()
+                Screen.Terminal.name -> TerminalPage(onBack = backToSettings)
+
+                Screen.Packages.name -> PackagesScreen(
+                    plugins = vm.pluginsUi,
+                    injected = vm.pluginInjected,
+                    pluginsBusy = vm.pluginsBusy,
+                    pluginNotice = vm.pluginNotice,
+                    operitPackages = vm.operitPackagesUi,
+                    operitPackagesBusy = vm.operitPackagesBusy,
+                    skills = vm.skillsUi,
+                    skillsComplete = vm.skillsComplete,
+                    skillsWarnings = vm.skillsWarnings,
+                    skillNotice = vm.skillNotice,
+                    homeDir = vm.filesDirPath,
+                    workspaceDir = vm.workspacePath,
+                    onBack = { go(Screen.Settings) },
+                    onRefreshPlugins = { vm.refreshPlugins() },
+                    onImportPlugin = { uri -> vm.importPlugin(uri) },
+                    onTogglePlugin = { id, enabled -> vm.setPluginEnabled(id, enabled) },
+                    onReloadPlugin = { id -> vm.reloadPlugin(id) },
+                    onDeletePlugin = { id -> vm.deletePlugin(id) },
+                    onGrantPlugin = { id, raw -> vm.grantPluginPermission(id, raw) },
+                    onSetPluginConfig = { id, text -> vm.savePluginConfig(id, text) },
+                    onDismissPluginNotice = { vm.dismissPluginNotice() },
+                    onLoadOperitPackages = { vm.loadOperitPackages() },
+                    onInstallOperitPackage = { id -> vm.installOperitPackage(id) },
+                    onRefreshSkills = { vm.refreshSkills() },
+                    onImportSkill = { uri -> vm.importSkill(uri) },
+                    onDismissSkillNotice = { vm.dismissSkillNotice() },
+                )
 
                 Screen.VirtualScreen.name -> VirtualScreenPage(onBack = { go(Screen.Settings) })
+
+                Screen.Memory.name -> MemoryScreen(onBack = { go(Screen.Settings) })
 
                 Screen.Accessibility.name -> AccessibilityScreen(onBack = { go(Screen.Settings) })
 
@@ -358,14 +435,24 @@ private fun DshAppContent(vm: AppViewModel) {
                             settings = vm.settings,
                             onBack = { subScreenName = null },
                             onTestConnection = { vm.testConnection() },
+                            onFetchModels = { vm.fetchModels() },
                         )
                         SubScreen.Assistant -> AssistantScreen(
                             settings = vm.settings,
+                            plugins = vm.pluginsUi,
                             onBack = { subScreenName = null },
                         )
                         SubScreen.Behavior -> BehaviorScreen(
                             settings = vm.settings,
                             onBack = { subScreenName = null },
+                        )
+                        SubScreen.Privacy -> PrivacyScreen(
+                            settings = vm.settings,
+                            onBack = { subScreenName = null },
+                            onOpenSessions = {
+                                subScreenName = null
+                                go(Screen.Sessions)
+                            },
                         )
                         SubScreen.Backup -> BackupScreen(
                             onBack = { subScreenName = null },
@@ -412,9 +499,12 @@ private fun DshAppContent(vm: AppViewModel) {
                         null -> SettingsScreen(
                             settings = vm.settings,
                             onOpenDrawer = openDrawer,
+                            scrollState = settingsScroll,
+                            menuVisible = !wideLayout,
                             onOpenModelConfig = { subScreenName = SubScreen.ModelConfig.name },
                             onOpenAssistant = { subScreenName = SubScreen.Assistant.name },
                             onOpenBehavior = { subScreenName = SubScreen.Behavior.name },
+                    onOpenPrivacy = { subScreenName = SubScreen.Privacy.name },
                             onOpenBackup = { subScreenName = SubScreen.Backup.name },
                             onOpenMigration = { subScreenName = SubScreen.DataMigration.name },
                             onOpenSkills = { subScreenName = SubScreen.Skills.name },
@@ -429,6 +519,16 @@ private fun DshAppContent(vm: AppViewModel) {
                 }
             }
         }
+    }
+
+    if (wideLayout) {
+        androidx.compose.material3.PermanentNavigationDrawer(drawerContent = drawerContent) { body() }
+    } else {
+        androidx.compose.material3.ModalNavigationDrawer(
+            drawerState = drawerState,
+            gesturesEnabled = true,
+            drawerContent = drawerContent,
+        ) { body() }
     }
 
     if (showAbout) {
@@ -465,7 +565,3 @@ private fun DshAppContent(vm: AppViewModel) {
         )
     }
 }
-
-private fun credentialReady(settings: SettingsStore): Boolean =
-    if (settings.providerId == SettingsStore.PROVIDER_DEEPSEEK_ACCOUNT) settings.accountToken.isNotBlank()
-    else settings.apiKey.isNotBlank()

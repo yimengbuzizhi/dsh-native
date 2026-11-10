@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,7 +59,12 @@ fun AccessibilityScreen(onBack: () -> Unit) {
 
     Column(Modifier.fillMaxSize().background(c.background)) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp),
+            // statusBarsPadding：之前顶栏被内容顶进状态栏（用户 23:00：无障碍页内容过于靠上、遮挡状态栏）
+            Modifier
+                .fillMaxWidth()
+                .background(c.surface)
+                .statusBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clickable { onBack() }, contentAlignment = Alignment.Center) {

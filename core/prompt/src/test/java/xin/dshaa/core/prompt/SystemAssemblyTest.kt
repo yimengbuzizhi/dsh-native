@@ -113,6 +113,79 @@ class SystemAssemblyTest {
         assertTrue("Start independent delegations" !in withoutAgents)
     }
 
+    /** M71 角色卡：人设段替换默认 persona 前缀，位置仍在 harness:identity 之后、file-reference 之前。 */
+    @Test
+    fun personaCardReplacesDefaultPersonaPrefix() {
+        val system = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek-account",
+            tools = setOf("read"),
+            personaPrefix = "你的名字是「鲸歌」。\n\n你是一只住在手机里的鲸鱼。",
+        )
+        assertTrue("你的名字是「鲸歌」。" in system)
+        assertTrue("你是一只住在手机里的鲸鱼。" in system)
+        assertTrue("You are a coding agent powered by" !in system)
+        val identity = system.indexOf("You are an AI agent powered by DeepSeek Harness.")
+        val persona = system.indexOf("你的名字是「鲸歌」。")
+        val fileRef = system.indexOf("Tokens prefixed with @ are paths")
+        assertTrue(identity >= 0 && persona > identity && fileRef > persona)
+    }
+
+    /** M71 角色卡：系统提示词落在 deployment:persona-suffix（order 10200），必须是全文最后一段。 */
+    @Test
+    fun personaSuffixIsTheLastSection() {
+        val system = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek-account",
+            tools = setOf("read", "write"),
+            personaSuffix = "回答尽量简短，不要用感叹号。",
+        )
+        assertTrue(system.endsWith("回答尽量简短，不要用感叹号。"))
+    }
+
+    /**
+     * M71：插件 `ctx.systemPrompt.section` 和宿主段一起按 order 排序；同名段插件覆盖角色卡
+     * （DSH 同一个段名只有一份，插件的人设走同一条路）。
+     */
+    @Test
+    fun pluginSectionsJoinTheSameAssemblyAndOverrideBySameName() {
+        val pluginSections = listOf(
+            PromptSection("plugin:early", 1, text = "PLUGIN-EARLY"),
+            PromptSection(PromptPack.PERSONA_PREFIX, 0, text = "PLUGIN-PERSONA"),
+        )
+        val system = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek-account",
+            tools = setOf("read"),
+            personaPrefix = "USER-PERSONA",
+            extraSections = pluginSections,
+        )
+        assertTrue("PLUGIN-EARLY" in system)
+        assertTrue("PLUGIN-PERSONA" in system)
+        assertTrue("USER-PERSONA" !in system, "同名段只保留后注册的")
+        // order 1 的插件段紧跟 persona(0)，在 file-reference(900) 之前
+        val persona = system.indexOf("PLUGIN-PERSONA")
+        val early = system.indexOf("PLUGIN-EARLY")
+        val fileRef = system.indexOf("Tokens prefixed with @ are paths")
+        assertTrue(persona >= 0 && early > persona && fileRef > early)
+    }
+
+    /** 没配角色卡时拼装结果必须和上游快照完全一致（默认人设段不被改动）。 */
+    @Test
+    fun emptyPersonaCardKeepsUpstreamSnapshot() {
+        val desktopTools = pack.toolDefinitions.map { it.name }.toSet()
+        val assembled = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek",
+            tools = desktopTools,
+            platform = "desktop",
+            personaPrefix = "",
+            personaSuffix = "  ",
+            extraSections = emptyList(),
+        )
+        assertEquals(pack.desktopSystemSnapshot, assembled)
+    }
+
     @Test
     fun planPolicySectionOnlyRendersInPlanMode() {
         val tools = setOf("read", "write", "exit_plan_mode")
@@ -137,6 +210,33 @@ class SystemAssemblyTest {
     }
 
     /**
+     * M74：插件 `ctx.systemPrompt.variable(name, fn)` + 段文本 `{{name}}`。
+     * 已知变量替换成真实文本；`{{model}}`/`{{provider}}` 照旧；**未知变量原样保留**
+     * （不静默清空，出问题能一眼看出来）。
+     */
+    @Test
+    fun pluginVariablesReplacePlaceholdersAndUnknownOnesSurvive() {
+        val pluginSections = listOf(
+            PromptSection(
+                name = "cosplay:persona",
+                order = 1,
+                text = "你现在在扮演 {{character}}（{{cosplay_active}}）；模型 {{model}} / {{provider}}；未知 {{nope}}。",
+            ),
+        )
+        val system = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek-account",
+            tools = setOf("read"),
+            extraSections = pluginSections,
+            variables = mapOf("character" to "初音未来", "cosplay_active" to "true"),
+        )
+        assertTrue("你现在在扮演 初音未来（true）" in system)
+        assertTrue("deepseek-flash / deepseek-account" in system)
+        assertTrue("{{nope}}" in system, "未知变量必须原样保留")
+        assertTrue("{{character}}" !in system)
+    }
+
+    /**
      * AI 终端工具（docs/77）：6 个工具名/参数逐字对齐 Operit，且都进了 Android 工具表
      * （`androidApiTools()` 追加 `tools-android.json`；上层再按 registry.names 过滤）。
      */
@@ -157,7 +257,7 @@ class SystemAssemblyTest {
             assertEquals(params, properties, "parameters of $name")
             assertTrue(!tool.description.isNullOrBlank(), "description of $name")
         }
-        // 上游 32 个 + 18 个 Android 设备/终端工具
-        assertEquals(32 + 18, tools.size)
+        // 上游 32 个 + 26 个 Android 设备/终端/记忆工具（18 设备终端 + 8 记忆，M56 追加）
+        assertEquals(32 + 26, tools.size)
     }
 }

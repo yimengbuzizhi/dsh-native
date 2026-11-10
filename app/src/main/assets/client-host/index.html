@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>DSH 插件窗口</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  #ds-root, #ds-slots {
+    position: absolute;
+    inset: 0;
+  }
+  #ds-root { z-index: 1; }
+  #ds-slots { z-index: 2; pointer-events: none; }
+  #ds-slots > * { pointer-events: auto; }
+  #ds-status {
+    position: absolute;
+    z-index: 9;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    display: none;
+    padding: 7px 10px;
+    border-radius: 9px;
+    background: rgba(0, 0, 0, .62);
+    color: #ffb4b4;
+    font: 12px/1.45 -apple-system, "PingFang SC", sans-serif;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+<div id="ds-root"></div>
+<div id="ds-slots"></div>
+<div id="ds-status"></div>
+
+<!-- React 18.3.1 UMD（本地，不走网络）：给 dsh-dafeiyu / dsh-dafeiyu-pet / dsh-ventus-whale 的 require('react') 用 -->
+<script src="vendor/react.js"></script>
+<script src="vendor/react-dom.js"></script>
+<script src="host.js"></script>
+</body>
+</html>

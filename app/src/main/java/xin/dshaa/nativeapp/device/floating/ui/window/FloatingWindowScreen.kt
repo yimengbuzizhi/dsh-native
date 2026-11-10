@@ -234,7 +234,7 @@ private fun WindowContent(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            items(messages.takeLast(200), key = { it.id }) { message ->
+                            items(messages.takeLast(200).asReversed(), key = { it.id }) { message ->
                                 MessageItem(message)
                             }
                         }

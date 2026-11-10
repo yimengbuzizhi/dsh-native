@@ -158,6 +158,19 @@ object PluginPackage {
         val configSchema = (configObject?.get("schema") as? JsonObject)
             ?: configObject?.takeIf { it["type"] != null }
         val configDefaults = configObject?.get("default") as? JsonObject
+        // DSH 扩展字段：客户端半侧、组合包补丁、DSH 版本要求。手机只识别/展示，不执行 Web UI。
+        val dshObject = json["dsh"] as? JsonObject
+        val clientUi = dshObject?.get("client") != null
+        val bundlePatch = run {
+            val bundle = dshObject?.get("bundle") as? JsonObject ?: return@run null
+            when (val patch = bundle["patch"]) {
+                is kotlinx.serialization.json.JsonPrimitive -> patch.contentOrNull
+                is kotlinx.serialization.json.JsonArray ->
+                    patch.firstOrNull()?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() }
+                else -> null
+            }
+        }
+        val enginesDsh = (json["engines"] as? JsonObject)?.string("dsh")
         return ManifestRead.Ok(
             PluginManifest(
                 id = id,
@@ -169,6 +182,9 @@ object PluginPackage {
                 permissions = permissions,
                 configSchema = configSchema,
                 configDefaults = configDefaults,
+                clientUi = clientUi,
+                bundlePatch = bundlePatch,
+                enginesDsh = enginesDsh,
             ),
         )
     }

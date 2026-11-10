@@ -18,6 +18,9 @@ import xin.dshaa.nativeapp.device.floating.FloatingBallService
  * 2026-11-09（用户要求）：悬浮球跟随后台——应用不在前台时自动出现，回到前台自动收起。
  * 用 [ProcessLifecycleOwner] 而不是 MainActivity 的生命周期，避免位置附件那种透明 Activity
  * 把「应用退后台」误判成一次前后台切换。
+ *
+ * 2026-11-10（M71，用户要求）：大肥鱼 / 3D 鲸鱼娘 / 鲸鱼娘挂件三组原生替身全部删除，
+ * 悬浮窗只剩悬浮球；这些插件的界面改由通用客户端插件宿主跑插件自己的 `dsh.client`。
  */
 class DshApplication : Application() {
     override fun onCreate() {

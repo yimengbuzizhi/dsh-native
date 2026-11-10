@@ -1,0 +1,15 @@
+/*
+ * 宿主兼容样式：dsh-plugin-whale（鲸鱼娘挂件）。
+ *
+ * 只修「插件自己拖窗口」在悬浮窗里会踩到的问题，不改插件逻辑：
+ * 插件的拖动 pill 用 `pointerdown/pointermove` 改自己的 inline `left/top`（页面内搬自己），
+ * 桌面浏览器里那是「在整页里挪位置」；这里页面 = 悬浮窗，挪出去就等于挪到看不到的地方。
+ * 适配层（`adapters/dsh-plugin-whale.js`）把拖动 pill 的单指拖动改成**移动真正的悬浮窗**，
+ * 所以这里用 !important 把根元素钉在窗口右下角，插件的 inline left/top 只当它的内部状态。
+ */
+#dsh-whale-floating-pet {
+  right: 28px !important;
+  bottom: 36px !important;
+  left: auto !important;
+  top: auto !important;
+}

@@ -1,7 +1,7 @@
 # 15 · Operit UI 借鉴清单（用户要求：全面照搬，不自研）
 
 > 2026-11-07｜用户明确：**我们是在做一个新软件，别人已经成熟，UI 能学就学、能做成别人的样子就做，千万不要自己发明界面。**
-> Operit（LGPL）源码已 clone：`<workspace>\native\.thirdparty-src\Operit`（gitignored，只读参考，可复制代码）。
+> Operit（LGPL）源码已 clone：`D:\dsh\native\.thirdparty-src\Operit`（gitignored，只读参考，可复制代码）。
 > RikkaHub（AGPL）只学设计，不抄代码。
 
 ## 一、头像：不是字母，是真正的自定义

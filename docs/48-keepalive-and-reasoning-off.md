@@ -70,7 +70,7 @@ W/DshTurn: wake lock failed: Neither user 10310 nor current process has android.
 
 ## 四、思考强度「彻底关闭」（群反馈 9）：off 是真实语义，不是假 UI
 
-**上游取证**（`.upstream` 里没有，从 `<workspace>dsh\resources\app.asar` 里抽的
+**上游取证**（`.upstream` 里没有，从 `D:\dshdsh\resources\app.asar` 里抽的
 `@deepseek-ai/dsh-llm-deepseek/lib/index.js`）：
 
 ```js

@@ -1,7 +1,6 @@
 package xin.dshaa.nativeapp.ui.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +18,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Visibility
@@ -36,12 +34,17 @@ import xin.dshaa.nativeapp.data.SettingsStore
 import xin.dshaa.ui.design.component.SettingsCard
 import xin.dshaa.ui.design.component.SettingsGroup
 import xin.dshaa.ui.design.component.SettingsInfoBanner
-import xin.dshaa.ui.design.component.SettingsSectionHeader
 import xin.dshaa.ui.design.component.SettingsSelectorRow
 import xin.dshaa.ui.design.component.SettingsSwitchRow
 import xin.dshaa.ui.design.theme.DshTheme2
 
-/** 显示与行为：思考过程展开偏好（Operit `expand_thinking_process_default`）+ 工具审批 + 主题。 */
+/**
+ * 显示与行为：思考过程展开偏好（Operit `expand_thinking_process_default`）+ 时间上下文 + 工具审批 + 主题。
+ *
+ * 2026-11-10（M71）：大肥鱼 / 3D 鲸鱼娘 / 鲸鱼娘挂件三组原生替身设置项全部删除
+ * （用户原话「这些都不是我想要的，赶紧删掉吧」）；这些插件的窗口改由通用客户端插件宿主
+ * 打开插件自己的 `dsh.client`，设置入口在插件详情页，不再占「显示与行为」。
+ */
 @Composable
 fun BehaviorScreen(
     settings: SettingsStore,
@@ -75,8 +78,8 @@ fun BehaviorScreen(
                     onCheckedChange = { settings.setTimeContext(it) },
                 )
             }
-            SettingsSectionHeader(icon = Icons.Rounded.Security, title = "工具权限")
-            SettingsCard {
+
+            SettingsGroup(icon = Icons.Rounded.Security, title = "工具权限") {
                 SettingsSelectorRow(
                     title = "审批方式",
                     subtitle = "写类工具与命令执行",
@@ -91,7 +94,7 @@ fun BehaviorScreen(
                     },
                 )
             }
-            Spacer(Modifier.height(16.dp))
+
             SettingsGroup(icon = Icons.Rounded.Palette, title = "主题") {
                 SettingsSelectorRow(
                     title = "外观",

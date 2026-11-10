@@ -163,7 +163,7 @@ v4 落盘实测（`tools/session-dump.ps1` 解开）：
 
 1. **Node 解不了多 zstd 帧**：`zlib.zstdDecompressSync` 和 `createZstdDecompress` 都只解第一帧（220 字节 header），
    必须用 zstd-jni 的 `ZstdInputStream.setContinuous(true)` 才能读完整会话。
-2. **PowerShell 里 .NET 相对路径按进程 cwd 解析**：`[IO.File]::ReadAllBytes("docs\...")` 实际找 `<workspace>\docs\...`；
+2. **PowerShell 里 .NET 相对路径按进程 cwd 解析**：`[IO.File]::ReadAllBytes("docs\...")` 实际找 `D:\dsh\docs\...`；
    一律用绝对路径。
 3. **`adb exec-out ... < file` 会挂住**：stdin 关了，远端 `sh` 的管道不结束 → 命令超时。
    base64 文本走 `type file | adb shell "run-as pkg sh -c 'cat > /绝对路径'"` 可以（相对路径不行：`sh -c` 的 cwd 不是 app 数据目录）。

@@ -114,6 +114,16 @@
                 android:value="floating ball overlay" />
         </service>
 
+        <!-- DSH 客户端插件宿主（M70）：通用跑插件自己的 dsh.client 界面（不再按插件重画） -->
+        <service
+            android:name=".pluginui.ClientPluginWindowService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="dsh client plugin webview overlay" />
+        </service>
+
         <!-- 悬浮窗附件「通知」的数据源（docs/76 W24）：系统「通知使用权」页授权后才绑定 -->
         <service
             android:name=".device.notify.DshNotificationListenerService"

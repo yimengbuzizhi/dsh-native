@@ -101,7 +101,7 @@ VirtualScreenOverlay: apply animate=true full=false snap=false target=363,920 34
 
 ```bash
 # 编译 / 装机
-cd <workspace>\native
+cd D:\dsh\native
 cmd /c "set JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot&& .tools\gradle-8.9\bin\gradle.bat :app:assembleDebug --console=plain > build-debug.log 2>&1"
 C:\Android\platform-tools\adb.exe install --no-streaming -r -t app\build\outputs\apk\debug\app-debug.apk
 

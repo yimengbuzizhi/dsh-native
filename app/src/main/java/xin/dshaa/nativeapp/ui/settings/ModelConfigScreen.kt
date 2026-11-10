@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -76,6 +78,7 @@ fun ModelConfigScreen(
     settings: SettingsStore,
     onBack: () -> Unit,
     onTestConnection: suspend () -> String,
+    onFetchModels: suspend () -> Result<List<String>> = { Result.failure(IllegalStateException("未接入")) },
 ) {
     val c = DshTheme2.colors
     val scope = rememberCoroutineScope()
@@ -88,16 +91,17 @@ fun ModelConfigScreen(
     var advancedExpanded by remember { mutableStateOf(false) }
     // 群反馈（beca_se）：思考强度点一下转一档太麻烦 → 改成弹层四选一（docs/48）
     var effortPicker by remember { mutableStateOf(false) }
+    // 拉取模型列表（2026-11-09 用户要求）：fetching 表示请求中，models 非 null 时弹选择层
+    var fetchingModels by remember { mutableStateOf(false) }
+    var fetchedModels by remember { mutableStateOf<List<String>?>(null) }
+    var fetchError by remember { mutableStateOf<String?>(null) }
 
     val provider = SettingsStore.providerOf(settings.providerId)
-    val needsKey = provider.needsKey
     val focusManager = LocalFocusManager.current
 
-    // 用户反馈：以前每次按键都直接写 settings 并 clamp，导致「最大输出」想打 5 位数字时
-    // 第一位就被夹成 1024；模型名删空也会立刻变回 deepseek-flash。改成编辑期只改本地文本，
-    // 失焦/完成时再校验落盘。
-    var maxTokensText by remember { mutableStateOf(settings.maxTokens.toString()) }
-    var maxTokensFocused by remember { mutableStateOf(false) }
+    // 用户反馈：以前每次按键都直接写 settings 并 clamp，导致模型名删空也会立刻变回
+    // deepseek-flash。改成编辑期只改本地文本，失焦/完成时再校验落盘。
+    // 2026-11-09：删掉「最大输出 tokens」设置（用户要求；请求固定用默认 8192）。
     // 上下文窗口（M44）：空 = 0 = 未知（自动压缩关闭）；按模型记忆
     var contextWindowText by remember {
         mutableStateOf(settings.contextWindow.takeIf { it > 0 }?.toString().orEmpty())
@@ -108,9 +112,6 @@ fun ModelConfigScreen(
     var modelText by remember { mutableStateOf(settings.model) }
     var modelFocused by remember { mutableStateOf(false) }
 
-    LaunchedEffect(settings.maxTokens, maxTokensFocused) {
-        if (!maxTokensFocused) maxTokensText = settings.maxTokens.toString()
-    }
     LaunchedEffect(settings.contextWindow, contextWindowFocused) {
         if (!contextWindowFocused) {
             contextWindowText = settings.contextWindow.takeIf { it > 0 }?.toString().orEmpty()
@@ -130,11 +131,6 @@ fun ModelConfigScreen(
         modelText = settings.model
     }
 
-    fun commitMaxTokensText() {
-        maxTokensText.toIntOrNull()?.let { settings.setMaxTokens(it) }
-        maxTokensText = settings.maxTokens.toString()
-    }
-
     fun commitContextWindowText() {
         settings.setContextWindow(contextWindowText.toIntOrNull() ?: 0)
         contextWindowText = settings.contextWindow.takeIf { it > 0 }?.toString().orEmpty()
@@ -149,7 +145,6 @@ fun ModelConfigScreen(
     DisposableEffect(Unit) {
         onDispose {
             settings.setModel(modelText)
-            maxTokensText.toIntOrNull()?.let { settings.setMaxTokens(it) }
             settings.setContextWindow(contextWindowText.toIntOrNull() ?: 0)
             if (temperatureText.isBlank()) settings.setTemperature(null)
             else temperatureText.toDoubleOrNull()?.let { settings.setTemperature(it) }
@@ -209,7 +204,7 @@ fun ModelConfigScreen(
                         },
                     )
                     Spacer(Modifier.width(12.dp))
-                    MiniChip(if (needsKey) "API 密钥通道" else "账号令牌通道")
+                    MiniChip("API 密钥通道")
                 }
                 testResult?.let { text ->
                     Surface(
@@ -257,35 +252,19 @@ fun ModelConfigScreen(
                     style = MaterialTheme.typography.labelSmall,
                     color = c.faint,
                 )
-                if (needsKey) {
-                    SettingsTextField(
-                        title = "API密钥",
-                        subtitle = if (settings.apiKey.isBlank()) "未设置密钥，可直接输入" else "已设置，点击右侧眼睛显示",
-                        value = settings.apiKey,
-                        onValueChange = { settings.setApiKey(it.replace("\n", "").replace(" ", "")) },
-                        placeholder = "sk-…",
-                        visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingContent = {
-                            Box(Modifier.size(40.dp).clip(CircleShape).clickable { showKey = !showKey }, contentAlignment = Alignment.Center) {
-                                Text(if (showKey) "隐藏" else "显示", style = MaterialTheme.typography.labelSmall, color = c.brandBright)
-                            }
-                        },
-                    )
-                } else {
-                    SettingsTextField(
-                        title = "账号令牌",
-                        subtitle = "粘贴桌面版 DSH 的令牌（或 adb 导入）",
-                        value = settings.accountToken,
-                        onValueChange = { settings.setAccountToken(it.replace("\n", "").replace(" ", "")) },
-                        placeholder = "64 位令牌",
-                        visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingContent = {
-                            Box(Modifier.size(40.dp).clip(CircleShape).clickable { showKey = !showKey }, contentAlignment = Alignment.Center) {
-                                Text(if (showKey) "隐藏" else "显示", style = MaterialTheme.typography.labelSmall, color = c.brandBright)
-                            }
-                        },
-                    )
-                }
+                SettingsTextField(
+                    title = "API密钥",
+                    subtitle = if (settings.apiKey.isBlank()) "未设置密钥，可直接输入" else "已设置，点击右侧眼睛显示",
+                    value = settings.apiKey,
+                    onValueChange = { settings.setApiKey(it.replace("\n", "").replace(" ", "")) },
+                    placeholder = "sk-…",
+                    visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingContent = {
+                        Box(Modifier.size(40.dp).clip(CircleShape).clickable { showKey = !showKey }, contentAlignment = Alignment.Center) {
+                            Text(if (showKey) "隐藏" else "显示", style = MaterialTheme.typography.labelSmall, color = c.brandBright)
+                        }
+                    },
+                )
                 SettingsTextField(
                     title = "模型名称",
                     subtitle = "例如: deepseek-flash / deepseek-v4-pro",
@@ -299,6 +278,37 @@ fun ModelConfigScreen(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                 )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        enabled = !fetchingModels,
+                        onClick = {
+                            fetchingModels = true
+                            fetchError = null
+                            scope.launch {
+                                val result = onFetchModels()
+                                fetchingModels = false
+                                result.onSuccess { fetchedModels = it }
+                                    .onFailure { fetchError = it.message ?: "拉取失败" }
+                            }
+                        },
+                    ) {
+                        Text(
+                            if (fetchingModels) "拉取中…" else "从供应商拉取模型列表",
+                            color = c.brandBright,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    if (fetchingModels) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = c.brandBright,
+                        )
+                    }
+                }
+                fetchError?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = c.danger)
+                }
                 SettingsSwitchRow(
                     title = "模型支持识图",
                     subtitle = if (settings.visionEnabled) {
@@ -338,18 +348,6 @@ fun ModelConfigScreen(
                 expanded = paramsExpanded,
                 onToggle = { paramsExpanded = !paramsExpanded },
             ) {
-                SettingsTextField(
-                    title = "最大输出 tokens",
-                    subtitle = "max_tokens，默认 256000；编辑完点完成/收起键盘才生效",
-                    value = maxTokensText,
-                    onValueChange = { v -> maxTokensText = v.filter { it.isDigit() }.take(7) },
-                    onFocusChanged = { focused ->
-                        maxTokensFocused = focused
-                        if (!focused) commitMaxTokensText()
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                )
                 SettingsTextField(
                     title = "上下文窗口 tokens",
                     subtitle = if (settings.contextWindow > 0) {
@@ -443,9 +441,15 @@ fun ModelConfigScreen(
                 expanded = advancedExpanded,
                 onToggle = { advancedExpanded = !advancedExpanded },
             ) {
-                SettingsInfoBanner("协议固定为 Anthropic Messages：POST {base}/v1/messages，流式 SSE。")
+                SettingsInfoBanner(
+                    if (settings.protocol == "openai") {
+                        "OpenAI Chat Completions：POST {base}/v1/chat/completions，Authorization: Bearer，流式 SSE。"
+                    } else {
+                        "Anthropic Messages：POST {base}/v1/messages，x-api-key，流式 SSE。"
+                    },
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    MiniChip("anthropic-version: 2023-06-01")
+                    MiniChip(if (settings.protocol == "openai") "chat/completions" else "anthropic-version: 2023-06-01")
                     Spacer(Modifier.width(8.dp))
                     MiniChip("stream: true")
                 }
@@ -462,7 +466,12 @@ fun ModelConfigScreen(
             onDismissRequest = { showProviderDialog = false },
             title = { Text("API提供商", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    Modifier
+                        .heightIn(max = 460.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     SettingsStore.providers.forEach { p ->
                         val selected = p.id == settings.providerId
                         Surface(
@@ -491,6 +500,84 @@ fun ModelConfigScreen(
             },
             confirmButton = { TextButton(onClick = { showProviderDialog = false }) { Text("关闭") } },
             containerColor = c.surface,
+        )
+    }
+
+    fetchedModels?.let { models ->
+        // M74：拉取后**多选**（用户 23:20）。勾选的进「已启用模型」，输入条模型浮层只在这些模型里切换；
+        // 以前是点一下就改当前模型、其余不落库，导致列表里混进历史用过但没勾选的模型。
+        var selection by remember(models) {
+            mutableStateOf(
+                (settings.enabledModels.filter { it in models } + settings.model)
+                    .filter { it in models }
+                    .toSet()
+                    .ifEmpty { setOf(settings.model) },
+            )
+        }
+        AlertDialog(
+            onDismissRequest = { fetchedModels = null },
+            containerColor = c.surface,
+            title = {
+                Text(
+                    "选择要启用的模型（已选 ${selection.size}/${models.size}）",
+                    fontWeight = FontWeight.SemiBold,
+                )
+            },
+            text = {
+                Column(
+                    Modifier
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        "勾选的模型会出现在输入条的模型浮层里；没勾的不会出现。当前模型：${settings.model}（一律保留）。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = c.faint,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    models.forEach { name ->
+                        val checked = name in selection
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    selection = if (checked) selection - name else selection + name
+                                }
+                                .padding(vertical = 4.dp, horizontal = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = { next ->
+                                    selection = if (next) selection + name else selection - name
+                                },
+                            )
+                            Text(
+                                name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = c.text,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (name == settings.model) {
+                                MiniChip("当前")
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    settings.setEnabledModels(selection.toList())
+                    fetchedModels = null
+                }) { Text("保存（${selection.size}）") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { selection = models.toSet() }) { Text("全选") }
+                    TextButton(onClick = { fetchedModels = null }) { Text("取消") }
+                }
+            },
         )
     }
 }

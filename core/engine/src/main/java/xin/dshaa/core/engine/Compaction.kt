@@ -10,7 +10,7 @@ import xin.dshaa.core.model.ContentBlock
  * 上下文压缩（M43）：逐字移植上游 `@deepseek-ai/dsh-compaction-basic` 0.2.1-rc.2 的
  * **手工 `/compact`** 路径，外加 `dsh-command-compact` 的命令文案。
  *
- * 搬了什么（对照上游 `@deepseek-ai/dsh-compaction-basic` 的 `lib/index.js`）：
+ * 搬了什么（对着 `D:\dsh021\node_modules\@deepseek-ai\dsh-compaction-basic\lib\index.js`）：
  * - `selectCompactableRange()`（第 410-433 行）：从最新往回累计消息价，攒够 `retainTokens`
  *   就停；边界不许切开一条工具结果（工具调用/结果必须同侧）；
  * - 令牌价（`dsh-token-meter` 的固定密度启发式，第 16-18 行）：4 字符 1 令牌 + 每块 4 + 每条 4；

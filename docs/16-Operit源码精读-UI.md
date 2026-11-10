@@ -2,7 +2,7 @@
 
 > 2026-11-07｜用户要求：「只看截图太浅，看源码更仔细」。
 > 本文是**逐文件读 Operit 源码**后抽出的规格：组件几何、字号、颜色、文案、交互、状态。
-> 所有路径相对 `<workspace>\native\.thirdparty-src\Operit\app\src\main\java\com\ai\assistance\operit\`。
+> 所有路径相对 `D:\dsh\native\.thirdparty-src\Operit\app\src\main\java\com\ai\assistance\operit\`。
 > 许可：Operit 为 LGPL-3.0，**可直接复制代码**，复制处在 `NOTICE` 记来源。
 
 ---
