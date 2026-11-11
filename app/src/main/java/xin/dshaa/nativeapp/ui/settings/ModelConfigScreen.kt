@@ -109,8 +109,6 @@ fun ModelConfigScreen(
     var contextWindowFocused by remember { mutableStateOf(false) }
     var temperatureText by remember { mutableStateOf(settings.temperature?.toString().orEmpty()) }
     var temperatureFocused by remember { mutableStateOf(false) }
-    var modelText by remember { mutableStateOf(settings.model) }
-    var modelFocused by remember { mutableStateOf(false) }
 
     LaunchedEffect(settings.contextWindow, contextWindowFocused) {
         if (!contextWindowFocused) {
@@ -120,17 +118,9 @@ fun ModelConfigScreen(
     LaunchedEffect(settings.temperature, temperatureFocused) {
         if (!temperatureFocused) temperatureText = settings.temperature?.toString().orEmpty()
     }
-    LaunchedEffect(settings.model, modelFocused) {
-        if (!modelFocused) modelText = settings.model
-    }
 
     // 真机回归补充：只靠「失焦」落盘还不够——键盘没有 Done 动作，输入完直接返回也会丢编辑。
     // 统一成三处落盘：键盘完成（ImeAction.Done）、失焦、离开页面（onDispose 兜底）。
-    fun commitModelText() {
-        settings.setModel(modelText)
-        modelText = settings.model
-    }
-
     fun commitContextWindowText() {
         settings.setContextWindow(contextWindowText.toIntOrNull() ?: 0)
         contextWindowText = settings.contextWindow.takeIf { it > 0 }?.toString().orEmpty()
@@ -144,7 +134,6 @@ fun ModelConfigScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            settings.setModel(modelText)
             settings.setContextWindow(contextWindowText.toIntOrNull() ?: 0)
             if (temperatureText.isBlank()) settings.setTemperature(null)
             else temperatureText.toDoubleOrNull()?.let { settings.setTemperature(it) }
@@ -248,7 +237,7 @@ fun ModelConfigScreen(
                     placeholder = SettingsStore.defaultBaseUrl(provider.id),
                 )
                 Text(
-                    "实际请求地址：${requestUrl(settings.baseUrl)}",
+                    "实际请求地址：${requestUrl(settings.baseUrl.ifBlank { SettingsStore.defaultBaseUrl(settings.providerId) })}",
                     style = MaterialTheme.typography.labelSmall,
                     color = c.faint,
                 )
@@ -265,19 +254,54 @@ fun ModelConfigScreen(
                         }
                     },
                 )
-                SettingsTextField(
-                    title = "模型名称",
-                    subtitle = "例如: deepseek-flash / deepseek-v4-pro",
-                    value = modelText,
-                    onValueChange = { modelText = it.replace("\n", "").replace(" ", "") },
-                    placeholder = SettingsStore.DEFAULT_MODEL,
-                    onFocusChanged = { focused ->
-                        modelFocused = focused
-                        if (!focused) commitModelText()
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                // 用户 2026-11-11：不要再手填「模型名称」——已经能从供应商拉取列表了。
+                // 改成列出「可用模型」：点一行就用它；列表来自 settings.enabledModels
+                // （拉取后的多选落库），输入条的模型浮层也只用这些。
+                Text(
+                    "可用模型",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = c.sub,
                 )
+                Text(
+                    if (settings.enabledModels.isEmpty()) {
+                        "还没有模型：点下面「从供应商拉取模型列表」，勾选要用的模型。"
+                    } else {
+                        "点一行切换当前模型；输入条模型浮层只列这些（共 ${settings.enabledModels.size} 个）。"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = c.faint,
+                )
+                val availableModels = settings.enabledModels
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(c.surfaceAlt.copy(alpha = 0.45f)),
+                ) {
+                    availableModels.forEach { m ->
+                        val selected = m == settings.model
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { settings.setModel(m) }
+                                .background(if (selected) c.brandSoft else androidx.compose.ui.graphics.Color.Transparent)
+                                .padding(horizontal = 10.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                m,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = c.text,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                if (selected) "当前" else "切换",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (selected) c.brandBright else c.faint,
+                            )
+                        }
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
                         enabled = !fetchingModels,

@@ -146,6 +146,8 @@ fun PackagesScreen(
     var selectedPluginId by remember { mutableStateOf<String?>(null) }
     var selectedSkill by remember { mutableStateOf<SkillSummary?>(null) }
     var selectedMcp by remember { mutableStateOf<McpServer?>(null) }
+    /** M76：内置包详情（未安装也能看完整介绍 / 工具 / 权限）。 */
+    var selectedPackage by remember { mutableStateOf<OperitBundledPackage?>(null) }
     var pendingDeletePlugin by remember { mutableStateOf<PluginRecord?>(null) }
     var pendingDeleteMcp by remember { mutableStateOf<McpServer?>(null) }
     var showSkillWarnings by remember { mutableStateOf(false) }
@@ -423,7 +425,8 @@ fun PackagesScreen(
                                     installed = installed,
                                     busy = operitPackagesBusy || pluginsBusy,
                                     onInstall = { onInstallOperitPackage(pkg.pluginId) },
-                                    onOpenInstalled = {
+                                    onOpen = { selectedPackage = pkg },
+                                    onOpenPlugin = {
                                         if (installed != null) selectedPluginId = installed.id
                                     },
                                 )
@@ -531,6 +534,21 @@ fun PackagesScreen(
                 },
                 onGrant = { raw -> onGrantPlugin(record.id, raw) },
                 onSetConfig = { text -> onSetPluginConfig(record.id, text) },
+            )
+        }
+
+        selectedPackage?.let { pkg ->
+            val installed = plugins.firstOrNull { it.id == pkg.pluginId }
+            OperitPackageDetailDialog(
+                pkg = pkg,
+                installed = installed,
+                busy = operitPackagesBusy || pluginsBusy,
+                onDismiss = { selectedPackage = null },
+                onInstall = { onInstallOperitPackage(pkg.pluginId) },
+                onOpenPlugin = {
+                    selectedPackage = null
+                    if (installed != null) selectedPluginId = installed.id
+                },
             )
         }
 
@@ -747,11 +765,12 @@ private fun OperitPackageRow(
     installed: PluginRecord?,
     busy: Boolean,
     onInstall: () -> Unit,
-    onOpenInstalled: () -> Unit,
+    onOpen: () -> Unit,
+    onOpenPlugin: () -> Unit,
 ) {
     val c = DshTheme2.colors
     Surface(
-        onClick = { if (installed != null) onOpenInstalled() },
+        onClick = onOpen,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         color = c.surface,
@@ -785,7 +804,7 @@ private fun OperitPackageRow(
                     pkg.description,
                     style = MaterialTheme.typography.bodySmall,
                     color = c.sub,
-                    maxLines = 2,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
@@ -817,7 +836,7 @@ private fun OperitPackageRow(
                 }
             }
             if (installed != null) {
-                TextButton(onClick = onOpenInstalled) {
+                TextButton(onClick = onOpenPlugin) {
                     Text("已安装", color = c.brand, style = MaterialTheme.typography.labelMedium)
                 }
             } else {
@@ -831,6 +850,87 @@ private fun OperitPackageRow(
             }
         }
     }
+}
+
+/**
+ * 内置包详情（M76）：未安装的包也能点开——列表里只截 3 行介绍，完整介绍、工具清单、
+ * 权限、兼容状态与安装入口都在这里；已安装的给「插件详情」跳转。
+ */
+@Composable
+private fun OperitPackageDetailDialog(
+    pkg: OperitBundledPackage,
+    installed: PluginRecord?,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onInstall: () -> Unit,
+    onOpenPlugin: () -> Unit,
+) {
+    val c = DshTheme2.colors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(pkg.title, color = c.text) },
+        text = {
+            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
+                Text(
+                    "${pkg.category} · ${pkg.tools.size} 个工具 · ${pkg.permissionLabel}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = c.faint,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (installed != null) "已安装 · ${installed.version} · ${pkg.status.label}" else pkg.status.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (installed != null) c.brand else if (pkg.status == OperitStatus.READY) c.sub else c.warn,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("介绍", style = MaterialTheme.typography.labelSmall, color = c.faint)
+                Spacer(Modifier.height(4.dp))
+                Text(pkg.description, style = MaterialTheme.typography.bodyMedium, color = c.text)
+                if (pkg.notes.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    pkg.notes.forEach { note ->
+                        Text(
+                            "· $note",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = c.warn,
+                        )
+                    }
+                }
+                if (pkg.tools.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("工具（${pkg.tools.size}）", style = MaterialTheme.typography.labelSmall, color = c.faint)
+                    Spacer(Modifier.height(4.dp))
+                    pkg.tools.forEach { tool ->
+                        Text("· $tool", style = MaterialTheme.typography.bodySmall, color = c.sub)
+                    }
+                }
+                if (pkg.permissions.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("权限", style = MaterialTheme.typography.labelSmall, color = c.faint)
+                    Spacer(Modifier.height(4.dp))
+                    Text(pkg.permissions.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = c.sub)
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("插件 id", style = MaterialTheme.typography.labelSmall, color = c.faint)
+                Text(pkg.pluginId, style = MaterialTheme.typography.bodySmall, color = c.sub)
+            }
+        },
+        confirmButton = {
+            if (installed == null) {
+                TextButton(onClick = onInstall, enabled = !busy) {
+                    Text(if (busy) "安装中…" else "安装", color = if (busy) c.faint else c.brand)
+                }
+            } else {
+                TextButton(onClick = onOpenPlugin) {
+                    Text("插件详情", color = c.brand)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("关闭", color = c.sub) }
+        },
+        containerColor = c.surface,
+    )
 }
 
 /** Operit `SkillConfigScreen` 的行：图标 + 名称/描述 + 路径；点开详情。 */

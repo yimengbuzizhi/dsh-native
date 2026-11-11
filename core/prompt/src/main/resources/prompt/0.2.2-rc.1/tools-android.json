@@ -186,13 +186,14 @@
   },
   {
     "name": "execute_hidden_terminal_command",
-    "description": "Run a command in a hidden non-PTY executor (same Ubuntu environment, not shown in the terminal UI). Commands with the same executor_key reuse one background login shell, so `cd`/exports persist there too. Returns the real exit_code, and timed_out=true when the timeout expired. Use it for quick one-off commands that do not need a visible session; use create_terminal_session for interactive work.",
+    "description": "Run a command in a hidden non-PTY executor (same Ubuntu environment, not shown in the terminal UI). Commands with the same executor_key reuse one background login shell, so `cd`/exports persist there too. Returns the real exit_code, and timed_out=true when the timeout expired. Use it for quick one-off commands that do not need a visible session; use create_terminal_session for interactive work. Set identity=\"shell\" to run with Android shell permissions through Shizuku (uid 2000: pm/settings/dumpsys/input/screencap, /data/local/tmp) when the app uid is not enough; identity=\"root\" uses su on rooted devices. identity defaults to \"app\" (Ubuntu proot, app uid). The Shizuku/root executor has a 15s hard cap and does not keep shell state.",
     "parameters": {
       "type": "object",
       "properties": {
         "command": { "type": "string", "description": "Command to execute." },
-        "executor_key": { "type": "string", "description": "Optional hidden executor key used to reuse the same background shell context (default \"default\")." },
-        "timeout_ms": { "type": "integer", "description": "Optional command timeout in milliseconds (default 120000 = 2 minutes)." }
+        "executor_key": { "type": "string", "description": "Optional hidden executor key used to reuse the same background shell context (default \"default\"). Ignored by identity=shell/root." },
+        "timeout_ms": { "type": "integer", "description": "Optional command timeout in milliseconds (default 120000 = 2 minutes). identity=shell/root ignores it and uses a 15s cap." },
+        "identity": { "type": "string", "enum": ["app", "shell", "root"], "description": "Execution identity: app (default, Ubuntu proot as the app uid), shell (Shizuku, Android shell uid 2000), root (su). Use shell for system-level Android commands that the app uid cannot run." }
       },
       "required": ["command"],
       "additionalProperties": false

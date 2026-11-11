@@ -91,7 +91,7 @@ class PluginPermissionsTest {
         listOf("localhost", "127.0.0.1", "::1", "0.0.0.0", "169.254.1.1").forEach {
             assertTrue(PluginPermissions.isLoopbackOrLocal(it), it)
         }
-        listOf("10.1.2.3", "192.168.1.1", "172.20.0.1").forEach {
+        listOf("10.1.2.3", "192.0.2.11", "172.20.0.1").forEach {
             assertTrue(PluginPermissions.isPrivate(it), it)
         }
         assertFalse(PluginPermissions.isLoopbackOrLocal("api.example.com"))

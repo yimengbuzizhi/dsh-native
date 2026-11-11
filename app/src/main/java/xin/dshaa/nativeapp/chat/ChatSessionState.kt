@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.TextFieldValue
 import xin.dshaa.core.model.ChatMessage
 import xin.dshaa.core.model.ImageRef
 
@@ -32,6 +33,25 @@ class ChatSessionState(modelName: String) {
     var error by mutableStateOf<String?>(null)
     var usageText by mutableStateOf<String?>(null)
     var statusText by mutableStateOf<String?>(null)
+
+    /**
+     * 输入框草稿（M76）：放在会话状态里，横竖屏切布局 / 宽屏抽屉分支重建 Composables 时不丢。
+     * 发送成功后清空；切换会话时随 state 一起切换（每个会话各自保留草稿）。
+     */
+    var draft by mutableStateOf(TextFieldValue(""))
+
+    /** 本轮开始时间（M76 运行状态条：流式期间显示「运行中 12s」，不让人误以为卡死）。 */
+    var turnStartedAt by mutableStateOf(0L)
+
+    /** 上下文圆环（M76）：最近一次请求的 prompt tokens / 窗口大小，窗口为 0 时圆环不显示。 */
+    var lastPromptTokens by mutableStateOf(0)
+    var lastCompletionTokens by mutableStateOf(0)
+    var contextWindow by mutableStateOf(0)
+
+    /** 上下文三段明细的估算 token（系统提示词 / 工具 schema；对话 = prompt - 两者）。 */
+    var estSystemTokens by mutableStateOf(0)
+    var estToolsTokens by mutableStateOf(0)
+
     var pendingApproval by mutableStateOf<PendingApproval?>(null)
 
     /** 旧版备份导入的只读副本：聊天页禁发，只可回看。 */
@@ -128,4 +148,19 @@ data class PendingApproval(
     val toolName: String,
     val arguments: String,
     val summary: String,
+)
+
+/**
+ * 「别的会话在等你」（M78 并行收尾）：审批卡/提问框只画在当前会话上，后台会话弹出来时
+ * 前台聊天页什么都看不见，只有抽屉里一个橙点。聊天页顶部的横幅用它提示，点一下切过去。
+ */
+data class WaitingSession(
+    val sessionId: String,
+    val title: String,
+    /** 等审批的工具名；等回答时是「提问」。 */
+    val toolName: String,
+    /** 审批摘要（命令/路径）或第一条问题正文。 */
+    val summary: String,
+    /** true = 模型在提问（ask_user_question），false = 工具审批。横幅文案不同。 */
+    val question: Boolean = false,
 )

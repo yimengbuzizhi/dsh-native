@@ -221,6 +221,7 @@ fun ChatComposer(
     var modelSheet by remember { mutableStateOf(false) }
     var permissionSheet by remember { mutableStateOf(false) }
     var helpSheet by remember { mutableStateOf(false) }
+    var contextSheet by remember { mutableStateOf(false) }
     var fullscreen by remember { mutableStateOf(false) }
     val planOn = planModePending ?: planModeActive
     val canSend = input.text.isNotBlank() || state.pendingImages.isNotEmpty() || state.pendingFiles.isNotEmpty()
@@ -474,6 +475,9 @@ fun ChatComposer(
                         Icon(Icons.Rounded.KeyboardArrowDown, "模型设置", tint = c.faint, modifier = Modifier.size(16.dp))
                     }
                     Spacer(Modifier.weight(1f))
+                    // M76：上下文圆环（照 DSH ContextMeter）——放在模型 pill 与输入设置之间
+                    ContextMeter(state = state, onClick = { contextSheet = true })
+                    Spacer(Modifier.width(4.dp))
                     ComposerIconButton(
                         icon = Icons.Rounded.Tune,
                         label = "输入设置",
@@ -1051,6 +1055,10 @@ fun ChatComposer(
         }
     }
 
+    if (contextSheet) {
+        ContextPanel(state = state, onDismiss = { contextSheet = false })
+    }
+
     if (packagePicker) {
         PackageSelectorDialog(
             plugins = plugins,
@@ -1085,6 +1093,168 @@ fun ChatComposer(
 }
 
 /** 输入条上的小圆钮（Operit `.agent-icon-button`：36dp，激活时品牌色）。 */
+/**
+ * 上下文圆环（M76，照 DSH `ContextMeter`）：16dp 空心圆 + 2dp 描边，已用部分按百分比描实，
+ * 右侧百分比。点开看三段明细。没有数据时显示「—」，不假装有值。
+ */
+@Composable
+private fun ContextMeter(state: ChatSessionState, onClick: () -> Unit) {
+    val c = DshTheme2.colors
+    val window = state.contextWindow
+    val used = state.lastPromptTokens
+    val hasData = window > 0 && used > 0
+    val percent = if (hasData) ((used.toLong() * 100 / window).toInt()).coerceIn(0, 100) else 0
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Canvas(Modifier.size(16.dp)) {
+            val stroke = 2.dp.toPx()
+            val inset = stroke / 2f
+            val arcSize = Size(size.width - stroke, size.height - stroke)
+            drawArc(
+                color = c.line,
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = Offset(inset, inset),
+                size = arcSize,
+                style = Stroke(stroke),
+            )
+            if (hasData && percent > 0) {
+                drawArc(
+                    color = c.brand,
+                    startAngle = -90f,
+                    sweepAngle = 360f * percent / 100f,
+                    useCenter = false,
+                    topLeft = Offset(inset, inset),
+                    size = arcSize,
+                    style = Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                )
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        Text(
+            if (hasData) "$percent%" else "—",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (hasData) c.sub else c.faint,
+        )
+    }
+}
+
+/** 上下文明细面板（M76）：百分比 + ~已用/窗口 + 系统/工具/对话三段。 */
+@Composable
+private fun ContextPanel(state: ChatSessionState, onDismiss: () -> Unit) {
+    val c = DshTheme2.colors
+    val window = state.contextWindow
+    val used = state.lastPromptTokens
+    val hasData = window > 0 && used > 0
+    val percent = if (hasData) ((used.toLong() * 100 / window).toInt()).coerceIn(0, 100) else 0
+    val systemTokens = state.estSystemTokens.coerceAtLeast(0)
+    val toolsTokens = state.estToolsTokens.coerceAtLeast(0)
+    val messageTokens = if (used > 0) (used - systemTokens - toolsTokens).coerceAtLeast(0) else 0
+    val breakdownTotal = (systemTokens + toolsTokens + messageTokens).coerceAtLeast(1)
+    val rows = listOf(
+        Triple("系统提示词", systemTokens, c.brand),
+        Triple("工具定义", toolsTokens, c.warn),
+        Triple("对话消息", messageTokens, c.sub.copy(alpha = 0.55f)),
+    )
+    ModalSheet(onDismiss = onDismiss) {
+        Text("上下文", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = c.text)
+        Spacer(Modifier.height(10.dp))
+        if (!hasData) {
+            Text(
+                "还没有用量数据。先发一条消息：圆环会按最近一次请求的 prompt tokens 计算已用比例。",
+                style = MaterialTheme.typography.bodySmall,
+                color = c.sub,
+            )
+        } else {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    "$percent%",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = c.text,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "上下文已用 · ~${formatTokenCount(used)} / ${formatTokenCount(window)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = c.faint,
+                    modifier = Modifier.padding(bottom = 3.dp),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            // 三段条：宽度按占比
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(999.dp)),
+            ) {
+                rows.forEach { (_, tokens, color) ->
+                    val weight = tokens.toFloat() / breakdownTotal
+                    if (weight > 0f) {
+                        Box(
+                            Modifier
+                                .weight(weight)
+                                .fillMaxSize()
+                                .background(color),
+                        )
+                    }
+                }
+                val rest = 1f - rows.sumOf { (it.second.toFloat() / breakdownTotal).toDouble() }.toFloat()
+                if (rest > 0f) {
+                    Box(
+                        Modifier
+                            .weight(rest)
+                            .fillMaxSize()
+                            .background(c.surfaceAlt),
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            rows.forEach { (label, tokens, color) ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(color))
+                    Spacer(Modifier.width(8.dp))
+                    Text(label, style = MaterialTheme.typography.bodySmall, color = c.sub, modifier = Modifier.weight(1f))
+                    Text("~${formatTokenCount(tokens)}", style = MaterialTheme.typography.bodySmall, color = c.text)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "系统 / 工具为字符估算，对话 = 最近一次请求 − 两者；总数是模型实际返回的 prompt tokens。",
+                style = MaterialTheme.typography.labelSmall,
+                color = c.faint,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "本轮输出 ~${formatTokenCount(state.lastCompletionTokens)} tokens",
+                style = MaterialTheme.typography.labelSmall,
+                color = c.faint,
+            )
+        }
+    }
+}
+
+/** 1.2K / 22.6K / 1.3M 的紧凑数字（上下文面板用）。 */
+private fun formatTokenCount(value: Int): String {
+    if (value < 1_000) return value.toString()
+    return if (value < 1_000_000) {
+        val k = value / 1000.0
+        if (k >= 100) "${k.toInt()}K" else String.format(java.util.Locale.US, "%.1fK", k)
+    } else {
+        String.format(java.util.Locale.US, "%.1fM", value / 1_000_000.0)
+    }
+}
+
 @Composable
 private fun ComposerIconButton(
     icon: ImageVector,

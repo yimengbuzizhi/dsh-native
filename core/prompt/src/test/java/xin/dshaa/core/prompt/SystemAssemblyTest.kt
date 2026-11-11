@@ -170,6 +170,34 @@ class SystemAssemblyTest {
         assertTrue(persona >= 0 && early > persona && fileRef > early)
     }
 
+    /**
+     * M76（用户第 3 条）：长任务播报约束是独立段 `app:turn-briefing`（order 10150），
+     * 只在 Android 生效——桌面快照逐字节对拍不能被改；位置在 persona-suffix(10200) 之前。
+     */
+    @Test
+    fun turnBriefingSectionIsAndroidOnlyAndBeforePersonaSuffix() {
+        val tools = setOf("read", "write")
+        val android = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek-account",
+            tools = tools,
+            personaSuffix = "回答尽量简短。",
+        )
+        assertTrue("每批工具调用前" in android)
+        assertTrue("工具失败" in android)
+        assertTrue("每个回合收尾必须给用户状态" in android)
+        assertTrue(android.endsWith("回答尽量简短。"), "播报段不能排在 persona-suffix 之后")
+
+        val desktopTools = pack.toolDefinitions.map { it.name }.toSet()
+        val desktop = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek",
+            tools = desktopTools,
+            platform = "desktop",
+        )
+        assertTrue("每批工具调用前" !in desktop, "桌面平台不注入播报段")
+    }
+
     /** 没配角色卡时拼装结果必须和上游快照完全一致（默认人设段不被改动）。 */
     @Test
     fun emptyPersonaCardKeepsUpstreamSnapshot() {
@@ -246,7 +274,8 @@ class SystemAssemblyTest {
         val expected = mapOf(
             "create_terminal_session" to setOf("session_name"),
             "execute_in_terminal_session" to setOf("session_id", "command", "timeout_ms"),
-            "execute_hidden_terminal_command" to setOf("command", "executor_key", "timeout_ms"),
+            // M76：identity=app|shell|root（shell 走 Shizuku，root 走 su），schema 与真正的工具参数一致
+            "execute_hidden_terminal_command" to setOf("command", "executor_key", "timeout_ms", "identity"),
             "input_in_terminal_session" to setOf("session_id", "input", "control"),
             "close_terminal_session" to setOf("session_id"),
             "get_terminal_session_screen" to setOf("session_id"),

@@ -7,6 +7,7 @@ import com.ai.assistance.operit.terminal.TerminalManager
 import com.ai.assistance.operit.terminal.data.SessionInitState
 import com.ai.assistance.operit.terminal.data.TerminalSessionData
 import com.ai.assistance.operit.terminal.provider.type.HiddenExecResult
+import com.ai.assistance.showerclient.ShellIdentity
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.coroutineScope
@@ -20,6 +21,7 @@ import kotlinx.serialization.json.longOrNull
 import xin.dshaa.core.tools.DshTool
 import xin.dshaa.core.tools.ToolContext
 import xin.dshaa.core.tools.ToolResult
+import xin.dshaa.nativeapp.device.DeviceShell
 import java.util.UUID
 
 /**
@@ -231,10 +233,18 @@ class TerminalTools(private val app: Application) {
         val executorKey = args.str("executor_key")?.trim()?.ifEmpty { "default" } ?: "default"
         val timeoutMs = (args.long("timeout_ms") ?: DEFAULT_HIDDEN_TIMEOUT_MS).coerceIn(1_000L, MAX_TIMEOUT_MS)
 
+        // M76：identity=shell/root 走 Shizuku / su（Android 系统级 shell 身份），
+        // 解决「PTY 里跑 pm/settings/dumpsys 只有 app uid」的问题。
+        val identity = args.str("identity")?.trim()?.lowercase().orEmpty()
+        if (identity == "shell" || identity == "root") {
+            return runWithSystemIdentity(command, identity, executorKey, timeoutMs)
+        }
+
         val result = manager.executeHiddenCommand(command, executorKey, timeoutMs)
         val timedOut = result.state == HiddenExecResult.State.TIMEOUT
         val body = buildString {
             appendLine("executor_key: $executorKey")
+            appendLine("identity: app (Ubuntu proot, app uid)")
             appendLine("timed_out: $timedOut")
             appendLine("exit_code: ${result.exitCode}")
             if (result.state != HiddenExecResult.State.OK) appendLine("state: ${result.state.name}")
@@ -243,6 +253,56 @@ class TerminalTools(private val app: Application) {
             append(truncate(result.output.ifBlank { result.rawOutputPreview }).ifEmpty { "(no output)" })
         }.trimEnd()
         return if (timedOut || result.isOk) ToolResult.ok(body) else ToolResult.err(body)
+    }
+
+    /**
+     * 用 Shizuku（uid 2000）或 root 执行一条 Android 侧命令。
+     *
+     * 为什么要单开一条：`execute_in_terminal_session` 是 Ubuntu proot 的 PTY，跑在 App uid 下，
+     * `pm`/`settings`/`dumpsys`/`input`/`screencap` 这类系统命令会被拒绝。这里走 [DeviceShell]
+     * 的 SHELL/ROOT 身份，命令与 PTY 会话无关（一次性、15s 上限、不保留 cd/变量）。
+     */
+    private suspend fun runWithSystemIdentity(
+        command: String,
+        identity: String,
+        executorKey: String,
+        timeoutMs: Long,
+    ): ToolResult {
+        val shellIdentity = if (identity == "root") {
+            if (!DeviceShell.hasRoot()) {
+                return ToolResult.err(
+                    "identity=root is unavailable: no su/root on this device. " +
+                        "Use identity=shell (Shizuku) or identity=app instead.",
+                )
+            }
+            ShellIdentity.ROOT
+        } else {
+            if (!DeviceShell.hasShizuku() && !DeviceShell.hasRoot()) {
+                return ToolResult.err(
+                    "identity=shell is unavailable: Shizuku is not connected or not authorized. " +
+                        "Open 设置 → 权限与能力, grant Shizuku, then retry; " +
+                        "or use identity=app for the Ubuntu proot shell.",
+                )
+            }
+            ShellIdentity.SHELL
+        }
+        val startedAt = System.currentTimeMillis()
+        val result = DeviceShell.run(command, shellIdentity)
+        val elapsed = System.currentTimeMillis() - startedAt
+        val body = buildString {
+            appendLine("executor_key: $executorKey")
+            appendLine(
+                "identity: $identity " +
+                    if (identity == "root") "(root)" else "(Android shell uid 2000 via Shizuku)",
+            )
+            appendLine("elapsed_ms: $elapsed")
+            appendLine("timed_out: ${elapsed >= timeoutMs}")
+            appendLine("exit_code: ${result.exitCode}")
+            if (result.stderr.isNotBlank()) appendLine("stderr: ${result.stderr.trim().take(4_000)}")
+            appendLine("output:")
+            append(truncate(result.stdout).ifEmpty { "(no output)" })
+        }.trimEnd()
+        return if (result.success) ToolResult.ok(body) else ToolResult.err(body)
     }
 
     // ---------------- input_in_terminal_session ----------------

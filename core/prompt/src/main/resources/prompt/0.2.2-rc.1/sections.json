@@ -129,6 +129,13 @@
       "text": "The runtime context names the DeepSeek Harness implementation checkout. The checkout location and current working directory are separate values and may differ; never infer the working directory from the checkout path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend DSH itself."
     },
     {
+      "name": "app:turn-briefing",
+      "order": 10150,
+      "requires": null,
+      "platform": "android",
+      "text": "## 长任务播报（必须遵守）\n\n- 每批工具调用前，先用一句话说明这批要做什么、为什么（例：「先看工作区里有哪些文件」）。不要连续调用多批工具却一声不吭。\n- 工具失败（exit code 非 0、异常、超时、文件不存在、权限被拒）必须当场说明：哪一步失败、错误是什么、接下来换什么办法；不要静默重试或假装成功。\n- 每个回合收尾必须给用户状态：做完了什么、还差什么、下一步需要用户做什么。不允许以工具调用结束回合而不说话。\n- 有多个交付物时按「结论 → 证据/文件 → 细节」排序，先给用户最关心的结论，再给过程。"
+    },
+    {
       "name": "app:web-surface",
       "order": 10100,
       "requires": null,

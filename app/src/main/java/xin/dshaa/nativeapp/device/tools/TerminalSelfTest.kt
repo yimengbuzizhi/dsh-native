@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonObject
 import xin.dshaa.core.tools.ToolContext
 import xin.dshaa.core.tools.ToolRegistry
 import xin.dshaa.core.tools.ToolResult
+import xin.dshaa.nativeapp.device.DeviceShell
 import java.io.File
 
 /**
@@ -177,6 +178,39 @@ object TerminalSelfTest {
                 """{"command":"echo hidden-ok; pwd","executor_key":"selftest"}""",
             )
             verify("hidden executor output", !hidden.isError && hidden.text.contains("hidden-ok"))
+
+            // 8b. M76 系统身份：identity=shell 走 Shizuku（uid 2000），identity=root 走 su。
+            // 没有 Shizuku/root 时必须返回明确的「不可用」错误，而不是静默退回 app 身份。
+            val shellIdentity = step(
+                "execute_hidden_terminal_command",
+                """{"command":"id","identity":"shell"}""",
+            )
+            if (DeviceShell.hasShizuku()) {
+                verify(
+                    "identity=shell returns uid=2000 via Shizuku",
+                    !shellIdentity.isError && shellIdentity.text.contains("uid=2000(shell)"),
+                )
+            } else {
+                verify(
+                    "identity=shell without Shizuku gives a clear error",
+                    shellIdentity.isError && shellIdentity.text.contains("identity=shell is unavailable"),
+                )
+            }
+            val rootIdentity = step(
+                "execute_hidden_terminal_command",
+                """{"command":"id","identity":"root"}""",
+            )
+            if (DeviceShell.hasRoot()) {
+                verify(
+                    "identity=root returns uid=0",
+                    !rootIdentity.isError && rootIdentity.text.contains("uid=0(root)"),
+                )
+            } else {
+                verify(
+                    "identity=root without su gives a clear error",
+                    rootIdentity.isError && rootIdentity.text.contains("identity=root is unavailable"),
+                )
+            }
 
             // 9. 交互式程序：cat + input/enter + ctrl+d
             val catRun = async {

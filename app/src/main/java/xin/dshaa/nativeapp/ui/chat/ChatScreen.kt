@@ -70,6 +70,7 @@ import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
@@ -163,6 +164,7 @@ import xin.dshaa.nativeapp.chat.ChatSessionState
 import xin.dshaa.nativeapp.chat.PendingApproval
 import xin.dshaa.nativeapp.chat.PendingImage
 import xin.dshaa.nativeapp.chat.READ_ONLY_SUBAGENT
+import xin.dshaa.nativeapp.chat.WaitingSession
 import xin.dshaa.ui.design.component.DshAvatar
 import xin.dshaa.ui.design.component.MarkdownText
 import xin.dshaa.ui.design.component.StatusDot
@@ -197,6 +199,8 @@ fun ChatScreen(
     menuVisible: Boolean = true,
     /** 右上角「新对话」：开一个空草稿（不建会话文件，第一条消息才落盘）。 */
     onNewChat: () -> Unit = {},
+    /** 右上角「工作区」（M76）：打开工作区文件浏览页。 */
+    onOpenWorkspace: () -> Unit = {},
     /** 相册选图（Photo Picker 多选，逐张回调；VM 负责归一化落盘）。 */
     onAttachImage: (Uri) -> Unit = {},
     /** 相机拍照结果（FileProvider 临时文件；VM 读完即删）。 */
@@ -265,11 +269,16 @@ fun ChatScreen(
     memorySpaceName: String = "Default",
     onOpenMemoryLibrary: () -> Unit = {},
     onOpenPlugins: () -> Unit = {},
+    /** 其它会话正在等审批/回答（M78 并行）：卡片只画在当前会话上，这里给一条可点横幅。 */
+    waitingElsewhere: List<WaitingSession> = emptyList(),
+    onFocusSession: (String) -> Unit = {},
 ) {
     val c = DshTheme2.colors
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    var input by remember { mutableStateOf(TextFieldValue("")) }
+    var input by remember { mutableStateOf(state.draft) }
+    // M76：横竖屏切换时宽的抽屉分支会重建整棵子树（remember 丢失），草稿以会话状态为准。
+    androidx.compose.runtime.LaunchedEffect(state) { input = state.draft }
     /** 长按菜单「引用」后的输入条预览（Operit 的 reply preview）。 */
     var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
     /** 输入条左侧「＋」的附件/设置菜单。 */
@@ -416,6 +425,7 @@ fun ChatScreen(
         if (input.text.isBlank() && state.pendingImages.isEmpty()) return
         if (onSubmit(input.text)) {
             input = TextFieldValue("")
+            state.draft = input
             replyTo = null
             suppressedTrigger = null
         }
@@ -427,6 +437,7 @@ fun ChatScreen(
         val text = input.text.replaceRange(t.start, t.end, replacement)
         val cursor = t.start + replacement.length
         input = TextFieldValue(text, TextRange(cursor))
+        state.draft = input
         suppressedTrigger = if (suppress) inputTrigger(text, cursor)?.key() else null
         keyboard?.show()
     }
@@ -565,6 +576,12 @@ fun ChatScreen(
                     )
                 }
                 Box(
+                    Modifier.size(40.dp).clip(CircleShape).clickable { onOpenWorkspace() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.Folder, "工作区", tint = c.sub, modifier = Modifier.size(21.dp))
+                }
+                Box(
                     Modifier.size(40.dp).clip(CircleShape).clickable { onNewChat() },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -625,6 +642,7 @@ fun ChatScreen(
                 onQuote = {
                     val quoted = quotePrefix(targetText) + input.text
                     input = TextFieldValue(quoted, TextRange(quoted.length))
+                    state.draft = input
                     replyTo = target
                     actionTarget = null
                     focusInputTick += 1
@@ -685,6 +703,12 @@ fun ChatScreen(
             )
         }
 
+        // 其它会话在等审批/回答（M78 并行）：审批卡只画在当前会话上，后台会话弹出来时
+        // 前台看不到卡片，这里给一条可点横幅（点一下切过去，卡片就在那边等）。
+        if (waitingElsewhere.isNotEmpty()) {
+            WaitingElsewhereBar(waitingElsewhere, onFocusSession)
+        }
+
         // 目标条：goal 工具写入的长期目标（active/paused/blocked/complete）；点开 /goal 面板
         state.goal?.let { GoalStrip(it) { goalOpen = true } }
 
@@ -736,6 +760,10 @@ fun ChatScreen(
                                 is ChatRow.Assistant -> AssistantTurn(
                                     row.messages, results, assistantName, assistantAvatar, expandThinking, imagePath,
                                     linksEnabled = !state.streaming,
+                                    // 工具执行期间 assistant 消息本身已「不再流式」，但整轮还在跑：
+                                    // 折叠行要按轮次状态显示活动标题，不能显示「已完成」
+                                    // （用户 2026-11-11 反馈：块显示已完成、状态条还在调用工具）。
+                                    turnRunning = state.streaming && row === rows.lastOrNull(),
                                     onAction = { actionTarget = it },
                                     onOpenSubagent = onOpenSubagent,
                                     onOpenJobs = onOpenJobs,
@@ -773,14 +801,41 @@ fun ChatScreen(
             TodoPanel(todos)
         }
 
-        state.statusText?.let { status ->
+        // 运行状态条（M76）：流式期间常驻「运行中 · 12s · 正在执行 …」，不再让人以为突然停住。
+        if (state.streaming || state.statusText != null) {
+            var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+            androidx.compose.runtime.LaunchedEffect(state.streaming, state.turnStartedAt) {
+                while (state.streaming) {
+                    nowMs = System.currentTimeMillis()
+                    kotlinx.coroutines.delay(1000)
+                }
+                nowMs = System.currentTimeMillis()
+            }
+            val elapsed = if (state.turnStartedAt > 0) {
+                ((nowMs - state.turnStartedAt) / 1000).coerceAtLeast(0)
+            } else 0
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StatusDot(c.brand, pulse = true, size = 6.dp)
+                StatusDot(c.brand, pulse = state.streaming, size = 6.dp)
                 Spacer(Modifier.width(6.dp))
-                Text(status, style = MaterialTheme.typography.labelSmall, color = c.faint)
+                Text(
+                    buildString {
+                        if (state.streaming) {
+                            append("运行中")
+                            if (elapsed > 0) append(" · ${elapsed}s")
+                        }
+                        state.statusText?.takeIf { it.isNotBlank() }?.let { status ->
+                            if (isNotEmpty()) append(" · ")
+                            append(status)
+                        }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = c.faint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
 
@@ -825,7 +880,10 @@ fun ChatScreen(
             ChatComposer(
                 state = state,
                 input = input,
-                onInputChange = { input = it },
+                onInputChange = {
+                    input = it
+                    state.draft = it
+                },
                 onSubmit = { submitInput() },
                 onStop = onStop,
                 model = state.model,
@@ -1519,6 +1577,62 @@ private fun PlanModeStrip(active: Boolean, pending: Boolean?, onExit: () -> Unit
     }
 }
 
+/**
+ * 「别的会话在等你」横幅（M78 并行收尾）。
+ *
+ * 审批卡/提问框只画在**当前会话**的聊天页上（文件末尾的 `ApprovalDialog`），后台会话弹审批时
+ * 用户在前台完全看不到，只有抽屉里一个橙点。这条横幅点一下切到那条会话，卡片就在那边等。
+ */
+@Composable
+private fun WaitingElsewhereBar(items: List<WaitingSession>, onOpen: (String) -> Unit) {
+    val c = DshTheme2.colors
+    val first = items.first()
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(top = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onOpen(first.sessionId) },
+        shape = RoundedCornerShape(12.dp),
+        color = c.warnSoft,
+        border = BorderStroke(1.dp, c.warn.copy(alpha = 0.32f)),
+    ) {
+        Row(
+            Modifier.padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Lock, null, tint = c.warn, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    when {
+                        items.size > 1 -> "另外 ${items.size} 个会话在等你"
+                        first.question -> "「${first.title}」在等你回答"
+                        else -> "「${first.title}」正在等你点审批"
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = c.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (first.summary.isNotBlank()) {
+                    Text(
+                        if (first.question) first.summary else "${first.toolName} · ${first.summary}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = c.sub,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Text("切过去", style = MaterialTheme.typography.labelMedium, color = c.warn)
+        }
+    }
+}
+
 /** 斜杠命令的瞬态结果条（M21）：上游把命令结果显示在输入框附近，不进聊天正文。 */
 @Composable
 private fun CommandNoticeBar(text: String, onDismiss: () -> Unit) {
@@ -2101,131 +2215,6 @@ private fun UserMessage(
     }
 }
 
-/** 一条被引用的附件（M74）：聊天页只显示摘要，点开看原文；模型侧内容不变。 */
-private class QuotedAttachment(
-    val name: String,
-    val sizeLabel: String,
-    /** null = 只有路径引用（正文在模型侧用 read 读），没有可展开的原文。 */
-    val body: String?,
-)
-
-/**
- * 识别发送时拼进用户消息的附件块（`AppViewModel.send` 的两种形状）：
- * - `[附件: name]\n\n<全文>`（文本内联/插件包/记忆引用）
- * - `<attachment id="…" filename="…" type="…" size="…"/>`（按路径引用，模型用工具读）
- * 普通文本返回 null。
- */
-private fun parseQuotedAttachment(text: String): QuotedAttachment? {
-    val trimmed = text.trimStart()
-    if (trimmed.startsWith("[附件: ")) {
-        val close = trimmed.indexOf(']')
-        if (close <= 0) return null
-        val name = trimmed.substring("[附件: ".length, close).trim()
-        val body = trimmed.substring(close + 1).trimStart('\n', ' ', '\t')
-        val lines = body.count { it == '\n' } + 1
-        val size = body.toByteArray().size.toLong()
-        return QuotedAttachment(
-            name = name.ifBlank { "附件" },
-            sizeLabel = listOf(formatAttachmentBytes(size), "$lines 行").joinToString(" · "),
-            body = body.ifBlank { null },
-        )
-    }
-    if (trimmed.startsWith("<attachment ")) {
-        val filename = ATTACHMENT_ATTR("filename").find(trimmed)?.groupValues?.get(1).orEmpty()
-        val size = ATTACHMENT_ATTR("size").find(trimmed)?.groupValues?.get(1)?.toLongOrNull()
-        return QuotedAttachment(
-            name = filename.ifBlank { "附件" },
-            sizeLabel = if (size != null) {
-                "${formatAttachmentBytes(size)} · 已复制到工作区（模型用 read 读取）"
-            } else {
-                "已复制到工作区（模型用 read 读取）"
-            },
-            body = null,
-        )
-    }
-    return null
-}
-
-private fun ATTACHMENT_ATTR(key: String) = Regex("$key=\"([^\"]*)\"")
-
-private fun formatAttachmentBytes(bytes: Long): String = when {
-    bytes >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024.0)
-    bytes >= 1024 -> String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0)
-    else -> "$bytes B"
-}
-
-/**
- * 引用附件 chip：一行摘要 + 点开看全文（默认折叠）。长引用不再把气泡顶成一大长串，
- * 但内容还在消息里（会话文件、模型请求都没变）。
- */
-@Composable
-private fun QuotedAttachmentChip(item: QuotedAttachment) {
-    val c = DshTheme2.colors
-    val expandable = item.body != null
-    var expanded by remember(item.name, item.body?.hashCode()) { mutableStateOf(false) }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(c.surface.copy(alpha = if (c.isDark) 0.35f else 0.6f))
-            .border(1.dp, c.line.copy(alpha = 0.6f), RoundedCornerShape(10.dp)),
-    ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .let { base -> if (expandable) base.clickable { expanded = !expanded } else base }
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.AttachFile, null, tint = c.brandBright, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    item.name,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = c.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    if (expandable) "${item.sizeLabel} · 点开看原文" else item.sizeLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = c.faint,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (expandable) {
-                Icon(
-                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                    if (expanded) "收起" else "展开",
-                    tint = c.faint,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-        }
-        if (expanded) {
-            item.body?.let { body ->
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 240.dp)
-                        .background(c.background.copy(alpha = 0.5f))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                ) {
-                    Text(
-                        body,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = c.sub,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.verticalScroll(rememberScrollState()),
-                    )
-                }
-            }
-        }
-    }
-}
-
 /** 输入条上的待发图片缩略图（56dp 圆角 + 右上角移除）。 */
 @Composable
 internal fun PendingImageChip(pending: PendingImage, onRemove: () -> Unit) {
@@ -2267,6 +2256,8 @@ private fun AssistantTurn(
     assistantAvatar: String,
     expandThinking: Boolean,
     imagePath: (String) -> String?,
+    /** 整轮还在跑（工具执行中 assistant 消息可能已不在流式），折叠行要显示活动标题。 */
+    turnRunning: Boolean = false,
     /** 轮次进行中不显示工具卡跳转：切页/开子会话会取消当前 turn。 */
     linksEnabled: Boolean,
     onAction: (ChatMessage) -> Unit,
@@ -2275,7 +2266,31 @@ private fun AssistantTurn(
 ) {
     val c = DshTheme2.colors
     val generating = messages.any { it.streaming }
+    // 整轮还在跑（含工具执行阶段）——折叠行/运行中的显示都看这个，不能只看消息流式位。
+    val live = generating || turnRunning
     val emptyStep = messages.size == 1 && messages[0].content.isEmpty()
+
+    // M76（照 DSH 的「工作步骤」）：**一开始就折叠**，运行中也只显示一行活动标题
+    // （正在思考 / 正在执行 xxx），点开才看推理 / 工具调用 / 中间消息；结束后标题变成
+    // 「已完成 · 用时 Xs」。最终回复所在的消息始终显示（同级折叠不隐藏回答）。
+    val finalIndex = messages.indexOfLast { m ->
+        m.content.any { it.type == BlockType.TEXT && it.text.isNotBlank() }
+    }
+    val canFold = messages.isNotEmpty() && (finalIndex > 0 || live)
+    var processExpanded by rememberSaveable(messages.firstOrNull()?.id ?: "empty") { mutableStateOf(false) }
+    val turnDurationMs = if (messages.size >= 2) {
+        (messages.last().createdAt - messages.first().createdAt).coerceAtLeast(0)
+    } else 0L
+    val liveLabel = run {
+        val last = messages.lastOrNull()
+        val tool = last?.content?.lastOrNull { it.type == BlockType.TOOL_CALL }?.name
+        when {
+            !live -> ""
+            tool != null -> "正在执行 $tool"
+            last?.content?.any { it.type == BlockType.REASONING } == true -> "正在思考"
+            else -> "正在生成回复"
+        }
+    }
 
     Column(Modifier.fillMaxWidth()) {
         // Operit Cursor 风：左侧固定 "Response" 小标题，右侧角色名 · 模型（半透明小字）
@@ -2305,15 +2320,30 @@ private fun AssistantTurn(
             )
         }
 
-        messages.forEach { message ->
+        if (canFold) {
+            TurnProcessRow(
+                expanded = processExpanded,
+                liveLabel = liveLabel,
+                live = live,
+                durationMs = turnDurationMs,
+                onToggle = { processExpanded = !processExpanded },
+            )
+        }
+
+        messages.forEachIndexed { index, message ->
+            // 折叠时只显示最终回复那条消息
+            if (canFold && !processExpanded && index != finalIndex) return@forEachIndexed
+            // 最终回复那条消息里如果混着推理/工具块，折叠状态下也只显示正文
+            val foldProcessBlocks = canFold && !processExpanded && index == finalIndex
             val text = message.content.filter { it.type == BlockType.TEXT }.joinToString("") { it.text }
             val reasoning = message.content.filter { it.type == BlockType.REASONING }.joinToString("") { it.text }
             val toolCalls = message.content.filter { it.type == BlockType.TOOL_CALL }
-            if (reasoning.isNotBlank()) {
+            if (reasoning.isNotBlank() && !foldProcessBlocks) {
                 Spacer(Modifier.height(8.dp))
                 ThinkingBlock(text = reasoning, streaming = message.streaming, defaultExpanded = expandThinking)
             }
             toolCalls.forEach { call ->
+                if (foldProcessBlocks) return@forEach
                 Spacer(Modifier.height(8.dp))
                 if (call.name == "present") {
                     PresentedCard(arguments = call.arguments)
@@ -2362,6 +2392,72 @@ private fun AssistantTurn(
                 }
             }
         }
+    }
+}
+
+/**
+ * 折叠行（M76，照 DSH `TurnProcessNodeView` / `ProcessGroupHeader`）：
+ * - 运行中：`正在思考` / `正在执行 read`（品牌色 + 呼吸点），默认折叠；
+ * - 已结束：`已完成 · 用时 12 秒`，默认折叠，点开看完整工作步骤。
+ */
+@Composable
+private fun TurnProcessRow(
+    expanded: Boolean,
+    liveLabel: String,
+    live: Boolean,
+    durationMs: Long,
+    onToggle: () -> Unit,
+) {
+    val c = DshTheme2.colors
+    val label = when {
+        live -> liveLabel.ifBlank { "正在工作" }
+        durationMs >= 1000 -> "已完成 · 用时 ${formatElapsed(durationMs)}"
+        else -> "已完成"
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onToggle() }
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (live) {
+            StatusDot(c.brand, pulse = true, size = 6.dp)
+            Spacer(Modifier.width(6.dp))
+        }
+        Icon(
+            if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+            contentDescription = if (expanded) "收起工作步骤" else "展开工作步骤",
+            tint = if (live) c.brand else c.brand.copy(alpha = 0.75f),
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (live) c.brand else c.sub,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            if (expanded) "收起" else "展开",
+            style = MaterialTheme.typography.labelSmall,
+            color = c.faint,
+        )
+    }
+}
+
+/** 秒级耗时：`12 秒` / `1 分 05 秒`（工具/回合共用）。 */
+private fun formatElapsed(ms: Long): String {
+    val totalSeconds = (ms / 1000).coerceAtLeast(0)
+    return if (totalSeconds < 60) {
+        "$totalSeconds 秒"
+    } else {
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        "$minutes 分 ${seconds.toString().padStart(2, '0')} 秒"
     }
 }
 
@@ -2450,6 +2546,7 @@ private fun ThinkingBlock(text: String, streaming: Boolean, defaultExpanded: Boo
                         )
                     },
             ) {
+                val reasoningScroll = rememberScrollState()
                 Text(
                     text,
                     style = MaterialTheme.typography.bodySmall,
@@ -2458,7 +2555,9 @@ private fun ThinkingBlock(text: String, streaming: Boolean, defaultExpanded: Boo
                         .fillMaxWidth()
                         .padding(start = 12.dp, end = 4.dp, bottom = 6.dp)
                         .heightIn(max = 300.dp)
-                        .verticalScroll(rememberScrollState()),
+                        // 思考正文滚到底后不要带动整个聊天列表（用户 2026-11-11 反馈）。
+                        .consumeInnerScroll(reasoningScroll)
+                        .verticalScroll(reasoningScroll),
                 )
             }
         }
@@ -2823,6 +2922,7 @@ private fun ToolCallCard(
             }
             if (expanded) {
                 Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
+                    val argsScroll = rememberScrollState()
                     Text("参数", style = MaterialTheme.typography.labelSmall, color = c.faint)
                     Text(
                         arguments.ifBlank { "{}" },
@@ -2830,19 +2930,22 @@ private fun ToolCallCard(
                         color = c.sub,
                         modifier = Modifier
                             .heightIn(max = 160.dp)
-                            .verticalScroll(rememberScrollState())
+                            .consumeInnerScroll(argsScroll)
+                            .verticalScroll(argsScroll)
                             .padding(top = 3.dp),
                     )
                     if (resultText.isNotBlank()) {
                         Spacer(Modifier.height(10.dp))
                         Text("结果", style = MaterialTheme.typography.labelSmall, color = c.faint)
+                        val resultScroll = rememberScrollState()
                         Text(
                             resultText.take(3000),
                             style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
                             color = if (failed) c.danger else c.sub,
                             modifier = Modifier
                                 .heightIn(max = 240.dp)
-                                .verticalScroll(rememberScrollState())
+                                .consumeInnerScroll(resultScroll)
+                                .verticalScroll(resultScroll)
                                 .padding(top = 3.dp),
                         )
                     }

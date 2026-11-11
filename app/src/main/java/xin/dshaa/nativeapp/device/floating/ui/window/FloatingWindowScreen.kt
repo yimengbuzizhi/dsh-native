@@ -87,8 +87,11 @@ import xin.dshaa.core.model.BlockType
 import xin.dshaa.core.model.ChatMessage
 import xin.dshaa.core.model.MessageRole
 import xin.dshaa.core.plugins.PluginRecord
+import xin.dshaa.nativeapp.chat.ATTACHMENT_REFERENCE_HINT
 import xin.dshaa.nativeapp.chat.ChatMirror
 import xin.dshaa.nativeapp.chat.PendingFile
+import xin.dshaa.nativeapp.ui.chat.QuotedAttachmentChip
+import xin.dshaa.nativeapp.ui.chat.parseQuotedAttachment
 import xin.dshaa.nativeapp.data.PluginStore
 import xin.dshaa.nativeapp.device.attach.AttachmentCapture
 import xin.dshaa.nativeapp.device.attach.LocationCapture
@@ -438,10 +441,16 @@ private fun MessageItem(message: ChatMessage) {
         it.type == BlockType.TEXT || it.type == BlockType.REASONING
     }
     val text = textBlocks.joinToString("\n") { it.text }.trim()
-    val toolCalls = message.content.filter { it.type == BlockType.TOOL_CALL }
-
-    when (message.role) {
-        MessageRole.USER -> Row(
+    // 用户消息里的引用包/文件：和主界面一样折成 chip（用户 2026-11-11 反馈：
+    // 悬浮窗聊天页还把整段正文铺开，主界面已经是小卡片了）。
+    val userTexts = message.content.filter { it.type == BlockType.TEXT }.map { it.text }
+    val quoted = userTexts.mapNotNull { parseQuotedAttachment(it) }
+    val plain = userTexts
+        .filter { parseQuotedAttachment(it) == null && it.trim() != ATTACHMENT_REFERENCE_HINT }
+        .joinToString("\n")
+        .trim()
+    if (message.role == MessageRole.USER) {
+        Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,
         ) {
@@ -450,15 +459,33 @@ private fun MessageItem(message: ChatMessage) {
                 color = c.brandSoft,
                 modifier = Modifier.widthIn(max = 280.dp),
             ) {
-                Text(
-                    text.ifBlank { "（空）" },
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = c.text,
-                )
+                Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+                    if (plain.isNotBlank()) {
+                        Text(
+                            plain,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = c.text,
+                        )
+                    }
+                    quoted.forEachIndexed { index, item ->
+                        if (index > 0 || plain.isNotBlank()) Spacer(Modifier.height(6.dp))
+                        QuotedAttachmentChip(item)
+                    }
+                    if (plain.isBlank() && quoted.isEmpty()) {
+                        Text(
+                            "（空）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = c.text,
+                        )
+                    }
+                }
             }
         }
+        return
+    }
+    val toolCalls = message.content.filter { it.type == BlockType.TOOL_CALL }
 
+    when (message.role) {
         MessageRole.ASSISTANT -> Column(Modifier.fillMaxWidth()) {
             toolCalls.forEach { call ->
                 ToolChip(call.name ?: "tool", call.arguments)

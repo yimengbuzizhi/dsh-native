@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,6 +31,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -44,6 +47,9 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,12 +67,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,7 +85,11 @@ import kotlinx.coroutines.launch
 import xin.dshaa.core.model.BlockType
 import xin.dshaa.core.model.ChatMessage
 import xin.dshaa.core.model.MessageRole
+import xin.dshaa.nativeapp.chat.ATTACHMENT_REFERENCE_HINT
 import xin.dshaa.nativeapp.chat.ChatMirror
+import xin.dshaa.nativeapp.ui.chat.QuotedAttachment
+import xin.dshaa.nativeapp.ui.chat.consumeInnerScroll
+import xin.dshaa.nativeapp.ui.chat.parseQuotedAttachment
 import xin.dshaa.nativeapp.device.attach.AttachmentCapture
 import xin.dshaa.nativeapp.device.attach.LocationCapture
 import xin.dshaa.nativeapp.device.floating.FloatingMode
@@ -382,30 +394,123 @@ fun FloatingFullscreenScreen(
 
 @Composable
 private fun FullscreenMessage(message: ChatMessage) {
-    val c = DshTheme2.colors
     val text = message.content
         .filter { it.type == BlockType.TEXT || it.type == BlockType.REASONING }
         .joinToString("\n") { it.text }
         .trim()
-    if (text.isBlank()) return
     if (message.role == MessageRole.USER) {
+        // 引用包/文件折成 chip（用户 2026-11-11 反馈：悬浮窗（含全屏语音页）里还是整段全文，
+        // 主界面已经是小卡片）。
+        val texts = message.content.filter { it.type == BlockType.TEXT }.map { it.text }
+        val quoted = texts.mapNotNull { parseQuotedAttachment(it) }
+        val plain = texts
+            .filter { parseQuotedAttachment(it) == null && it.trim() != ATTACHMENT_REFERENCE_HINT }
+            .joinToString("\n")
+            .trim()
+        if (plain.isBlank() && quoted.isEmpty()) return
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Surface(shape = RoundedCornerShape(16.dp), color = Color.White.copy(alpha = 0.12f)) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    if (plain.isNotBlank()) {
+                        Text(
+                            plain,
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    quoted.forEachIndexed { index, item ->
+                        if (index > 0 || plain.isNotBlank()) Spacer(Modifier.height(6.dp))
+                        FullscreenQuoteChip(item)
+                    }
+                }
+            }
+        }
+        return
+    }
+    if (text.isBlank()) return
+    MarkdownText(
+        text = text,
+        modifier = Modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.bodyMedium,
+        color = Color.White.copy(alpha = 0.92f),
+    )
+}
+
+/**
+ * 全屏页的引用 chip：白字 + 半透明白底（这个页面是透明浮层，用不了主界面的浅色卡片）。
+ * 展开后正文自己滚，到顶/到底不再带动整页（用户 2026-11-11 反馈的嵌套滚动）。
+ */
+@Composable
+private fun FullscreenQuoteChip(item: QuotedAttachment) {
+    val expandable = item.body != null
+    var expanded by remember(item.name, item.body?.hashCode()) { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.White.copy(alpha = 0.10f))
+            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(10.dp)),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .let { base -> if (expandable) base.clickable { expanded = !expanded } else base }
+                .padding(horizontal = 8.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Rounded.AttachFile,
+                null,
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(15.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Column(Modifier.weight(1f)) {
                 Text(
-                    text,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                    item.name,
                     color = Color.White,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (expandable) "${item.sizeLabel} · 点开看原文" else item.sizeLabel,
+                    color = Color.White.copy(alpha = 0.62f),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (expandable) {
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    if (expanded) "收起" else "展开",
+                    tint = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }
-    } else {
-        MarkdownText(
-            text = text,
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.92f),
-        )
+        if (expanded) {
+            item.body?.let { body ->
+                val bodyScroll = rememberScrollState()
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 220.dp)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        body,
+                        color = Color.White.copy(alpha = 0.86f),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .consumeInnerScroll(bodyScroll)
+                            .verticalScroll(bodyScroll),
+                    )
+                }
+            }
+        }
     }
 }
 

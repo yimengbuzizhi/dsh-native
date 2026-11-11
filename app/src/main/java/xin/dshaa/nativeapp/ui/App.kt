@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Person
@@ -58,6 +59,7 @@ import xin.dshaa.nativeapp.ui.settings.PrivacyScreen
 import xin.dshaa.nativeapp.ui.settings.SettingsScreen
 import xin.dshaa.nativeapp.ui.settings.SkillsScreen
 import xin.dshaa.nativeapp.ui.settings.WorkspacesScreen
+import xin.dshaa.nativeapp.ui.workspace.WorkspaceScreen
 import xin.dshaa.nativeapp.ui.shell.DshDrawer
 import xin.dshaa.nativeapp.ui.terminal.TerminalPage
 import xin.dshaa.ui.design.theme.DshTheme2
@@ -65,6 +67,7 @@ import xin.dshaa.ui.design.theme.DshTheme2
 /** 一级页面（RikkaHub 外壳下都从设置 →「功能与工具」进）。 */
 enum class Screen(val label: String, val icon: ImageVector) {
     Sessions("会话", Icons.Rounded.ChatBubbleOutline),
+    Workspace("工作区", Icons.Rounded.Folder),
     Agents("子代理", Icons.Rounded.Person),
     Jobs("任务", Icons.Rounded.PlayArrow),
     Terminal("终端", Icons.Rounded.Terminal),
@@ -158,6 +161,7 @@ private fun DshAppContent(vm: AppViewModel) {
             drawerState.isOpen -> closeDrawer()
             subScreen != null -> subScreenName = null
             // 功能页回到设置（用户 23:00 第 1 条：此前直接回聊天，等于丢掉了来路）
+            screenName == Screen.Workspace.name -> screenName = null
             screenName == Screen.Settings.name -> screenName = null
             screenName != null -> backToSettings()
             else -> vm.closeChat()
@@ -270,6 +274,7 @@ private fun DshAppContent(vm: AppViewModel) {
                             onOpenDrawer = openDrawer,
                             menuVisible = !wideLayout,
                             onNewChat = { vm.newChat() },
+                            onOpenWorkspace = { screenName = Screen.Workspace.name },
                             onAttachImage = { uri -> vm.attachImage(uri) },
                             onAttachPhoto = { file -> vm.attachPhoto(file) },
                             onCaptureScreenshot = { vm.attachScreenshot() },
@@ -326,12 +331,20 @@ private fun DshAppContent(vm: AppViewModel) {
                             memorySpaceName = "Default",
                             onOpenMemoryLibrary = { screenName = Screen.Memory.name },
                             onOpenPlugins = { screenName = Screen.Plugins.name },
+                            // M78 并行：其它会话在等审批/回答时，顶部横幅一键切过去
+                            waitingElsewhere = vm.waitingElsewhere(),
+                            onFocusSession = { id -> vm.focusSession(id) },
                         )
                     } else {
                         // 一帧空白：LaunchedEffect 马上会建草稿
                         Spacer(Modifier.fillMaxSize())
                     }
                 }
+
+                Screen.Workspace.name -> WorkspaceScreen(
+                    root = vm.workspace,
+                    onBack = { screenName = null },
+                )
 
                 Screen.Sessions.name -> SessionsScreen(
                     sessions = vm.sessions,

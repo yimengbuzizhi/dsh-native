@@ -1,5 +1,6 @@
 package xin.dshaa.nativeapp.fish
 
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +16,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * 不再有鲸歌自己画的窗口。
  *
  * 状态优先级照抄 reducer：WAITING > ERROR > WORKING > THINKING > IDLE。
+ *
+ * **M78 多会话并行**：每个会话各记一份快照（[owner] = 该会话的 `ChatSessionState` 对象），
+ * 对外发布的 [state] 是合并结果——**前台在跑发前台；否则发最近一条在跑的；都没有才发前台/最新的**。
+ * 以前是进程级单状态、谁最后写谁覆盖：A 还在跑时 B 结束一句「这轮做完了」就把 A 盖掉了。
  */
 enum class FishState {
     IDLE,
@@ -50,8 +55,21 @@ data class FishSnapshot(
 
 object BigFish {
 
+    private const val TAG = "DshFish"
+
+    /** 同时保留几份会话快照；超了丢最旧、且不是前台的那份。 */
+    private const val MAX_OWNERS = 8
+
     private val _state = MutableStateFlow(FishSnapshot())
     val state: StateFlow<FishSnapshot> = _state.asStateFlow()
+
+    /** 每个会话一份快照；键是同一条会话稳定的对象（`ChatSessionState`）。 */
+    private val owners = LinkedHashMap<Any, FishSnapshot>()
+
+    /** 前台会话（停在列表页时为 null）。合并时优先它。 */
+    private var foreground: Any? = null
+
+    private val lock = Any()
 
     /** 回复序号只增不减：`onTurnStart` 重建快照时也带着它，挂件不会把旧回复再播一遍。 */
     private var replyCounter = 0L
@@ -59,8 +77,18 @@ object BigFish {
     /** token 序号（M72）：同上，挂件按它判断「这是新的一轮用量」。 */
     private var tokenCounter = 0L
 
-    /** 本轮累计 token（每个 step 的 input+output 相加；onTurnStart 归零）。 */
-    private var turnTokens = 0
+    /** 每个会话本轮累计 token（并行时不能共用一个数）。 */
+    private val turnTokens = HashMap<Any, Int>()
+
+    /** 没有 owner 的调试通道（`--es dsh_fish_demo`）用这一份累计。 */
+    private var anonymousTokens = 0
+
+    /** 「还没发布过」的哨兵（owner 可以是 null，不能拿 null 当哨兵）。 */
+    private val NOBODY = Any()
+
+    /** 上一次发布的 owner / 状态，只用来打日志（logcat `DshFish`，真机验收证据）。 */
+    private var lastOwner: Any? = NOBODY
+    private var lastState: FishState? = null
 
     /** 工具名 → 活动类型；正则顺序逐字照搬 reducer 的 `toolActivity()`。 */
     fun activityOf(tool: String): String {
@@ -101,39 +129,158 @@ object BigFish {
         if (!task.isNullOrBlank()) add(task) else if (!stage.isNullOrBlank()) add(stage)
     }.joinToString(" · ").ifBlank { "鲸歌任务" }
 
+    private val FishSnapshot.isRunning: Boolean
+        get() = state == FishState.THINKING || state == FishState.WORKING || state == FishState.WAITING
+
+    // ---- 会话合并（M78） ----
+
+    /** 前台会话变化（`AppViewModel.attach`）：大肥鱼/插件窗口跟着前台走。 */
+    fun setForeground(owner: Any?) {
+        synchronized(lock) {
+            if (foreground === owner) return
+            foreground = owner
+            publish()
+        }
+    }
+
+    /** 会话被丢弃（草稿回收等）时清掉它那份快照。 */
+    fun forget(owner: Any) {
+        synchronized(lock) {
+            owners.remove(owner)
+            turnTokens.remove(owner)
+            if (foreground === owner) foreground = null
+            publish()
+        }
+    }
+
+    private fun snapshotOf(owner: Any?): FishSnapshot =
+        if (owner == null) _state.value else owners[owner] ?: FishSnapshot(replySeq = replyCounter, tokensSeq = tokenCounter)
+
+    private fun update(owner: Any?, snapshot: FishSnapshot) {
+        if (owner == null) {
+            // 调试通道（没有会话）：直接摆状态，不参与合并
+            _state.value = snapshot
+            return
+        }
+        owners[owner] = snapshot
+        trim()
+        publish()
+    }
+
+    private fun trim() {
+        while (owners.size > MAX_OWNERS) {
+            val victim = owners.entries
+                .filter { it.key !== foreground }
+                .minByOrNull { it.value.updatedAt } ?: return
+            owners.remove(victim.key)
+            turnTokens.remove(victim.key)
+        }
+    }
+
+    /**
+     * 合并规则（M78）：
+     * 1. 前台会话在跑 → 发前台（用户正看着的那条永远最相关）；
+     * 2. 否则发最近一条在跑的会话（A 在跑、B 刚结束 → 显示 A，不再被 B 的「已完成」盖掉）；
+     * 3. 都没在跑 → 发最近一条刚完成/失败的（成功脉冲 2.4 秒，挂件照旧播报）；
+     * 4. 再退到前台会话、最后是最新一条。
+     */
+    private fun publish() {
+        val now = System.currentTimeMillis()
+        val fg = foreground?.let { owners[it] }
+        if (fg != null && fg.isRunning) {
+            emit(foreground, fg)
+            return
+        }
+        val running = owners.entries.filter { it.value.isRunning }.maxByOrNull { it.value.updatedAt }
+        if (running != null) {
+            emit(running.key, running.value)
+            return
+        }
+        val fresh = owners.entries.filter { it.value.pulseUntil > now }.maxByOrNull { it.value.updatedAt }
+        if (fresh != null) {
+            emit(fresh.key, fresh.value)
+            return
+        }
+        if (fg != null) {
+            emit(foreground, fg)
+            return
+        }
+        val newest = owners.entries.maxByOrNull { it.value.updatedAt } ?: return
+        emit(newest.key, newest.value)
+    }
+
+    private fun emit(owner: Any?, snapshot: FishSnapshot) {
+        _state.value = snapshot
+        if (owner !== lastOwner || snapshot.state != lastState) {
+            lastOwner = owner
+            lastState = snapshot.state
+            Log.i(
+                TAG,
+                "publish owner=@${Integer.toHexString(System.identityHashCode(owner))} " +
+                    "state=${snapshot.state} project=${snapshot.project} detail=${snapshot.detail.take(60)}",
+            )
+        }
+    }
+
+    // ---- token 累计（按会话） ----
+
+    private fun resetTokens(owner: Any?) {
+        if (owner == null) anonymousTokens = 0 else turnTokens[owner] = 0
+    }
+
+    private fun addTokens(owner: Any?, inputTokens: Int, outputTokens: Int) {
+        val delta = (if (inputTokens > 0) inputTokens else 0) + (if (outputTokens > 0) outputTokens else 0)
+        if (delta <= 0) return
+        if (owner == null) anonymousTokens += delta else turnTokens[owner] = (turnTokens[owner] ?: 0) + delta
+    }
+
+    private fun usedTokens(owner: Any?): Int =
+        if (owner == null) anonymousTokens else turnTokens[owner] ?: 0
+
+    // ---- 状态机 ----
+
     /** 一轮开始（上游 `turn/start`）：进入 THINKING / 准备阶段。 */
-    fun onTurnStart(effort: String?, project: String?) {
-        turnTokens = 0
-        _state.value = FishSnapshot(
-            state = FishState.THINKING,
-            stage = "准备阶段",
-            message = "新任务来啦，我先想想…",
-            detail = detailFor(project, effort, "准备阶段"),
-            project = project,
-            reasoningEffort = effort,
-            replySeq = replyCounter,
-            tokensSeq = tokenCounter,
-        )
+    fun onTurnStart(owner: Any?, effort: String?, project: String?) {
+        synchronized(lock) {
+            resetTokens(owner)
+            update(
+                owner,
+                FishSnapshot(
+                    state = FishState.THINKING,
+                    stage = "准备阶段",
+                    message = "新任务来啦，我先想想…",
+                    detail = detailFor(project, effort, "准备阶段"),
+                    project = project,
+                    reasoningEffort = effort,
+                    replySeq = replyCounter,
+                    tokensSeq = tokenCounter,
+                ),
+            )
+        }
     }
 
     /**
      * 每个 step 的 token 用量（M72，`TurnEngine` 的 `ui.setTokenUsage`）。
-     * 引擎给的是**本 step** 的 input/output，这里按轮累加，turn/end 时随快照交给插件。
+     * 引擎给的是**本 step** 的 input/output，这里按会话按轮累加，turn/end 时随快照交给插件。
      */
-    fun onTokenUsage(inputTokens: Int, outputTokens: Int) {
-        if (inputTokens > 0) turnTokens += inputTokens
-        if (outputTokens > 0) turnTokens += outputTokens
+    fun onTokenUsage(owner: Any?, inputTokens: Int, outputTokens: Int) {
+        synchronized(lock) { addTokens(owner, inputTokens, outputTokens) }
     }
 
     /** 设置栏的当前输入（`request/header` 的 reasoningEffort 展示）。 */
-    fun onReasoning(effort: String?) {
-        val current = _state.value
-        if (current.reasoningEffort == effort) return
-        _state.value = current.copy(
-            reasoningEffort = effort,
-            detail = detailFor(current.project, effort, current.stage),
-            updatedAt = System.currentTimeMillis(),
-        )
+    fun onReasoning(owner: Any?, effort: String?) {
+        synchronized(lock) {
+            val current = snapshotOf(owner)
+            if (current.reasoningEffort == effort) return
+            update(
+                owner,
+                current.copy(
+                    reasoningEffort = effort,
+                    detail = detailFor(current.project, effort, current.stage),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
     }
 
     /**
@@ -143,148 +290,195 @@ object BigFish {
      * - `已拒绝` → WAITING；
      * - `上下文超限，正在压缩…` → WORKING(整理)。
      */
-    fun onStatus(text: String?) {
-        val current = _state.value
+    fun onStatus(owner: Any?, text: String?) {
         if (text == null) return
-        val project = current.project
-        val effort = current.reasoningEffort
-        when {
-            text.startsWith("运行工具 ") -> {
-                val tool = text.removePrefix("运行工具 ").removeSuffix("…").trim()
-                val activity = activityOf(tool)
-                _state.value = current.copy(
-                    state = FishState.WORKING,
-                    stage = activityStage(activity),
-                    message = activityCopy(activity),
-                    detail = detailFor(project, effort, activityStage(activity)),
-                    activity = activity,
-                    toolName = tool,
-                    pulseUntil = 0L,
-                    updatedAt = System.currentTimeMillis(),
-                )
+        synchronized(lock) {
+            val current = snapshotOf(owner)
+            val project = current.project
+            val effort = current.reasoningEffort
+            when {
+                text.startsWith("运行工具 ") -> {
+                    val tool = text.removePrefix("运行工具 ").removeSuffix("…").trim()
+                    val activity = activityOf(tool)
+                    update(
+                        owner,
+                        current.copy(
+                            state = FishState.WORKING,
+                            stage = activityStage(activity),
+                            message = activityCopy(activity),
+                            detail = detailFor(project, effort, activityStage(activity)),
+                            activity = activity,
+                            toolName = tool,
+                            pulseUntil = 0L,
+                            updatedAt = System.currentTimeMillis(),
+                        ),
+                    )
+                }
+                text.startsWith("思考中") || text.startsWith("继续处理") || text == "继续…" -> {
+                    if (current.state == FishState.THINKING && current.stage == "分析阶段") return
+                    update(
+                        owner,
+                        current.copy(
+                            state = FishState.THINKING,
+                            stage = "分析阶段",
+                            message = "我想想…",
+                            detail = detailFor(project, effort, "分析阶段"),
+                            activity = null,
+                            toolName = null,
+                            pulseUntil = 0L,
+                            updatedAt = System.currentTimeMillis(),
+                        ),
+                    )
+                }
+                text.contains("压缩") -> {
+                    update(
+                        owner,
+                        current.copy(
+                            state = FishState.WORKING,
+                            stage = "整理上下文",
+                            message = "上下文有点长，我先收拾一下…",
+                            detail = detailFor(project, effort, "整理上下文"),
+                            activity = null,
+                            updatedAt = System.currentTimeMillis(),
+                        ),
+                    )
+                }
+                text == "已拒绝" -> onWaiting(owner, current.toolName)
             }
-            text.startsWith("思考中") || text.startsWith("继续处理") || text == "继续…" -> {
-                if (current.state == FishState.THINKING && current.stage == "分析阶段") return
-                _state.value = current.copy(
-                    state = FishState.THINKING,
-                    stage = "分析阶段",
-                    message = "我想想…",
-                    detail = detailFor(project, effort, "分析阶段"),
-                    activity = null,
-                    toolName = null,
-                    pulseUntil = 0L,
-                    updatedAt = System.currentTimeMillis(),
-                )
-            }
-            text.contains("压缩") -> {
-                _state.value = current.copy(
-                    state = FishState.WORKING,
-                    stage = "整理上下文",
-                    message = "上下文有点长，我先收拾一下…",
-                    detail = detailFor(project, effort, "整理上下文"),
-                    activity = null,
-                    updatedAt = System.currentTimeMillis(),
-                )
-            }
-            text == "已拒绝" -> onWaiting(current.toolName)
         }
     }
 
     /** 上游 `approval/asked`：WAITING，气泡提醒（悬浮窗会响一声，见设置）。 */
-    fun onWaiting(toolName: String?) {
-        val current = _state.value
-        _state.value = current.copy(
-            state = FishState.WAITING,
-            stage = "等待审批",
-            message = "需要你点一下：工具要执行",
-            detail = detailFor(current.project, current.reasoningEffort, "等待审批") +
-                (toolName?.let { " · $it" } ?: ""),
-            toolName = toolName ?: current.toolName,
-            pulseUntil = 0L,
-            updatedAt = System.currentTimeMillis(),
-        )
+    fun onWaiting(owner: Any?, toolName: String?) {
+        synchronized(lock) {
+            val current = snapshotOf(owner)
+            update(
+                owner,
+                current.copy(
+                    state = FishState.WAITING,
+                    stage = "等待审批",
+                    message = "需要你点一下：工具要执行",
+                    detail = detailFor(current.project, current.reasoningEffort, "等待审批") +
+                        (toolName?.let { " · $it" } ?: ""),
+                    toolName = toolName ?: current.toolName,
+                    pulseUntil = 0L,
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
     }
 
     /** `approval/decided` 或问题回答完：回到 THINKING。 */
-    fun onApprovalResolved() {
-        val current = _state.value
-        if (current.state != FishState.WAITING) return
-        _state.value = current.copy(
-            state = FishState.THINKING,
-            stage = "分析阶段",
-            message = "收到，继续做…",
-            detail = detailFor(current.project, current.reasoningEffort, "分析阶段"),
-            updatedAt = System.currentTimeMillis(),
-        )
+    fun onApprovalResolved(owner: Any?) {
+        synchronized(lock) {
+            val current = snapshotOf(owner)
+            if (current.state != FishState.WAITING) return
+            update(
+                owner,
+                current.copy(
+                    state = FishState.THINKING,
+                    stage = "分析阶段",
+                    message = "收到，继续做…",
+                    detail = detailFor(current.project, current.reasoningEffort, "分析阶段"),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
     }
 
     /** `turn/end`：完成 → SUCCESS 脉冲；错误 → ERROR 常驻。[reply] 是本轮最终回复正文。 */
-    fun onTurnEnd(error: String?, reply: String? = null, tokens: Int = turnTokens) {
-        val current = _state.value
-        val now = System.currentTimeMillis()
-        if (!error.isNullOrBlank()) {
-            _state.value = current.copy(
-                state = FishState.ERROR,
-                stage = "需要处理",
-                message = "出错了，看一眼",
-                detail = error.take(80),
-                pulseUntil = 0L,
-                updatedAt = now,
+    fun onTurnEnd(
+        owner: Any?,
+        error: String?,
+        reply: String? = null,
+        tokens: Int? = null,
+    ) {
+        synchronized(lock) {
+            val current = snapshotOf(owner)
+            val now = System.currentTimeMillis()
+            if (!error.isNullOrBlank()) {
+                update(
+                    owner,
+                    current.copy(
+                        state = FishState.ERROR,
+                        stage = "需要处理",
+                        message = "出错了，看一眼",
+                        detail = error.take(80),
+                        pulseUntil = 0L,
+                        updatedAt = now,
+                    ),
+                )
+                return
+            }
+            val cleanReply = reply
+                ?.trim()
+                ?.takeIf { it.length >= 2 }
+                ?.take(4000)
+            if (cleanReply != null) replyCounter += 1
+            val cleanTokens = (tokens ?: usedTokens(owner)).coerceIn(0, 50_000_000)
+            if (cleanTokens > 0) tokenCounter += 1
+            update(
+                owner,
+                current.copy(
+                    state = FishState.SUCCESS,
+                    stage = "已完成",
+                    message = "这轮做完了！",
+                    detail = detailFor(current.project, current.reasoningEffort, "本轮已完成"),
+                    activity = null,
+                    toolName = null,
+                    pulseUntil = now + 2_400L,
+                    reply = cleanReply ?: current.reply,
+                    replySeq = replyCounter,
+                    tokens = cleanTokens,
+                    tokensSeq = tokenCounter,
+                    updatedAt = now,
+                ),
             )
-            return
         }
-        val cleanReply = reply
-            ?.trim()
-            ?.takeIf { it.length >= 2 }
-            ?.take(4000)
-        if (cleanReply != null) replyCounter += 1
-        val cleanTokens = tokens.coerceIn(0, 50_000_000)
-        if (cleanTokens > 0) tokenCounter += 1
-        _state.value = current.copy(
-            state = FishState.SUCCESS,
-            stage = "已完成",
-            message = "这轮做完了！",
-            detail = detailFor(current.project, current.reasoningEffort, "本轮已完成"),
-            activity = null,
-            toolName = null,
-            pulseUntil = now + 2_400L,
-            reply = cleanReply ?: current.reply,
-            replySeq = replyCounter,
-            tokens = cleanTokens,
-            tokensSeq = tokenCounter,
-            updatedAt = now,
-        )
     }
 
-    fun onError(message: String?) {
+    fun onError(owner: Any?, message: String?) {
         if (message.isNullOrBlank()) return
-        val current = _state.value
-        _state.value = current.copy(
-            state = FishState.ERROR,
-            stage = "需要处理",
-            message = "出错了，看一眼",
-            detail = message.take(80),
-            pulseUntil = 0L,
-            updatedAt = System.currentTimeMillis(),
-        )
+        synchronized(lock) {
+            val current = snapshotOf(owner)
+            update(
+                owner,
+                current.copy(
+                    state = FishState.ERROR,
+                    stage = "需要处理",
+                    message = "出错了，看一眼",
+                    detail = message.take(80),
+                    pulseUntil = 0L,
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
     }
 
     /** 会话标题 = 上游 reducer 的 projectName（项目名优先）。 */
-    fun onProject(title: String?) {
-        val current = _state.value
+    fun onProject(owner: Any?, title: String?) {
         val project = title?.trim()?.takeIf { it.isNotBlank() && it != "新会话" } ?: return
-        if (current.project == project) return
-        _state.value = current.copy(
-            project = project,
-            detail = detailFor(project, current.reasoningEffort, current.stage),
-            updatedAt = System.currentTimeMillis(),
-        )
+        synchronized(lock) {
+            val current = snapshotOf(owner)
+            if (current.project == project) return
+            update(
+                owner,
+                current.copy(
+                    project = project,
+                    detail = detailFor(project, current.reasoningEffort, current.stage),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
     }
 
     /** 用户停止 / 会话切换：回到 IDLE。 */
-    fun onIdle() {
-        turnTokens = 0
-        _state.value = FishSnapshot(replySeq = replyCounter, tokensSeq = tokenCounter)
+    fun onIdle(owner: Any?) {
+        synchronized(lock) {
+            turnTokens.remove(owner)
+            if (owner == null) anonymousTokens = 0
+            update(owner, FishSnapshot(replySeq = replyCounter, tokensSeq = tokenCounter))
+        }
     }
 
     /** 悬浮窗显示时用：脉冲过期就按 IDLE 画。 */

@@ -42,22 +42,40 @@ class FloatingBallService : Service(), FloatingWindowManager.Callback {
     override fun onCreate() {
         super.onCreate()
         startForeground(NOTIFICATION_ID, buildNotification())
-        if (!Settings.canDrawOverlays(this)) {
+        // startForeground 已经履行完 startForegroundService 的承诺，之后 stopSelf/stopService
+        // 都不会再触发系统的 ForegroundServiceDidNotStartInTimeException（docs/103）。
+        starting = false
+        if (hideRequested) {
+            hideRequested = false
             stopSelf()
             return
         }
-        acquireWakeLock()
-        state = FloatingWindowState(this)
-        windowManager = FloatingWindowManager(this, state, this)
-        if (!windowManager.show()) {
+        if (!ensureWindow()) {
             stopSelf()
-        } else {
-            running = true
         }
     }
 
+    /**
+     * 建窗口。onCreate 和「start 打到了还没销毁的旧实例」都走这里：
+     * 后者以前直接 `stopSelf()`，新的一次后台切换就再也起不来（用户 2026-11-11
+     * 反馈悬浮窗消失；真机上是 result 气泡卡住 + 球不回来，见 FloatingChatWindow）。
+     */
+    private fun ensureWindow(): Boolean {
+        if (::windowManager.isInitialized) return true
+        if (!Settings.canDrawOverlays(this)) return false
+        acquireWakeLock()
+        state = FloatingWindowState(this)
+        windowManager = FloatingWindowManager(this, state, this)
+        val ok = windowManager.show()
+        running = ok
+        return ok
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!::windowManager.isInitialized) {
+        // 已经在跑的实例收不到 onCreate，这里要把 starting 清掉，否则 hideWhenForeground
+        // 会一直以为还在启动窗口期，退前台时收不起球。
+        starting = false
+        if (!ensureWindow()) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -190,10 +208,26 @@ class FloatingBallService : Service(), FloatingWindowManager.Callback {
         @Volatile
         private var running = false
 
+        /**
+         * 已经 startForegroundService、但 Service.onCreate 还没跑到 startForeground 的窗口期。
+         * 这段时间里 stopService 会被系统当成「前台服务没按时 startForeground」直接崩进程
+         * （实测 ColorOS 上退后台又立刻回前台就会踩到），所以只记一个 hide 请求，让 onCreate
+         * 先 startForeground 再自己停。
+         */
+        @Volatile
+        private var starting = false
+
+        /** [hideWhenForeground] 在 [starting] 期间收到的「收起」请求。 */
+        @Volatile
+        private var hideRequested = false
+
         fun start(context: Context, mode: FloatingMode? = FloatingMode.BALL) {
             val intent = Intent(context, FloatingBallService::class.java)
             if (mode != null) intent.putExtra(EXTRA_INITIAL_MODE, mode.name)
-            context.startForegroundService(intent)
+            hideRequested = false
+            starting = true
+            runCatching { context.startForegroundService(intent) }
+                .onFailure { starting = false }
         }
 
         fun stop(context: Context) {
@@ -210,6 +244,11 @@ class FloatingBallService : Service(), FloatingWindowManager.Callback {
          * （stopService 对未运行的服务是安全空操作）。
          */
         fun hideWhenForeground(context: Context) {
+            if (starting && !running) {
+                // 服务还没 call startForeground，这时候 stopService 会让进程崩，先记下来。
+                hideRequested = true
+                return
+            }
             runCatching { context.stopService(Intent(context, FloatingBallService::class.java)) }
         }
 
@@ -221,7 +260,8 @@ class FloatingBallService : Service(), FloatingWindowManager.Callback {
          *   个别 ROM 仍可能拒绝，runCatching 兜底不让进程崩。
          */
         fun showWhenBackground(context: Context) {
-            if (running) return
+            // 不因为 [running] 就提前返回：服务被系统收掉但进程还活着时这个标志可能是旧的，
+            // 直接再发一次 start 是幂等的（在跑就只走 onStartCommand，不会重置模式）。
             if (!canDrawOverlays(context)) return
             runCatching { start(context) }.onFailure {
                 android.util.Log.w("FloatingBall", "background start rejected: ${it.message}")

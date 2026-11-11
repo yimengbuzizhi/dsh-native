@@ -400,10 +400,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-    // 工具执行归属：后台轮次优先（goal 工具改的必须是它自己会话的目标）
+    // 工具执行归属：默认看前台会话；每个 [LiveChat] 会另建自己的 goalHost（并行轮次互不串）
     private val goalHost = goalHostFor(
-        { activeTurn?.handle ?: handle },
-        { activeTurn?.goalActivation ?: goalActivation },
+        { current?.handle ?: handle },
+        { current?.goalActivation ?: goalActivation },
     )
 
     /** 同一个打开的会话必须共用一份 activation（根 = `goalActivation`，子代理 = 各自的）。 */
@@ -474,7 +474,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     private val scheduleHost = scheduleHostFor {
-        (activeTurn?.state ?: chat)?.sessionId?.takeIf { it.isNotBlank() }
+        (current?.state ?: chat)?.sessionId?.takeIf { it.isNotBlank() }
     }
 
     /**
@@ -482,8 +482,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 换会话用 `reset()` 原地改；切走/切回来还是同一个对象，后台轮次读到的也是自己那份。
      */
     private val planHost = object : xin.dshaa.core.tools.PlanModeHost {
-        // 后台轮次的 exit_plan_mode 要动它自己会话的计划状态，不能动前台这条
-        private val plan: PlanModeState get() = activeTurn?.plan ?: planState
+        // 默认操作前台会话；每个 [LiveChat] 的 ToolContext 会覆盖成自己的 plan（并行轮次互不串）
+        private val plan: PlanModeState get() = current?.plan ?: planState
 
         override fun active(): Boolean = plan.active
 
@@ -501,16 +501,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val toolContext = ToolContext(
         workspace,
-        askUser = { questions -> askUser(questions) },
+        askUser = { questions ->
+            val live = current
+            if (live == null) questions.map { xin.dshaa.core.tools.AskAnswer(it.id) }
+            else askUser(live, questions)
+        },
         goalHost = goalHost,
         scheduleHost = scheduleHost,
         webSearchHost = webSearchHost,
         attachments = attachments,
         imageRoute = currentImageRoute(),
         jobs = jobRegistry,
-        // 后台任务归属：优先正在跑的那条会话（用户可能正看着别的会话）
-        jobOwner = { activeTurn?.state?.sessionId ?: chat?.sessionId },
-        agents = RootAgentHost(),
+        // 默认归属前台会话；并行轮次用自己的 ToolContext 覆盖成各自 sessionId
+        jobOwner = { (current?.state ?: chat)?.sessionId },
+        agents = RootAgentHost { current },
         planMode = planHost,
         skills = skills,
         workflowHost = workflowHost,
@@ -942,12 +946,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val lives = LinkedHashMap<ChatSessionState, LiveChat>()
     private var current: LiveChat? = null
 
-    /** 正在生成的那条会话（全 App 同时只跑一条）。Compose 状态：列表右侧转圈/橙点靠它。 */
-    var runningState by mutableStateOf<ChatSessionState?>(null)
+    /** 正在生成的会话集合（M77 起可多条并行）。Compose 状态：列表右侧转圈/橙点靠它。 */
+    var runningStates by mutableStateOf<Set<ChatSessionState>>(emptySet())
         private set
 
-    /** 正在跑的那个运行时（stop / 通知归属都用它，不能看当前前台是谁）。 */
-    private var activeTurn: LiveChat? = null
+    /** 正在跑的所有运行时（可多条；stop / 通知归属 / keep-alive 用）。只在主线程改。 */
+    private val activeTurns = LinkedHashSet<LiveChat>()
+
+    /** 最近启动、且仍在跑的轮次；后台通知/停止兜底用。 */
+    private var lastActiveTurn: LiveChat? = null
 
     /** 跑完但用户还没看过的会话 id：列表右侧绿点，打开（或切回）即消。 */
     var unreadDone by mutableStateOf<Set<String>>(emptySet())
@@ -955,12 +962,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * 会话列表右侧状态标：生成中转圈 / 等回答橙点 / 未读完成绿点。
-     * 每次组合时读 [runningState] 与它的审批/提问状态，状态一变列表自动重绘。
+     * 每次组合时读 [runningStates] 与它的审批/提问状态，状态一变列表自动重绘。
      */
     fun badgeFor(sessionId: String?): SessionBadge? {
         if (sessionId.isNullOrBlank()) return null
-        val running = runningState
-        if (running?.sessionId == sessionId) {
+        val running = liveById(sessionId)?.state
+        if (running != null && running in runningStates) {
             return if (running.pendingApproval != null || running.pendingQuestions != null) {
                 SessionBadge.WAITING
             } else {
@@ -968,6 +975,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         return if (sessionId in unreadDone) SessionBadge.DONE else null
+    }
+
+    /**
+     * 其它会话正等着用户点（M78 并行收尾）：
+     * 审批卡和提问框只画在**当前会话**上，后台轮次弹出来时前台聊天页完全看不到，
+     * 只有抽屉里一个橙点。这里把「不是前台的等待项」列出来，聊天页顶部画成横幅，点一下切过去。
+     *
+     * Compose 读的是 [runningStates] 和各会话的 `pendingApproval/pendingQuestions`
+     * （都是 snapshot state），审批一来/一走横幅自动重绘。
+     */
+    fun waitingElsewhere(): List<WaitingSession> {
+        val here = current?.state
+        return runningStates.mapNotNull { state ->
+            if (state === here) return@mapNotNull null
+            val approval = state.pendingApproval
+            val questions = state.pendingQuestions
+            if (approval == null && questions.isNullOrEmpty()) return@mapNotNull null
+            WaitingSession(
+                sessionId = state.sessionId ?: return@mapNotNull null,
+                title = state.title.ifBlank { "未命名会话" },
+                toolName = approval?.toolName ?: "提问",
+                summary = approval?.summary ?: questions?.firstOrNull()?.question.orEmpty(),
+                question = approval == null,
+            )
+        }
+    }
+
+    /** 横幅点击：把前台切到那条会话（审批卡跟着会话走，切过去就能点）。 */
+    fun focusSession(id: String) {
+        if (id == current?.state?.sessionId) return
+        Log.i("DshTurn", "focus session=$id (from waiting banner)")
+        liveById(id)?.let { live ->
+            attach(live)
+            syncPlanUi()
+            return
+        }
+        viewModelScope.launch { openSessionById(id) }
     }
 
     /** 聊天页内的返回栈（M22）：从工具卡打开子代理只读回放，返回键回到父会话而不是退出。 */
@@ -1038,8 +1082,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val plan = PlanModeState()
         var goalActivation = GoalActivationState()
         var job: Job? = null
+        /** 本会话待投递的提醒（并行轮次各投各的，不抢别的会话的提醒）。 */
+        val pendingSchedules = ArrayDeque<String>()
+        /** 本会话挂起的工具审批/提问（并行时后台轮次不能覆盖前台的那一份）。 */
+        var approvalDeferred: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
+        var questionDeferred: kotlinx.coroutines.CompletableDeferred<List<xin.dshaa.core.tools.AskAnswer>>? = null
+        /**
+         * 本会话的工具上下文（M77 并行）：goal / 提醒 / 计划模式 / 后台任务 owner / 子代理归属
+         * 全绑死自己这条会话，不再读「当前前台是谁」。工作区仍是全局的（会话按工作区分组）。
+         */
+        val toolContext: xin.dshaa.core.tools.ToolContext by lazy { buildToolContext(this) }
         val engine: TurnEngine by lazy { buildEngine(this) }
     }
+
+    /**
+     * 给一个会话建独立的 ToolContext：从基础上下文 copy（共享 registry/附件/webSearch/jobs），
+     * 再覆盖所有「属于哪条会话」的回调。`state` 也独立，避免 todo 在并行会话间串。
+     */
+    private fun buildToolContext(live: LiveChat): xin.dshaa.core.tools.ToolContext = toolContext.copy(
+        state = mutableMapOf(),
+        cwd = workspace,
+        askUser = { questions -> askUser(live, questions) },
+        goalHost = goalHostFor({ live.handle }, { live.goalActivation }),
+        scheduleHost = scheduleHostFor { live.state.sessionId },
+        jobOwner = { live.state.sessionId },
+        agents = RootAgentHost { live },
+        planMode = object : xin.dshaa.core.tools.PlanModeHost {
+            override fun active(): Boolean = live.plan.active
+
+            override fun requestExit() {
+                live.plan.pending = false
+                live.plan.narrate = false
+            }
+        },
+    )
 
     /** 把某个会话运行时挂到前台；顺带清掉它的「完成未读」绿点。 */
     private fun attach(live: LiveChat?) {
@@ -1047,6 +1123,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         chat = live?.state
         // 悬浮窗（2026-11-08）跟着前台会话走：它读的是同一个 ChatSessionState
         ChatMirror.state = live?.state
+        // 大肥鱼/客户端插件窗口（M78）：并行时优先显示前台这条会话的状态
+        BigFish.setForeground(live?.state)
         val id = live?.state?.sessionId
         if (id != null && id in unreadDone) unreadDone = unreadDone - id
     }
@@ -1063,6 +1141,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 一轮对话的执行器（core:engine）。原 AppViewModel 里的 runTurn/续轮循环搬到这里，
      * 依赖以接口注入：JVM 单测可换假 LLM/假工具跑完整轮次。
      */
+    /**
+     * 粗估 token（M76 上下文三段明细用）：CJK/全角按 1 字符≈1 token，其余按 4 字符≈1 token。
+     * 面板里这些数都标「约」；百分比和总数用模型返回的真实 prompt tokens。
+     */
+    private fun estimateTokens(text: String): Int {
+        var cjk = 0
+        var other = 0
+        for (ch in text) {
+            val code = ch.code
+            if (code in 0x2E80..0x9FFF || code in 0xFF00..0xFFEF) cjk++ else other++
+        }
+        return cjk + (other + 3) / 4
+    }
+
     private fun buildEngine(live: LiveChat): TurnEngine = TurnEngine(
             EngineDeps(
                 workspacePath = workspace.absolutePath,
@@ -1070,18 +1162,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 providerLabel = { providerLabel() },
                 reasoningEffort = { settings.reasoningEffort },
                 registry = registry,
-                toolContext = toolContext,
+                toolContext = live.toolContext,
                 stop = live.stop,
                 apiTools = {
-                    promptPack.androidApiTools().filter { it.name in offeredToolNames() } + pluginApiTools
+                    val apiTools = promptPack.androidApiTools().filter { it.name in offeredToolNames() } + pluginApiTools
+                    // M76 上下文三段明细：工具 schema 的 token 是估算值（字符折算）
+                    live.state.estToolsTokens = apiTools.sumOf { tool ->
+                        estimateTokens(tool.name + tool.description.orEmpty() + tool.inputSchema.toString())
+                    }
+                    apiTools
                 },
                 systemPrompt = {
-                    promptPack.systemFor(
+                    val text = promptPack.systemFor(
                         model = settings.model,
                         provider = providerLabel(),
                         tools = offeredToolNames(),
                         // 计划模式：system 里动态带 plan:policy 段（上游 PLAN_POLICY，order 500）
-                        planMode = planState.selected(),
+                        planMode = live.plan.selected(),
                         // 角色卡（M71）：人设替换 deployment:persona-prefix，系统提示词追加到
                         // deployment:persona-suffix（order 10200）；插件注册的段落按 order 一起排、
                         // 同名段插件覆盖（插件的人设/上下文走同一条路，不往最后再糊一段）。
@@ -1090,6 +1187,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         extraSections = pluginPromptSections(),
                         variables = pluginPromptVariables(),
                     )
+                    live.state.estSystemTokens = estimateTokens(text)
+                    live.state.contextWindow = settings.contextWindow
+                    text
                 },
                 runtimeContext = { runtimeContextText() },
                 stream = { request, config ->
@@ -1132,13 +1232,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             refreshSessions()
                         }
                 },
-                goals = { session -> goalStore(session) },
+                goals = { session -> goalStore(session, live.goalActivation) },
                 imageBytes = { id -> attachments.readImage(id) },
                 imagePath = { id -> imageReadonlyPath(id) },
                 imageBudget = { imageOffloadBudget() },
-                approval = { call -> awaitApproval(call) },
-                nextSchedulePrompt = { nextSchedulePrompt() },
-                tickSchedules = { tickSchedules() },
+                approval = { call -> awaitApproval(live, call) },
+                nextSchedulePrompt = { nextSchedulePrompt(live) },
+                tickSchedules = { tickSchedulesFor(live) },
                 onRequest = { n, request ->
                     dumpRequestIfRequested(request)
                     logRequest(n, request)
@@ -1155,7 +1255,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     logTurnEnd(live.state)
                 },
                 jobNotices = {
-                    takeNoticesFor(activeTurn?.state?.sessionId ?: live.state.sessionId)
+                    takeNoticesFor(live.state.sessionId)
                 },
                 skillCatalog = { session -> skillCatalogNotice(session) },
                 skillInvocations = { _, texts -> skillInvocationNotices(texts) },
@@ -1165,17 +1265,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 contextWindow = { settings.effectiveContextWindow.takeIf { it > 0 } },
                 log = { message -> Log.i("DshCompact", message) },
                 plan = live.plan,
-                onPlanChanged = { syncPlanUi() },
+                onPlanChanged = { syncPlanUiFor(live) },
             ),
     )
 
 
+    /** 已批准过的工具（本进程；「总是允许」）。 */
     private val approvedTools = mutableSetOf<String>()
-    private var approvalDeferred: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
-    private var questionDeferred: kotlinx.coroutines.CompletableDeferred<List<xin.dshaa.core.tools.AskAnswer>>? = null
-
-    /** 已到期但还没投递的提醒正文（同一会话多条到期时逐轮投递）。 */
-    private val pendingSchedulePrompts = ArrayDeque<String>()
 
     // ---- 技能（M19/M21） ----
     // 注意：这三个 Compose 状态必须在 init 之前声明——init 里的调试通道会走 submit()，
@@ -1402,12 +1498,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         sp.getString("debug_fish_demo", null)?.takeIf { it.isNotBlank() }?.let { demo ->
             sp.edit().remove("debug_fish_demo").apply()
             when (demo) {
-                "thinking" -> BigFish.onTurnStart(settings.reasoningEffort, "鲸歌适配大肥鱼")
-                "working" -> BigFish.onStatus("运行工具 read…")
-                "waiting" -> BigFish.onWaiting("bash")
-                "success" -> BigFish.onTurnEnd(null)
-                "error" -> BigFish.onTurnEnd("HTTP 401：API key 无效")
-                else -> BigFish.onIdle()
+                "thinking" -> BigFish.onTurnStart(null, settings.reasoningEffort, "鲸歌适配大肥鱼")
+                "working" -> BigFish.onStatus(null, "运行工具 read…")
+                "waiting" -> BigFish.onWaiting(null, "bash")
+                "success" -> BigFish.onTurnEnd(null, null)
+                "error" -> BigFish.onTurnEnd(null, "HTTP 401：API key 无效")
+                else -> BigFish.onIdle(null)
             }
             Log.i("DshBigFish", "debug fish demo=$demo")
         }
@@ -1785,9 +1881,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (chat?.sessionId == id) {
                 // 删的是当前会话：如果它还在跑，先停掉；运行时一并作废
                 liveById(id)?.let { live ->
-                    if (runningState === live.state) {
+                    if (live in activeTurns) {
                         live.stop.requested = true
                         live.job?.cancel()
+                        markStopped(live)
                     }
                     lives.remove(live.state)
                 }
@@ -1990,6 +2087,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         current?.let { old ->
             if (old.state.sessionId == null && old.state.messages.isEmpty() && old.job == null) {
                 lives.remove(old.state)
+                // 大肥鱼那份快照也一起清（M78：按会话记状态）
+                BigFish.forget(old.state)
             }
         }
         chatBackStack.clear()
@@ -2154,11 +2253,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (state.streaming) return false
             if (text.isBlank() && !hasImages && !hasFiles) return false
-            val busy = activeTurn
-            if (busy != null && busy.state !== state) {
-                showCommandNotice(state, "「${busy.state.title.ifBlank { "另一个会话" }}」正在生成，等它结束再发")
-                return false
-            }
             if (hasImages && !imageInputAvailable) {
                 state.attachError = "当前模型未开启识图：设置 → 模型与参数配置 → 「模型支持识图」打开后再发"
                 return false
@@ -2564,17 +2658,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         state.planEntered = planState.entered
     }
 
+    /** 后台轮次改的是它自己的计划状态，只能刷新它自己的 Compose 字段。 */
+    private fun syncPlanUiFor(live: LiveChat) {
+        val state = live.state
+        state.planActive = live.plan.active
+        state.planPending = live.plan.pending
+        state.planEntered = live.plan.entered
+    }
+
     fun send(text: String) {
         val trimmed = text.trim()
         val state = chat ?: return
         // 旧版备份导入的会话是只读副本：不允许续写（源数据契约：导入只读）
         if (state.readOnly || state.streaming) return
-        // 另一条会话正在生成：全 App 同时只跑一条（工具上下文/通知归属是进程级共享的）
-        val busy = activeTurn
-        if (busy != null && busy.state !== state) {
-            state.commandNotice = "「${busy.state.title.ifBlank { "另一个会话" }}」正在生成，等它结束再发"
-            return
-        }
         state.attachError = null
         val images = state.pendingImages.map { it.ref }
         val files = state.pendingFiles.toList()
@@ -2619,23 +2715,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 多条同时到期时逐轮投递；停机/后台错过的，只补最近一次（每个任务投递一次）。
      */
     private fun tickSchedules() {
-        val state = chat ?: return
-        // 后台轮次跑完时不要拿前台会话的提醒替它投递（提醒只投给它自己的会话）
-        if (activeTurn != null && activeTurn?.state !== state) return
+        val live = current ?: return
+        tickSchedulesFor(live)
+    }
+
+    /** 只投递某一条会话自己的提醒（并行轮次各投各的）。 */
+    private fun tickSchedulesFor(live: LiveChat) {
+        val state = live.state
         if (state.readOnly || state.streaming) return
-        val prompt = nextSchedulePrompt() ?: return
-        send(prompt)
+        val prompt = nextSchedulePrompt(live) ?: return
+        startTurn(state, TurnInput(prompt))
     }
 
     /**
      * 取下一条到期提醒（不要求 idle；goal 续轮循环里也用它让路给提醒）。
      * 返回的 prompt 会顺手把任务标成已投递、把后续触发时间推到未来。
      */
-    private fun nextSchedulePrompt(): String? {
-        val state = chat ?: return null
+    private fun nextSchedulePrompt(live: LiveChat): String? {
+        val state = live.state
         if (state.readOnly) return null
-        if (activeTurn != null && activeTurn?.state !== state) return null
-        if (pendingSchedulePrompts.isNotEmpty()) return pendingSchedulePrompts.removeFirst()
+        if (live.pendingSchedules.isNotEmpty()) return live.pendingSchedules.removeFirst()
         val sessionId = state.sessionId ?: return null
         val now = System.currentTimeMillis()
         val due = schedules.listForSession(sessionId).filter { it.active && it.nextRunAt <= now }
@@ -2644,9 +2743,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val anchor = if (task.timing.kind == "every_seconds") task.updatedAt else task.createdAt
             val next = runCatching { ScheduleTime.nextOccurrence(task.timing, now, anchor) }.getOrNull()
             runCatching { schedules.markDelivered(task.id, now, next) }
-            pendingSchedulePrompts.addLast(task.prompt)
+            live.pendingSchedules.addLast(task.prompt)
         }
-        return pendingSchedulePrompts.removeFirst()
+        return live.pendingSchedules.removeFirst()
     }
 
     /** 当前会话的提醒（聊天页「提醒」面板打开时重新读）。 */
@@ -2663,8 +2762,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     suspend fun pauseGoal(): String? {
         val error = mutateGoal { store, view -> store.pauseAsUser(view.goal.id, view.goal.revision) }
-        val live = activeTurn
-        // 上游：宿主 pause 会中止正在跑的 turn（模型自己 pause 则跑完当前轮）
+        // 暂停的是当前会话的目标：只中止当前会话自己的轮次，不能误停后台别的会话
+        val live = current
         if (error == null && live?.state?.streaming == true) {
             live.stop.requested = true
             live.job?.cancel()
@@ -2711,8 +2810,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stop() {
-        // 停止的是「正在跑的那一条」，不是前台这条（用户可能正在别的会话里看）
-        val live = activeTurn ?: current ?: return
+        // 停止当前前台这条（它正在跑）；用户看着一条没跑的会话时，停止最近启动的那条。
+        val live = current?.takeIf { it in activeTurns } ?: lastActiveTurn ?: current ?: return
         // 用户主动 interrupt：取消后由引擎的收尾逻辑决定 pause（goal 轮）还是 disarm。
         // streaming 由取消收尾统一置 false：先写完 turn/end 再允许下一次发送，
         // 否则用户立刻再发一条会与取消收尾并发写同一个会话文件。
@@ -2723,8 +2822,46 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val lastIndex = messages.indexOfLast { it.role == MessageRole.ASSISTANT }
             if (lastIndex >= 0) messages[lastIndex] = messages[lastIndex].copy(streaming = false)
         }
-        // runningState / activeTurn 不在这里清：等引擎的取消收尾（finally）统一清，
+        // runningStates / activeTurns 不在这里清：等引擎的取消收尾（finally）统一清，
         // 否则 keep-alive 会在 turn/end 还没写完时先停掉（写一半的会话最怕进程被冻）。
+        //
+        // 兜底（用户 2026-11-11 反馈「停掉了还在运行、发消息没反应、开新话题被挡住」）：
+        // 取消收尾可能卡在阻塞的工具/网络调用里永远等不到 finally。3 秒后若这条轮次
+        // 还占着运行集合 / streaming，就强制清 UI 状态，至少让用户能继续发消息。
+        val stopped = live
+        viewModelScope.launch {
+            delay(3000)
+            val stillHeld = stopped in activeTurns || stopped.state.streaming
+            if (stillHeld) forceStopUi(stopped, "stop timeout")
+        }
+    }
+
+    private fun markRunning(live: LiveChat) {
+        activeTurns += live
+        lastActiveTurn = live
+        runningStates = runningStates + live.state
+    }
+
+    private fun markStopped(live: LiveChat) {
+        activeTurns -= live
+        runningStates = runningStates - live.state
+        if (lastActiveTurn === live) lastActiveTurn = activeTurns.lastOrNull()
+    }
+
+    /**
+     * 轮次没收干净时的兜底：把「正在生成」状态强行清掉，并给用户一条明确提示。
+     * 只在用户点过「停止」/ 状态明显是僵尸（没有 job）时调用，正常收尾不走这里。
+     */
+    private fun forceStopUi(live: LiveChat, reason: String) {
+        Log.w("DshTurn", "force stop turn: $reason")
+        live.job = null
+        markStopped(live)
+        live.state.streaming = false
+        live.state.statusText = null
+        val lastIndex = live.state.messages.indexOfLast { it.role == MessageRole.ASSISTANT }
+        if (lastIndex >= 0) live.state.messages[lastIndex] = live.state.messages[lastIndex].copy(streaming = false)
+        live.state.commandNotice = "上一轮收尾超时，已强制停止；可以直接发消息。"
+        syncKeepAlive()
     }
 
     /** 内部取消（不带用户 interrupt 语义）：换工作区/删会话时用。 */
@@ -2755,30 +2892,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         override fun setStreaming(streaming: Boolean) {
             state.streaming = streaming
+            // M76：运行状态条按本轮开始时间计时；结束不清零，行内文案会切回「已完成」。
+            if (streaming) state.turnStartedAt = System.currentTimeMillis()
             // 大肥鱼（M59）：一轮开始 → THINKING；收口在 startTurn 的 finally 里（那里才是
             // 真正「turn end」的时刻，引擎有些取消路径不会经过 setStreaming(false)）。
-            if (streaming) BigFish.onTurnStart(settings.reasoningEffort, workspace.name)
+            if (streaming) BigFish.onTurnStart(state, settings.reasoningEffort, workspace.name)
         }
 
         override fun setStatus(text: String?) {
             state.statusText = text
-            BigFish.onStatus(text)
+            BigFish.onStatus(state, text)
             // 通知栏里同步当前步骤（没有前台服务时 start() 是空操作，实例不存在就直接 return）
             if (text != null) TurnKeepAliveService.start(getApplication(), text)
         }
 
         override fun setError(text: String?) {
             state.error = text
-            if (text != null) BigFish.onError(text)
+            if (text != null) BigFish.onError(state, text)
         }
 
         override fun setUsage(text: String?) {
             state.usageText = text
         }
 
-        /** M72：数字版用量 → BigFish 按轮累加，turn/end 随快照喂给客户端插件。 */
+        /** M72：数字版用量 → BigFish 按会话/轮累加，turn/end 随快照喂给客户端插件。 */
         override fun setTokenUsage(inputTokens: Int, outputTokens: Int) {
-            BigFish.onTokenUsage(inputTokens, outputTokens)
+            // M76：上下文圆环/明细用最近一次请求的真实 prompt tokens
+            if (inputTokens > 0) state.lastPromptTokens = inputTokens
+            if (outputTokens > 0) state.lastCompletionTokens = outputTokens
+            BigFish.onTokenUsage(state, inputTokens, outputTokens)
         }
 
         override fun setGoal(view: GoalView?) {
@@ -2833,21 +2975,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 循环本身在 core:engine；这里只挂协程并收尾 UI 状态。
      */
     private fun startTurn(state: ChatSessionState, input: TurnInput) {
-        val live = current?.takeIf { it.state === state } ?: return
-        // 全 App 同时只跑一条：别的会话正在生成时不再起第二轮
-        // （工具上下文/通知归属是进程级共享的，并发轮次会串会话）
-        if (activeTurn != null && activeTurn?.state !== state) return
+        // 并行（M77）：每条会话都可以有自己的在跑轮次；这里按 state 找它自己的 LiveChat，
+        // 不再要求「必须是当前前台会话」（提醒/通知可以在后台会话上起一轮）。
+        val live = lives[state] ?: current?.takeIf { it.state === state } ?: return
+        // 同一会话仍只允许一条轮次（工具调用/会话文件写入不能并发）
+        if (live.job?.isActive == true || live.state.streaming) return
         // fork 的 seed 边界：本轮开始前的消息 = 已完成的轮次（当前轮不算）
         state.turnStartIndex = state.messages.size
         // 模型可能刚被改过：工具上下文里的图片能力门按当前设置重新绑定（read_image 的准入）
-        toolContext.imageRoute = currentImageRoute()
+        live.toolContext.imageRoute = currentImageRoute()
         // 保活：turn 跑着的时候挂前台服务（+ 唤醒锁），切后台/锁屏不被冻/回收（docs/48）
         TurnKeepAliveService.stopListener = { stop() }
         startKeepAlive("对话进行中 · 切后台也会继续跑")
-        Log.i("DshTurn", "turn start session=${state.sessionId ?: "-"} model=${settings.model}")
+        Log.i(
+            "DshTurn",
+            "turn start session=${state.sessionId ?: "-"} foreground=${state === chat} model=${settings.model}",
+        )
         val startedAt = System.currentTimeMillis()
-        activeTurn = live
-        runningState = state
+        markRunning(live)
         live.job = viewModelScope.launch {
             try {
                 live.engine.startTurn(ComposeTurnUi(state), input)
@@ -2863,20 +3008,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     ?.joinToString("\n") { it.text }
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }
-                BigFish.onTurnEnd(state.error, finalReply)
-                Log.i("DshTurn", "turn end after ${System.currentTimeMillis() - startedAt}ms")
+                // 先把「这一轮占着运行集合」的标志清掉，再跑收尾副作用：收尾里任何一步抛异常
+                // 都不能让轮次永久占位（用户 2026-11-11：停止后仍显示运行、发不出消息）。
                 live.job = null
-                if (runningState === state) runningState = null
-                if (activeTurn === live) activeTurn = null
+                markStopped(live)
+                Log.i("DshTurn", "turn end after ${System.currentTimeMillis() - startedAt}ms")
+                runCatching { BigFish.onTurnEnd(state, state.error, finalReply) }
+                    .onFailure { Log.w("DshTurn", "turn end hook failed", it) }
                 // 跑完但用户正看着别的会话 → 列表右侧亮绿点（打开/切回即消）；
                 // 会话已经被删（回收站）就不再标
-                val id = state.sessionId
-                if (id != null && chat?.sessionId != id && lives.containsValue(live)) {
-                    unreadDone = unreadDone + id
+                runCatching {
+                    val id = state.sessionId
+                    if (id != null && chat?.sessionId != id && lives.containsValue(live)) {
+                        unreadDone = unreadDone + id
+                    }
+                    refreshSessions()
                 }
-                refreshSessions()
-                // 轮次收口瞬间才结算的通知不会被引擎的 step 边界看到：这里补一次唤醒
-                maybeDeliverNotices()
+                // 轮次收口瞬间才结算的通知不会被引擎的 step 边界看到：这里补一次唤醒（只唤醒这条会话）
+                runCatching { maybeDeliverNoticesFor(state) }
                 syncKeepAlive()
             }
         }
@@ -2887,7 +3036,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 就保持；都结束才停。**不要**在 turn 里直接 stop——否则 turn 结束后后台任务会被冻住。
      */
     private fun syncKeepAlive() {
-        val turnRunning = activeTurn != null || runningState?.streaming == true
+        val turnRunning = activeTurns.isNotEmpty()
         val jobsRunning = runCatching {
             jobRegistry.listAll(previewChars = 0).any {
                 it.job.status == xin.dshaa.core.jobs.JobStatus.RUNNING
@@ -3211,12 +3360,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      *   （`source.kind:"tool-jobs"` / `"subagent-settled"`，与会话格式的顺序一致）。
      */
     private fun maybeDeliverNotices() {
+        maybeDeliverNoticesFor(chat)
+    }
+
+    /** 只给指定会话投递通知（并行时不要把 A 的通知塞进 B 的轮次）。 */
+    private fun maybeDeliverNoticesFor(target: ChatSessionState?) {
         viewModelScope.launch {
-            val state = chat ?: return@launch
+            val state = target ?: return@launch
             if (state.readOnly || state.streaming) return@launch
             val owner = state.sessionId ?: return@launch
             val notices = takeNoticesFor(owner)
             if (notices.isEmpty()) return@launch
+            // M78：后台根会话也会被唤醒（以前只认当前打开的那条），日志记录是不是前台
+            Log.i(
+                "DshTurn",
+                "notice wake session=$owner foreground=${state === chat} notices=${notices.size}",
+            )
             startTurn(state, TurnInput("", notices = notices))
         }
     }
@@ -3224,7 +3383,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** 通知 owner 不是根会话就是子代理：分别走聊天唤醒 / 子代理续轮。 */
     private fun wakeOwner(owner: String?) {
         if (owner == null) return
-        if (owner == chat?.sessionId) maybeDeliverNotices() else wakeChildAgent(owner)
+        // M78：owner 可能是**任意一条**根会话（并行时前台只有一条）。对上哪条就投给它自己。
+        // 旧实现只认 `chat?.sessionId`，后台根会话的「子代理/后台任务结算」永远等不到唤醒，
+        // 只有把那条会话打开才补投。
+        val live = liveById(owner)
+        if (live != null) maybeDeliverNoticesFor(live.state) else wakeChildAgent(owner)
     }
 
     /**
@@ -3277,22 +3440,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 根会话（用户直接对话的 agent）看到的子代理工具后端。 */
-    private inner class RootAgentHost : AgentHost {
-        // 工具归属：后台轮次优先（A 在后台跑子代理时不能算到前台的 B 头上）
+    /** 根会话（用户直接对话的 agent）看到的子代理工具后端；按 LiveChat 绑定归属。 */
+    private inner class RootAgentHost(private val owner: () -> LiveChat?) : AgentHost {
+        // 工具归属：这条轮次自己的会话（并行时 A 的工具不能算到 B 头上）
         override fun currentAgentId(): String? =
-            (activeTurn?.state ?: chat)?.sessionId?.takeIf { it.isNotBlank() }
+            owner()?.state?.sessionId?.takeIf { it.isNotBlank() }
 
         override fun currentDepth(): Int = 0
 
         override fun maxDepth(): Int = agentRegistry.limit()
 
         override suspend fun start(description: String, prompt: String, cwd: String?, fork: Boolean): AgentStart {
-            val parentId = currentAgentId() ?: throw IllegalArgumentException("subagent requires an active session")
+            val parentState = owner()?.state
+                ?: throw IllegalArgumentException("subagent requires an active session")
+            val parentId = parentState.sessionId?.takeIf { it.isNotBlank() }
+                ?: throw IllegalArgumentException("subagent requires an active session")
             val seed = if (fork) {
-                (activeTurn?.state ?: chat)
-                    ?.let { state -> state.messages.take(state.turnStartIndex.coerceIn(0, state.messages.size)) }
-                    .orEmpty()
+                parentState.messages.take(parentState.turnStartIndex.coerceIn(0, parentState.messages.size))
             } else {
                 emptyList()
             }
@@ -3658,53 +3822,78 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         var turnJob: kotlinx.coroutines.Job? = null
     }
 
-    /** 审批：允许/拒绝当前挂起的工具调用。 */
+    /** 审批：允许/拒绝当前挂起的工具调用（优先前台会话；后台会话的审批切回去再处理）。 */
     fun resolveApproval(allow: Boolean, always: Boolean = false) {
-        val state = activeTurn?.state ?: chat ?: return
+        val live = current?.takeIf { it.state.pendingApproval != null }
+            ?: activeTurns.firstOrNull { it.state.pendingApproval != null }
+            ?: current
+            ?: return
+        val state = live.state
         if (allow && always) state.pendingApproval?.let { approvedTools += it.toolName }
+        Log.i("DshApproval", "resolve session=${state.sessionId ?: "-"} allow=$allow always=$always")
         state.pendingApproval = null
-        approvalDeferred?.complete(allow)
-        approvalDeferred = null
-        BigFish.onApprovalResolved()
+        live.approvalDeferred?.complete(allow)
+        live.approvalDeferred = null
+        BigFish.onApprovalResolved(state)
     }
 
-    /** 模型提问：挂起工具循环，等 UI 收集答案后 complete。 */
-    private suspend fun askUser(questions: List<xin.dshaa.core.tools.AskQuestion>): List<xin.dshaa.core.tools.AskAnswer> {
-        val state = activeTurn?.state ?: chat ?: return questions.map { xin.dshaa.core.tools.AskAnswer(it.id) }
+    /** 模型提问：挂起该会话的工具循环，等 UI 收集答案后 complete。 */
+    private suspend fun askUser(
+        live: LiveChat,
+        questions: List<xin.dshaa.core.tools.AskQuestion>,
+    ): List<xin.dshaa.core.tools.AskAnswer> {
+        val state = live.state
         val deferred = kotlinx.coroutines.CompletableDeferred<List<xin.dshaa.core.tools.AskAnswer>>()
-        questionDeferred = deferred
+        live.questionDeferred = deferred
         state.pendingQuestions = questions
         return try {
             deferred.await()
         } finally {
             state.pendingQuestions = null
-            questionDeferred = null
+            if (live.questionDeferred === deferred) live.questionDeferred = null
         }
     }
 
     /** UI 提交答案（空答案 = 用户跳过）。 */
     fun resolveQuestions(answers: List<xin.dshaa.core.tools.AskAnswer>) {
-        questionDeferred?.complete(answers)
+        val live = current?.takeIf { it.state.pendingQuestions != null }
+            ?: activeTurns.firstOrNull { it.state.pendingQuestions != null }
+            ?: return
+        live.questionDeferred?.complete(answers)
     }
 
-    private suspend fun awaitApproval(call: ToolCall): Boolean {
+    private suspend fun awaitApproval(live: LiveChat, call: ToolCall): Boolean {
         if (call.name in READ_ONLY_TOOLS || settings.approvalMode == "auto" || call.name in approvedTools) return true
-        val state = activeTurn?.state ?: chat ?: return false
+        val state = live.state
         val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
-        approvalDeferred = deferred
+        live.approvalDeferred = deferred
         state.pendingApproval = PendingApproval(
             id = call.id,
             toolName = call.name,
             arguments = call.arguments,
             summary = summarizeTool(call.name, call.arguments),
         )
-        BigFish.onWaiting(call.name)
+        // 大肥鱼：按会话记状态（M78），并行时前台/在跑的那条优先，别互相覆盖。
+        BigFish.onWaiting(live.state, call.name)
+        val foreground = state === current?.state
+        Log.i(
+            "DshApproval",
+            "ask session=${state.sessionId ?: "-"} tool=${call.name} foreground=$foreground",
+        )
+        // 后台会话的审批卡在前台看不到（聊天页顶部横幅 + 抽屉橙点提示）：顺手把常驻通知的
+        // 文案改成「等待审批」，用户切到桌面也能看见是谁在等。
+        if (!foreground) {
+            TurnKeepAliveService.start(
+                getApplication(),
+                "「${state.title.ifBlank { "会话" }}」等待审批：${call.name}",
+            )
+        }
         return try {
             deferred.await()
         } finally {
             // 用户「停止本轮」或切会话取消时也要把审批卡收掉（否则会一直挂在聊天页上）
             state.pendingApproval = null
-            if (approvalDeferred === deferred) approvalDeferred = null
+            if (live.approvalDeferred === deferred) live.approvalDeferred = null
         }
     }
 
@@ -3819,7 +4008,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun llmConfig(): LlmConfig = LlmConfig(
         apiKey = settings.apiKey,
-        baseUrl = settings.baseUrl,
+        // 端点允许留空（设置页删空后不再弹回默认值）：请求时回落到当前供应商的默认端点。
+        baseUrl = settings.baseUrl.ifBlank { SettingsStore.defaultBaseUrl(settings.providerId) },
         model = settings.model,
         maxTokens = settings.maxTokens,
         temperature = settings.temperature,

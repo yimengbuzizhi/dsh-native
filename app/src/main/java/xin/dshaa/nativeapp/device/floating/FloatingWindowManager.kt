@@ -337,7 +337,6 @@ class FloatingWindowManager(
     private fun applyModeParams(
         params: WindowManager.LayoutParams,
         mode: FloatingMode,
-        targetGravity: Int = Gravity.TOP or Gravity.START,
     ) {
         when (mode) {
             FloatingMode.FULLSCREEN, FloatingMode.SCREEN_OCR -> {
@@ -358,6 +357,7 @@ class FloatingWindowManager(
                 params.height = ball
                 params.flags =
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                 val safe = (16 * density).toInt()
                 val minVisible = ball / 2
@@ -392,16 +392,17 @@ class FloatingWindowManager(
             FloatingMode.RESULT_DISPLAY -> {
                 params.width = WindowManager.LayoutParams.WRAP_CONTENT
                 params.height = WindowManager.LayoutParams.WRAP_CONTENT
+                // M76 修正（docs/103）：内容侧同步改成 wrapContentSize 后，窗口才会真的贴合气泡。
+                // 之前根节点 fillMaxSize 把 WRAP_CONTENT 撑成 640×1504 的透明大窗，窗口范围内的
+                // 触摸全被吞掉——NOT_TOUCH_MODAL 只管窗口外，所以用户仍然「点不了屏幕其它地方」。
+                // 位置也从「跟随悬浮球坐标」改成居中：气泡最大 280dp，靠边会像截图里那样被裁掉。
                 params.flags =
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                params.gravity = targetGravity
-                val ball = (state.ballSize.value.value * density).toInt()
-                val minVisible = ball / 2
-                state.x = state.x.coerceIn(-ball + minVisible, screenW - minVisible)
-                state.y = state.y.coerceIn(0, contentH - minVisible)
-                params.x = state.x
-                params.y = state.y
+                params.gravity = Gravity.CENTER
+                params.x = 0
+                params.y = 0
             }
         }
         params.softInputMode = softInputModeFor(mode)
@@ -501,6 +502,7 @@ class FloatingWindowManager(
             FloatingMode.BALL, FloatingMode.VOICE_BALL -> {
                 val ball = (state.ballSize.value.value * density).toInt()
                 val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                 val (nx, ny) = when (oldMode) {
                     FloatingMode.FULLSCREEN, FloatingMode.SCREEN_OCR ->
@@ -563,21 +565,19 @@ class FloatingWindowManager(
                 newMode == FloatingMode.FULLSCREEN,
             )
 
-            FloatingMode.RESULT_DISPLAY -> {
-                val ball = (state.ballSize.value.value * density).toInt()
-                val ballCenter = params.x + params.width / 2
-                val right = ballCenter > screenW / 2
-                Target(
-                    WindowManager.LayoutParams.WRAP_CONTENT,
-                    WindowManager.LayoutParams.WRAP_CONTENT,
-                    if (right) screenW - (params.x + params.width) else params.x,
-                    params.y,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                    if (right) Gravity.TOP or Gravity.END else Gravity.TOP or Gravity.START,
-                    false,
-                )
-            }
+            FloatingMode.RESULT_DISPLAY -> Target(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                0,
+                0,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                // docs/103：居中 + wrap。之前沿用悬浮球坐标/TOP|END，气泡会被裁到屏幕外，
+                // 而且窗口被内容撑大后吞掉整片触摸。
+                Gravity.CENTER,
+                false,
+            )
         }
 
         fun apply() {

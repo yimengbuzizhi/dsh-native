@@ -151,7 +151,9 @@ class SettingsStore(private val sp: SharedPreferences) {
     }
 
     fun setBaseUrl(v: String) {
-        _baseUrl.value = v.trim().ifBlank { defaultBaseUrl(_providerId.value) }
+        // 用户把端点删空时不要自动填回默认值（2026-11-11 反馈：删掉又弹回来）。
+        // 空值原样保存；真正发请求时由 AppViewModel.llmConfig 回落到 defaultBaseUrl。
+        _baseUrl.value = v.trim()
         sp.edit().putString(KEY_BASE_URL, _baseUrl.value).apply()
     }
 
