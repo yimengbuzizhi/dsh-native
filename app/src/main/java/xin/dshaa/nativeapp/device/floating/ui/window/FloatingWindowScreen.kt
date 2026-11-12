@@ -437,10 +437,17 @@ private fun EmptyState(onOpenApp: () -> Unit) {
 @Composable
 private fun MessageItem(message: ChatMessage) {
     val c = DshTheme2.colors
-    val textBlocks = message.content.filter {
-        it.type == BlockType.TEXT || it.type == BlockType.REASONING
-    }
-    val text = textBlocks.joinToString("\n") { it.text }.trim()
+    // M79（用户 2026-11-12）：思考块不再混进正文——正文只取 TEXT，思考单独折成一行。
+    // 之前 textBlocks 把 TEXT + REASONING 拼在一起，悬浮窗里"思考/工具调用"全都铺成正文，
+    // 和聊天页的折叠观感完全不一样。
+    val reasoning = message.content
+        .filter { it.type == BlockType.REASONING }
+        .joinToString("\n") { it.text }
+        .trim()
+    val text = message.content
+        .filter { it.type == BlockType.TEXT }
+        .joinToString("\n") { it.text }
+        .trim()
     // 用户消息里的引用包/文件：和主界面一样折成 chip（用户 2026-11-11 反馈：
     // 悬浮窗聊天页还把整段正文铺开，主界面已经是小卡片了）。
     val userTexts = message.content.filter { it.type == BlockType.TEXT }.map { it.text }
@@ -487,37 +494,140 @@ private fun MessageItem(message: ChatMessage) {
 
     when (message.role) {
         MessageRole.ASSISTANT -> Column(Modifier.fillMaxWidth()) {
-            toolCalls.forEach { call ->
-                ToolChip(call.name ?: "tool", call.arguments)
-            }
-            if (text.isNotBlank()) {
-                MarkdownText(
+            if (toolCalls.isNotEmpty()) {
+                // M79（用户 2026-11-12）：带工具调用的那条 = 过程消息，思考 + 中间说的话 + 工具卡
+                // 全部折进一行「过程」里，和聊天页「已完成 · 用时 X 秒」的折叠语义一致；
+                // 正文只留最后那条纯文字回复。
+                ProcessRow(
+                    reasoning = reasoning,
                     text = text,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = c.text,
+                    toolCalls = toolCalls,
+                    streaming = message.streaming,
                 )
-            } else if (message.streaming) {
-                Text("…", color = c.faint, style = MaterialTheme.typography.bodySmall)
+            } else {
+                if (reasoning.isNotBlank()) {
+                    ReasoningRow(reasoning, streaming = message.streaming)
+                }
+                if (text.isNotBlank()) {
+                    MarkdownText(
+                        text = text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = c.text,
+                    )
+                } else if (message.streaming && reasoning.isBlank()) {
+                    Text("…", color = c.faint, style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
 
-        MessageRole.TOOL -> Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = c.surfaceAlt,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(
-                text.ifBlank { message.toolCallId ?: "工具结果" }.take(800),
-                modifier = Modifier.padding(8.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = c.sub,
-                maxLines = 8,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        // 工具结果不铺正文：聊天页里它在折叠的过程卡里，悬浮窗只留一行痕迹。
+        MessageRole.TOOL -> Text(
+            "⚙ 工具结果 · ${text.length} 字",
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+            color = c.faint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
 
         else -> if (text.isNotBlank()) {
             Text(text, style = MaterialTheme.typography.labelSmall, color = c.faint)
+        }
+    }
+}
+
+/**
+ * 过程行（M79）：一条带工具调用的 assistant 消息 = 思考 + 中间叙述 + N 个工具调用。
+ * 默认折成一行（流式中显示「正在执行 …」），点开才看思考/中间文本/工具卡。
+ */
+@Composable
+private fun ProcessRow(
+    reasoning: String,
+    text: String,
+    toolCalls: List<xin.dshaa.core.model.ContentBlock>,
+    streaming: Boolean,
+) {
+    val c = DshTheme2.colors
+    var expanded by remember { mutableStateOf(false) }
+    val lastTool = toolCalls.lastOrNull()?.name ?: "工具"
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = c.surfaceAlt.copy(alpha = 0.65f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clickable { expanded = !expanded },
+    ) {
+        Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (streaming) "正在执行 $lastTool…" else "过程 · ${toolCalls.size} 个工具调用",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = c.faint,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    if (expanded) "收起" else "展开",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = c.brand,
+                )
+            }
+            if (expanded) {
+                if (reasoning.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("思考：$reasoning", style = MaterialTheme.typography.labelSmall, color = c.sub)
+                }
+                if (text.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(text, style = MaterialTheme.typography.labelSmall, color = c.sub)
+                }
+                toolCalls.forEach { call ->
+                    Spacer(Modifier.height(2.dp))
+                    ToolChip(call.name ?: "tool", call.arguments)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 思考块（M79）：默认只占一行「思考过程 · N 字」（流式中是「正在思考…」），点开才看全文。
+ * 与聊天页的折叠语义一致：思考不是回答正文，不该把气泡撑满。
+ */
+@Composable
+private fun ReasoningRow(text: String, streaming: Boolean) {
+    val c = DshTheme2.colors
+    var expanded by remember { mutableStateOf(false) }
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = c.surfaceAlt.copy(alpha = 0.65f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clickable { expanded = !expanded },
+    ) {
+        Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (streaming) "正在思考…" else "思考过程 · ${text.length} 字",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = c.faint,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    if (expanded) "收起" else "展开",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = c.brand,
+                )
+            }
+            if (expanded) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = c.sub,
+                )
+            }
         }
     }
 }

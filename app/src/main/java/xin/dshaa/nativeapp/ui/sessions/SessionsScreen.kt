@@ -12,19 +12,23 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
@@ -70,11 +74,24 @@ fun SessionsScreen(
     onNew: () -> Unit,
     onDelete: (SessionSummary) -> Unit,
     onRename: (SessionSummary, String) -> Unit,
+    /** M79：彻底删除（真删，不经回收站）。 */
+    onDeletePermanently: (SessionSummary) -> Unit = {},
+    /** M79：回收站。 */
+    trash: List<xin.dshaa.core.session.SessionRepository.TrashedSession> = emptyList(),
+    trashBusy: Boolean = false,
+    onOpenTrash: () -> Unit = {},
+    onRestoreTrash: (String) -> Unit = {},
+    onPurgeTrash: (String) -> Unit = {},
+    onPurgeAllTrash: () -> Unit = {},
+    notice: String? = null,
 ) {
     val c = DshTheme2.colors
     var query by remember { mutableStateOf("") }
     var menuFor by remember { mutableStateOf<SessionSummary?>(null) }
     var renameFor by remember { mutableStateOf<SessionSummary?>(null) }
+    var purgeFor by remember { mutableStateOf<SessionSummary?>(null) }
+    var showTrash by remember { mutableStateOf(false) }
+    var confirmEmptyTrash by remember { mutableStateOf(false) }
     val shown = sessions.filter {
         query.isBlank() || it.title.contains(query, true) || it.preview.contains(query, true)
     }
@@ -104,6 +121,16 @@ fun SessionsScreen(
                 Text("会话", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = c.text)
                 Text("${sessions.size} 条 · 本地 v4", style = MaterialTheme.typography.labelMedium, color = c.faint)
             }
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).clickable {
+                    showTrash = true
+                    onOpenTrash()
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.Delete, "回收站", tint = c.sub, modifier = Modifier.size(21.dp))
+            }
+            Spacer(Modifier.width(6.dp))
             Box(
                 Modifier.size(40.dp).clip(CircleShape).background(c.brand).clickable { onNew() },
                 contentAlignment = Alignment.Center,
@@ -188,6 +215,10 @@ fun SessionsScreen(
                         menuFor = null
                         onDelete(target)
                     }
+                    MenuRow("彻底删除（不可恢复）", danger = true) {
+                        menuFor = null
+                        purgeFor = target
+                    }
                 }
             },
             confirmButton = { TextButton(onClick = { menuFor = null }) { Text("取消") } },
@@ -222,6 +253,127 @@ fun SessionsScreen(
                 }) { Text("保存") }
             },
             dismissButton = { TextButton(onClick = { renameFor = null }) { Text("取消") } },
+        )
+    }
+
+    // 彻底删除（M79）：真删目录，二次确认，文案写清楚不可恢复。
+    purgeFor?.let { target ->
+        AlertDialog(
+            onDismissRequest = { purgeFor = null },
+            containerColor = c.surface,
+            title = { Text("彻底删除这条会话？", color = c.danger) },
+            text = {
+                Column {
+                    Text(target.title, style = MaterialTheme.typography.bodyMedium, color = c.text)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "会把会话文件从手机里直接删掉，不经过回收站，删了找不回来。" +
+                            "只想先收起来的话，用「删除（移到回收站）」。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = c.sub,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeletePermanently(target)
+                    purgeFor = null
+                }) { Text("彻底删除", color = c.danger, fontWeight = FontWeight.SemiBold) }
+            },
+            dismissButton = { TextButton(onClick = { purgeFor = null }) { Text("取消") } },
+        )
+    }
+
+    // 回收站（M79）：恢复 / 彻底删除 / 清空。
+    if (showTrash) {
+        AlertDialog(
+            onDismissRequest = { showTrash = false },
+            containerColor = c.surface,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("回收站", modifier = Modifier.weight(1f))
+                    Text("${trash.size} 条", style = MaterialTheme.typography.labelMedium, color = c.faint)
+                }
+            },
+            text = {
+                Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    if (trash.isEmpty()) {
+                        Text(
+                            "回收站是空的。删除会话时选「移到回收站」的会放在这里，可以恢复或者彻底删掉。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = c.sub,
+                        )
+                    } else {
+                        trash.forEach { entry ->
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = c.surfaceAlt.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            ) {
+                                Column(Modifier.padding(10.dp)) {
+                                    Text(
+                                        entry.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = c.text,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        "${formatBytes(entry.bytes)} · ${formatTime(entry.deletedAt)} 删除" +
+                                            if (entry.id.isNotBlank()) " · ${entry.id.take(8)}" else "",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = c.faint,
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                        TextButton(
+                                            enabled = !trashBusy,
+                                            onClick = { onRestoreTrash(entry.dirName) },
+                                        ) { Text("恢复", style = MaterialTheme.typography.labelMedium) }
+                                        TextButton(
+                                            enabled = !trashBusy,
+                                            onClick = { onPurgeTrash(entry.dirName) },
+                                        ) { Text("彻底删除", color = c.danger, style = MaterialTheme.typography.labelMedium) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (notice != null) {
+                        Text(notice, style = MaterialTheme.typography.labelSmall, color = c.sub)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = trash.isNotEmpty() && !trashBusy,
+                    onClick = { confirmEmptyTrash = true },
+                ) { Text("清空回收站", color = c.danger) }
+            },
+            dismissButton = { TextButton(onClick = { showTrash = false }) { Text("关闭") } },
+        )
+    }
+
+    if (confirmEmptyTrash) {
+        AlertDialog(
+            onDismissRequest = { confirmEmptyTrash = false },
+            containerColor = c.surface,
+            title = { Text("清空回收站？", color = c.danger) },
+            text = {
+                Text(
+                    "回收站里 ${trash.size} 条会话会被永久删除，不可恢复。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = c.sub,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onPurgeAllTrash()
+                    confirmEmptyTrash = false
+                }) { Text("全部删除", color = c.danger, fontWeight = FontWeight.SemiBold) }
+            },
+            dismissButton = { TextButton(onClick = { confirmEmptyTrash = false }) { Text("取消") } },
         )
     }
 }
@@ -316,3 +468,14 @@ private fun dayLabel(ts: Long): String {
     }
     return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(ts))
 }
+
+/** 回收站里的文件大小（整条会话目录）。 */
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024L -> String.format(Locale.getDefault(), "%.1f MB", bytes / 1024.0 / 1024.0)
+    bytes >= 1024L -> String.format(Locale.getDefault(), "%.0f KB", bytes / 1024.0)
+    else -> "$bytes B"
+}
+
+/** 回收站里的删除时间。 */
+private fun formatTime(ts: Long): String =
+    SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(ts))

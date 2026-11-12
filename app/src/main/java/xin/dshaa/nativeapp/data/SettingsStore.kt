@@ -46,6 +46,30 @@ class SettingsStore(private val sp: SharedPreferences) {
     // Max 模式（M58，照 Operit `max_mode`「超大上下文模式」）：
     // 开 = 不自动压缩，整段上下文直接进请求；关 = 按模型窗口 [contextWindow] 自动压缩。
     private val _maxMode = mutableStateOf(sp.getBoolean(KEY_MAX_MODE, false))
+    // 自动压缩（M79，用户 2026-11-12「没有压缩上下文功能 / 没有一个可以设置上下文」）：
+    // 以前只有模型窗口 × 0.8 写死，界面上看不到也改不了；现在给开关 + 触发比例。
+    private val _autoCompact = mutableStateOf(sp.getBoolean(KEY_AUTO_COMPACT, true))
+    private val _autoCompactRatio = mutableStateOf(
+        sp.getFloat(KEY_AUTO_COMPACT_RATIO, 0.8f).takeIf { it in 0.3f..0.95f } ?: 0.8f,
+    )
+
+    // 技能开关（M81，用户 2026-11-12：自带技能要能在「包」里关掉，默认开）：
+    // 只存**被关掉**的名字，默认空 = 全部启用；将来新增技能也自动是开的。
+    private val _disabledSkills = mutableStateOf(
+        sp.getStringSet(KEY_SKILLS_DISABLED, emptySet())?.toSet().orEmpty(),
+    )
+
+    /** 被用户关掉的技能名（发现/加载都跳过）。 */
+    val disabledSkills: Set<String> get() = _disabledSkills.value
+
+    fun isSkillEnabled(name: String): Boolean = name !in _disabledSkills.value
+
+    fun setSkillEnabled(name: String, enabled: Boolean) {
+        val next = if (enabled) _disabledSkills.value - name else _disabledSkills.value + name
+        if (next == _disabledSkills.value) return
+        _disabledSkills.value = next
+        sp.edit().putStringSet(KEY_SKILLS_DISABLED, next).apply()
+    }
 
     // ---- 模型能力（按模型名记忆，见 IMAGE_CAPABLE_MODEL） ----
     private val _visionEnabled = mutableStateOf(sp.getBoolean(visionKey(_model.value), defaultVision(_model.value)))
@@ -122,6 +146,12 @@ class SettingsStore(private val sp: SharedPreferences) {
 
     /** Max 模式（M58）：开启 = 超大上下文，自动压缩关掉。 */
     val maxMode: Boolean get() = _maxMode.value
+
+    /** 自动压缩开关（M79，默认开）；关掉后即使窗口已知也不自动压，仍可手动「立即压缩」。 */
+    val autoCompact: Boolean get() = _autoCompact.value
+
+    /** 自动压缩触发比例（M79，0.3–0.95）：窗口用到这个比例时开始压缩，默认 0.8。 */
+    val autoCompactRatio: Float get() = _autoCompactRatio.value
 
     /** 自动压缩实际参考的窗口：Max 模式返回 0（不压缩）。 */
     val effectiveContextWindow: Int get() = if (_maxMode.value) 0 else _contextWindow.value
@@ -399,6 +429,18 @@ class SettingsStore(private val sp: SharedPreferences) {
         sp.edit().putBoolean(KEY_MAX_MODE, v).apply()
     }
 
+    /** 自动压缩开关（M79）。 */
+    fun setAutoCompact(v: Boolean) {
+        _autoCompact.value = v
+        sp.edit().putBoolean(KEY_AUTO_COMPACT, v).apply()
+    }
+
+    /** 自动压缩触发比例（M79）：0.3–0.95，按 5% 取整。 */
+    fun setAutoCompactRatio(v: Float) {
+        _autoCompactRatio.value = (v.coerceIn(0.3f, 0.95f) * 100f).toInt() / 100f
+        sp.edit().putFloat(KEY_AUTO_COMPACT_RATIO, _autoCompactRatio.value).apply()
+    }
+
     fun setExpandThinking(v: Boolean) {
         _expandThinking.value = v
         sp.edit().putBoolean(KEY_EXPAND_THINKING, v).apply()
@@ -560,6 +602,11 @@ class SettingsStore(private val sp: SharedPreferences) {
         private const val KEY_TEMPERATURE = "temperature"
         private const val KEY_REASONING_EFFORT = "reasoning_effort"
         private const val KEY_MAX_MODE = "max_mode"
+        // M79：自动压缩开关 + 触发比例
+        private const val KEY_AUTO_COMPACT = "auto_compact"
+        private const val KEY_AUTO_COMPACT_RATIO = "auto_compact_ratio"
+        // M81：被关掉的技能名（默认空 = 全部启用）
+        private const val KEY_SKILLS_DISABLED = "skills_disabled"
         private const val KEY_EXPAND_THINKING = "expand_thinking"
         private const val KEY_TIME_CONTEXT = "time_context"
         private const val KEY_THEME_MODE = "theme_mode"

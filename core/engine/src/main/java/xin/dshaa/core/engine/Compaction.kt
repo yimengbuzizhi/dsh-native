@@ -383,13 +383,14 @@ object Compaction {
             const val THRESHOLD_RATIO = 0.8
             const val HEADROOM_TOKENS = 65_536
 
-            fun resolve(contextWindow: Int, maxOutputTokens: Int): Policy? {
+            fun resolve(contextWindow: Int, maxOutputTokens: Int, thresholdRatio: Double = THRESHOLD_RATIO): Policy? {
                 if (contextWindow <= 0) return null
                 val output = maxOutputTokens.coerceAtLeast(0)
                 val headroom = minOf(HEADROOM_TOKENS, contextWindow / 8)
                 val pressureBudget = contextWindow - output - headroom
                 if (pressureBudget <= 0) return null
-                val threshold = minOf((contextWindow * THRESHOLD_RATIO).toInt(), pressureBudget)
+                val ratio = thresholdRatio.coerceIn(0.3, 0.95)
+                val threshold = minOf((contextWindow * ratio).toInt(), pressureBudget)
                 val retain = maxOf(MIN_RETAIN_TOKENS, ((contextWindow - output) * RETAIN_RATIO).toInt())
                 if (threshold <= retain) return null
                 return Policy(threshold, retain)

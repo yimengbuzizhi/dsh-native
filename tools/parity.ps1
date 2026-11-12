@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+﻿﻿#requires -Version 5.1
 <#
 .SYNOPSIS
   门 2 对拍台（docs/02）。录制真实 SSE、回放给 App、两次 run 比对 0 diff。

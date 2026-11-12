@@ -154,7 +154,6 @@ import java.io.InputStream
 import java.time.ZoneId
 import java.util.UUID
 
-private const val MAX_ROUNDS = 12
 private const val MAX_LOG_TEXT = 200_000
 
 /** 委托深度上限（上游 `dsh-subagent` 的默认 maxDepth = 1：根能委派一层，子代理不能再委派）。 */
@@ -286,7 +285,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 目录消息只在**变化**时落一条 `source.kind:"skill-catalog"` 的 user 消息（空目录不占上下文）。
      * 切换工作区时整体重建（项目级技能根跟着 cwd 走）。
      */
-    private var skills = FileSystemSkills(FileSystemSkills.androidRoots(workspace, app.filesDir))
+    private var skills = FileSystemSkills(
+        FileSystemSkills.androidRoots(workspace, app.filesDir),
+        // 用户关掉的技能不发现、不加载（M81）
+        disabled = { settings.disabledSkills },
+    )
 
     /** `@file` 候选（M21）：有界索引 + 模糊排序；工具结果/轮次结束 [invalidate]。切换工作区重建。 */
     private var fileReferenceSearch: FileReferenceSearch = FileReferenceSearch(workspace)
@@ -1262,7 +1265,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // 时间上下文（M42）：设置开关 + 设备时区（Android 单一客户端，browser 时区恒为设备时区）
                 timeContext = { timeContextConfig() },
                 // 自动压缩（M44）：模型配置页声明的上下文窗口；0/未知 = 不自动压缩
-                contextWindow = { settings.effectiveContextWindow.takeIf { it > 0 } },
+                // M79：设置里关掉自动压缩时直接给 null（手工「立即压缩」不受影响）；比例可调
+                contextWindow = {
+                    if (settings.autoCompact) settings.effectiveContextWindow.takeIf { it > 0 } else null
+                },
+                compactionRatio = { settings.autoCompactRatio.toDouble() },
                 log = { message -> Log.i("DshCompact", message) },
                 plan = live.plan,
                 onPlanChanged = { syncPlanUiFor(live) },
@@ -1731,7 +1738,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 引擎持有同一个 ToolContext：原地改可写根，孤儿用 copy 的子代理不受影响
         toolContext.workspace = workspace
         toolContext.cwd = workspace
-        skills = FileSystemSkills(FileSystemSkills.androidRoots(workspace, getApplication<Application>().filesDir))
+        skills = FileSystemSkills(
+            FileSystemSkills.androidRoots(workspace, getApplication<Application>().filesDir),
+            disabled = { settings.disabledSkills },
+        )
         toolContext.skills = skills
         fileReferenceSearch = FileReferenceSearch(workspace)
         applyWorkspaceFilter()
@@ -1896,8 +1906,103 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 重命名会话：追加 session/title，刷新列表。 */
-    fun renameSession(id: String, title: String) {
+    // ---------------- 回收站 / 彻底删除（M79，用户 2026-11-12） ----------------
+
+    /** 回收站列表（会话列表页「回收站」弹层用）。 */
+    var trashUi by mutableStateOf<List<SessionRepository.TrashedSession>>(emptyList())
+        private set
+
+    var trashBusy by mutableStateOf(false)
+        private set
+
+    /** 用户要看回收站时刷一次（不做常驻监听，回收站变化都由本进程的动作触发）。 */
+    fun refreshTrash() {
+        viewModelScope.launch {
+            trashUi = withContext(Dispatchers.IO) { runCatching { repo.listTrash() }.getOrDefault(emptyList()) }
+        }
+    }
+
+    /** **彻底删除**一条会话：不经过回收站，目录直接删掉；删的是当前会话时同时停轮次并回草稿。 */
+    fun deleteSessionPermanently(id: String) {
+        viewModelScope.launch {
+            trashBusy = true
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    repo.purge(id)
+                }.getOrDefault(false).also { runCatching { schedules.removeForSession(id) } }
+            }
+            trashBusy = false
+            if (!ok) {
+                commandNotice("彻底删除失败：找不到这条会话")
+                refreshSessions()
+                return@launch
+            }
+            detachIfCurrent(id)
+            commandNotice("已彻底删除会话（不可恢复）")
+            refreshSessions()
+            refreshTrash()
+        }
+    }
+
+    /** 回收站里的一条：彻底删除。 */
+    fun purgeTrashed(dirName: String) {
+        viewModelScope.launch {
+            trashBusy = true
+            val ok = withContext(Dispatchers.IO) { runCatching { repo.purgeTrashed(dirName) }.getOrDefault(false) }
+            trashBusy = false
+            if (ok) {
+                // 如果删的正好是当前打开的那条（刚被移进回收站又打开过），一并脱离
+                trashUi.firstOrNull { it.dirName == dirName }?.let { detachIfCurrent(it.id) }
+                commandNotice("已彻底删除（不可恢复）")
+            } else {
+                commandNotice("彻底删除失败：文件被占用？")
+            }
+            refreshTrash()
+            refreshSessions()
+        }
+    }
+
+    /** 回收站里的一条：恢复回原工作区。 */
+    fun restoreTrashed(dirName: String) {
+        viewModelScope.launch {
+            trashBusy = true
+            val ok = withContext(Dispatchers.IO) { runCatching { repo.restoreTrashed(dirName) }.getOrDefault(false) }
+            trashBusy = false
+            commandNotice(if (ok) "已恢复到会话列表" else "恢复失败：原位置已有同 id 会话")
+            refreshTrash()
+            refreshSessions()
+        }
+    }
+
+    /** 清空回收站。 */
+    fun purgeAllTrashed() {
+        viewModelScope.launch {
+            trashBusy = true
+            val count = withContext(Dispatchers.IO) { runCatching { repo.purgeAllTrash() }.getOrDefault(0) }
+            trashBusy = false
+            commandNotice("回收站已清空：彻底删除 $count 条")
+            refreshTrash()
+            refreshSessions()
+        }
+    }
+
+    /** 删掉/移走的是当前会话时：停轮次、脱离前台、回空草稿。 */
+    private fun detachIfCurrent(id: String) {
+        if (chat?.sessionId != id) return
+        liveById(id)?.let { live ->
+            if (live in activeTurns) {
+                live.stop.requested = true
+                live.job?.cancel()
+                markStopped(live)
+            }
+            lives.remove(live.state)
+        }
+        attach(null)
+        chatBackStack.clear()
+        if (id in unreadDone) unreadDone = unreadDone - id
+    }
+
+    /** 重命名会话：追加 session/title，刷新列表。 */    fun renameSession(id: String, title: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repo.rename(id, title) }
             if (chat?.sessionId == id) chat?.title = title
@@ -2307,11 +2412,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             executeHelpCommand(command, state)
             return true
         }
-        val skill = skillsUi.firstOrNull { it.name == command.name && it.userInvocable }
+        val skill = skillsUi.firstOrNull { it.name == command.name && it.userInvocable && it.enabled }
             // 进程刚起来时 skillsUi 可能还没扫完（调试通道 dsh_send 会抢在 init 的刷新之前）：
             // 斜杠行不是已知命令时做一次同步快照，避免把合法技能误判成未知命令。
             ?: runCatching {
-                skills.snapshot().skills.firstOrNull { it.name == command.name && it.userInvocable }
+                skills.snapshot().skills.firstOrNull {
+                    it.name == command.name && it.userInvocable && it.enabled
+                }
             }.getOrNull()
         if (skill != null) {
             if (state.streaming) return false
@@ -2810,14 +2917,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stop() {
+        // 2026-11-12（用户：长任务干一半自己停）：先把「谁按了停止」记下来。以前 stop() 没有任何日志，
+        // 只能看到 turn/end aborted，分不清是用户点了停止、悬浮窗关了，还是 Activity 被销毁。
+        Log.i(
+            "DshTurn",
+            "stop requested: " + Throwable().stackTrace.drop(1).take(8).joinToString(" <- ") {
+                "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}"
+            },
+        )
         // 停止当前前台这条（它正在跑）；用户看着一条没跑的会话时，停止最近启动的那条。
         val live = current?.takeIf { it in activeTurns } ?: lastActiveTurn ?: current ?: return
+        // 2026-11-12（用户 23:00：轮次早就「已完成」，左下角还挂着「正在停止…」）：
+        // 没有在跑的轮次时按「停止」只是在清状态，不能写「正在停止」——引擎的收尾不会再跑，
+        // 1.5 秒兜底又只在「还占着运行集合」时才清，这行字就会永久留在界面上。
+        if (live.job?.isActive != true && !live.state.streaming) {
+            live.state.stopping = false
+            live.state.statusText = null
+            return
+        }
         // 用户主动 interrupt：取消后由引擎的收尾逻辑决定 pause（goal 轮）还是 disarm。
         // streaming 由取消收尾统一置 false：先写完 turn/end 再允许下一次发送，
         // 否则用户立刻再发一条会与取消收尾并发写同一个会话文件。
         live.stop.requested = true
         live.job?.cancel()
         live.state.apply {
+            // M79：立刻给用户「已收到停止」的反馈（按钮切「停止中…」、状态条换文案），
+            // 真正的收尾（写 turn/end + 补中断 tool_result）在引擎 finally 里完成。
+            stopping = true
+            statusText = "正在停止…"
             // 最后一条 assistant 消息也要结束流式态，否则思考块会一直显示「思考中」
             val lastIndex = messages.indexOfLast { it.role == MessageRole.ASSISTANT }
             if (lastIndex >= 0) messages[lastIndex] = messages[lastIndex].copy(streaming = false)
@@ -2826,13 +2953,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 否则 keep-alive 会在 turn/end 还没写完时先停掉（写一半的会话最怕进程被冻）。
         //
         // 兜底（用户 2026-11-11 反馈「停掉了还在运行、发消息没反应、开新话题被挡住」）：
-        // 取消收尾可能卡在阻塞的工具/网络调用里永远等不到 finally。3 秒后若这条轮次
+        // 取消收尾可能卡在阻塞的工具/网络调用里永远等不到 finally。1.5 秒后若这条轮次
         // 还占着运行集合 / streaming，就强制清 UI 状态，至少让用户能继续发消息。
         val stopped = live
         viewModelScope.launch {
-            delay(3000)
+            delay(1500)
             val stillHeld = stopped in activeTurns || stopped.state.streaming
-            if (stillHeld) forceStopUi(stopped, "stop timeout")
+            if (stillHeld) {
+                forceStopUi(stopped, "stop timeout")
+            } else if (stopped.state.stopping) {
+                // 竞态：点停止的同一瞬间轮次刚好正常收尾——引擎的 finally 已经跑过，
+                // 不会再来清「正在停止…」。这里静默清掉，不当成「收尾超时」误报。
+                stopped.state.stopping = false
+                if (stopped.state.statusText == "正在停止…") stopped.state.statusText = null
+            }
         }
     }
 
@@ -2857,6 +2991,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         live.job = null
         markStopped(live)
         live.state.streaming = false
+        live.state.stopping = false
         live.state.statusText = null
         val lastIndex = live.state.messages.indexOfLast { it.role == MessageRole.ASSISTANT }
         if (lastIndex >= 0) live.state.messages[lastIndex] = live.state.messages[lastIndex].copy(streaming = false)
@@ -2998,6 +3133,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 live.engine.startTurn(ComposeTurnUi(state), input)
             } finally {
                 state.streaming = false
+                state.stopping = false
                 state.statusText = null
                 // 大肥鱼：turn/end（成功 → SUCCESS 脉冲；state.error 非空 → ERROR）。
                 // M66：把本轮最终回复正文一并塞进快照，鲸鱼娘挂件按上游规则取最后一段逐句播报。
@@ -3013,6 +3149,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 live.job = null
                 markStopped(live)
                 Log.i("DshTurn", "turn end after ${System.currentTimeMillis() - startedAt}ms")
+                // M79（用户 2026-11-12「长任务会突然停下来，原因未知」）：给「空收口」一个可见原因。
+                // 模型只回了思考/什么都不回时，以前界面上就是突然不动了；现在明确告诉用户可以续。
+                if (!state.stopping && state.error == null) {
+                    val lastAssistant = state.messages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                    val hasText = lastAssistant?.content
+                        ?.any { it.type == BlockType.TEXT && it.text.isNotBlank() } == true
+                    val hasToolCall = lastAssistant?.content?.any { it.type == BlockType.TOOL_CALL } == true
+                    if (lastAssistant != null && !hasText && !hasToolCall) {
+                        state.commandNotice = "本轮结束但没有正文（模型只回了空内容），发「继续」可以接着做"
+                        Log.w("DshTurn", "turn ended without assistant text session=${state.sessionId}")
+                    }
+                }
                 runCatching { BigFish.onTurnEnd(state, state.error, finalReply) }
                     .onFailure { Log.w("DshTurn", "turn end hook failed", it) }
                 // 跑完但用户正看着别的会话 → 列表右侧亮绿点（打开/切回即消）；
@@ -3233,6 +3381,56 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 技能开关（M81）：关掉后不再出现在目录/工具/斜杠命令里。 */
+    fun setSkillEnabled(name: String, enabled: Boolean) {
+        settings.setSkillEnabled(name, enabled)
+        skillNotice = if (enabled) "已启用技能 $name" else "已关闭技能 $name"
+        refreshSkills()
+    }
+
+    /**
+     * 删除用户导入的技能（M81）：内置技能只给「关」，不给删——删了下次启动
+     * [BundledSkills.ensureInstalled] 又会装回来，留着按钮只会让人困惑。
+     */
+    fun deleteSkill(skill: SkillSummary) {
+        if (BundledSkills.isBundled(skill.name)) {
+            skillNotice = "内置技能不能删除，可以关闭"
+            return
+        }
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val file = File(skill.path)
+                    val parent = file.parentFile
+                    val deleted = file.delete()
+                    // 目录型技能：SKILL.md 删掉后父目录空了就一起删
+                    if (deleted && parent != null && parent.name == skill.name) {
+                        if (parent.listFiles()?.isEmpty() == true) parent.delete()
+                    }
+                    deleted
+                }.getOrDefault(false)
+            }
+            skillNotice = if (ok) "已删除技能 ${skill.name}" else "删除失败：${skill.name}"
+            refreshSkills()
+        }
+    }
+
+    /**
+     * 内置包开关（M81）：开 = 没装过就先装再启用；关 = 只禁用，不删文件（下次开回来还是原配置）。
+     */
+    fun setOperitPackageEnabled(pluginId: String, enabled: Boolean) {
+        val installed = pluginsUi.firstOrNull { it.id == pluginId }
+        if (enabled && installed == null) {
+            installOperitPackage(pluginId)
+            return
+        }
+        if (installed == null) return
+        pluginStore.setEnabled(pluginId, enabled)
+        pluginsUi = pluginStore.list()
+        pluginNotice = if (enabled) "已启用 ${installed.name}" else "已关闭 ${installed.name}"
+        syncPluginTools()
+    }
+
     /**
      * 包管理页「导入技能」（Operit 技能 Tab 的导入入口）：
      * 选一个 SKILL.md → 校验 frontmatter → 写到 `files/skills/<name>.md` → 重扫。
@@ -3287,7 +3485,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun skillCatalogNotice(session: SessionSession): UserNotice? {
         val previous = runCatching { lastSkillCatalogSource(session) }.getOrNull()
         val snapshot = runCatching { skills.snapshot() }.getOrElse { return null }
-        val notice = SkillCatalog.decide(snapshot, previous) ?: return null
+        // M81：关掉的技能不进模型目录（快照里仍保留 enabled=false 供包管理展示）
+        val enabledSnapshot = snapshot.copy(skills = snapshot.skills.filter { it.enabled })
+        val notice = SkillCatalog.decide(enabledSnapshot, previous) ?: return null
         return UserNotice(
             text = notice.text,
             summary = "${notice.entries.size} 个技能",
@@ -4183,6 +4383,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        // 2026-11-12：长任务「自己停」的取证——Activity 被销毁时 viewModelScope 会取消在跑的轮次，
+        // 这条日志能把它和「用户主动停止」区分开。
+        Log.i("DshTurn", "viewmodel cleared; running turns will be cancelled")
         // Activity 真被销毁（划掉任务/退出）：turn 跟着 viewModelScope 取消，保活服务也要收掉
         TurnKeepAliveService.stopListener = null
         TurnKeepAliveService.stop(getApplication())

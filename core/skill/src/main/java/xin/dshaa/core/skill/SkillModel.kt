@@ -53,6 +53,11 @@ data class SkillSummary(
     val path: String,
     /** 资源基址：目录型技能是自己的目录，平铺 `.md` 技能是根目录。 */
     val directory: String,
+    /**
+     * M81：用户是否启用。关掉的技能仍会出现在包管理列表里（否则没法再打开），
+     * 但不进技能目录、不能被 `skill` 工具 / `/名字` 加载。
+     */
+    val enabled: Boolean = true,
     /** 调用策略是否允许模型加载（目录消息/工具都按它过滤）。 */
 ) {
     val modelInvocable: Boolean get() = invocation.modelInvocable

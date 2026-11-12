@@ -56,6 +56,8 @@ internal data class ParsedSkill(
 class FileSystemSkills(
     private val roots: List<SkillRoot>,
     private val warn: (String) -> Unit = {},
+    /** 被用户关掉的技能名：发现/加载都当它不存在（默认空，测试与引擎不用改）。 */
+    private val disabled: () -> Set<String> = { emptySet() },
 ) : SkillHost {
 
     /** 最近的忽略原因（设置页「技能」用来解释为什么某个文件没被收进目录）。 */
@@ -83,6 +85,8 @@ class FileSystemSkills(
                     else -> continue
                 }
                 val parsed = parseFile(file) ?: continue
+                // M81：关掉的技能照样进快照（包管理里要能再打开），只是 enabled=false
+                val enabled = parsed.name !in disabled()
                 if (merged.containsKey(parsed.name)) {
                     // 上游：同名低优先级条目只打一条 warning，不进目录
                     note("skill \"${parsed.name}\" from ${file.absolutePath} ignored because a higher-priority skill already exists")
@@ -97,6 +101,7 @@ class FileSystemSkills(
                     rank = root.rank,
                     path = file.absolutePath,
                     directory = if (entry.isDirectory) entry.absolutePath else root.path.absolutePath,
+                    enabled = enabled,
                 )
             }
         }
@@ -105,6 +110,7 @@ class FileSystemSkills(
 
     override fun load(name: String): SkillLoad {
         if (!isSkillName(name)) return SkillLoad.InvalidName(name)
+        if (name in disabled()) return SkillLoad.Unknown(name)
         val summary = snapshot().skills.firstOrNull { it.name == name } ?: return SkillLoad.Unknown(name)
         if (!summary.modelInvocable) return SkillLoad.NotModelInvocable(name)
         val parsed = parseFile(File(summary.path)) ?: return SkillLoad.Unknown(name)
@@ -119,6 +125,7 @@ class FileSystemSkills(
      */
     override fun loadForUser(name: String): SkillLoad {
         if (!isSkillName(name)) return SkillLoad.InvalidName(name)
+        if (name in disabled()) return SkillLoad.Unknown(name)
         val summary = snapshot().skills.firstOrNull { it.name == name } ?: return SkillLoad.Unknown(name)
         if (!summary.userInvocable) return SkillLoad.Unknown(name)
         val parsed = parseFile(File(summary.path)) ?: return SkillLoad.Unknown(name)

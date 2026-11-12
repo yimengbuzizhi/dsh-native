@@ -167,6 +167,19 @@ class CompactionTest {
     }
 
     @Test
+    fun autoPolicyUsesUserRatio() {
+        // M79：用户可设触发比例。W=65536、O=8192、B=8192 ⇒ pressureBudget=49152
+        // ratio 0.5 ⇒ 32768（小于 pressureBudget，取比例）；ratio 0.9 ⇒ 58982 被 pressureBudget 夹到 49152
+        val half = assertNotNull(Compaction.Policy.resolve(65_536, 8_192, 0.5))
+        assertEquals(32_768, half.thresholdTokens)
+        val ninety = assertNotNull(Compaction.Policy.resolve(65_536, 8_192, 0.9))
+        assertEquals(49_152, ninety.thresholdTokens)
+        // 超出范围的脏值收敛到 0.3–0.95，不会算出不成立/负数的阈值
+        val clamped = assertNotNull(Compaction.Policy.resolve(65_536, 8_192, 5.0))
+        assertEquals(49_152, clamped.thresholdTokens)
+    }
+
+    @Test
     fun autoPolicyRejectsImpossibleConfigs() {
         assertNull(Compaction.Policy.resolve(0, 1_024))
         // 输出上限 + headroom 已经把窗口占满

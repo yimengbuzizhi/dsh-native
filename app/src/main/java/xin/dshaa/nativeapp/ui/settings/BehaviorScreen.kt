@@ -2,6 +2,7 @@ package xin.dshaa.nativeapp.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Visibility
@@ -79,8 +81,52 @@ fun BehaviorScreen(
                 )
             }
 
-            SettingsGroup(icon = Icons.Rounded.Security, title = "工具权限") {
-                SettingsSelectorRow(
+            // M79（用户 2026-11-12）：上下文自动压缩以前只有「窗口 × 0.8」写死、界面看不到，
+            // 用户的原话是「没有压缩上下文功能，或者是说没有可以设置上下文、用到一定程度自动压缩」。
+            SettingsGroup(icon = Icons.Rounded.Memory, title = "上下文与压缩") {
+                SettingsSwitchRow(
+                    title = "自动压缩上下文",
+                    subtitle = "窗口用到下面的比例时，把较早的历史换成一份摘要，腾出上下文继续聊",
+                    checked = settings.autoCompact,
+                    onCheckedChange = { settings.setAutoCompact(it) },
+                )
+                Text(
+                    "触发比例：${(settings.autoCompactRatio * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = c.text,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(50, 70, 80, 90).forEach { percent ->
+                        val selected = (settings.autoCompactRatio * 100).toInt() == percent
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                .background(if (selected) c.brand else c.surfaceAlt.copy(alpha = 0.7f))
+                                .clickable { settings.setAutoCompactRatio(percent / 100f) }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "$percent%",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (selected) androidx.compose.ui.graphics.Color.White else c.sub,
+                            )
+                        }
+                    }
+                }
+                SettingsInfoBanner(
+                    buildString {
+                        append("当前模型窗口：")
+                        append(if (settings.contextWindow > 0) "${settings.contextWindow} tokens" else "未设置（自动压缩不生效）")
+                        append("；Max 模式开着时不自动压缩。模型窗口在「模型与参数配置」里按模型改。")
+                        append("聊天页输入栏 → 设置 →「上下文」里也能调，并支持「立即压缩」。")
+                    },
+                )
+            }
+
+            SettingsGroup(icon = Icons.Rounded.Security, title = "工具权限") {                SettingsSelectorRow(
                     title = "审批方式",
                     subtitle = "写类工具与命令执行",
                     value = if (settings.approvalMode == "auto") "自动允许" else "每次询问",

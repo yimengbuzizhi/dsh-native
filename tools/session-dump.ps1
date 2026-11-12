@@ -1,4 +1,4 @@
-﻿# 把设备上的会话文件（多 zstd 帧）拉下来并解成可读 JSONL。
+﻿﻿# 把设备上的会话文件（多 zstd 帧）拉下来并解成可读 JSONL。
 # 用法：
 #   .\tools\session-dump.ps1 -Session /data/user/0/xin.dshaa.nativeapp/files/sessions/.../session.v4.jsonl.zstd -Output tmp-session.jsonl
 #   .\tools\session-dump.ps1 -Latest -Output tmp-session.jsonl     # 自动取最新会话

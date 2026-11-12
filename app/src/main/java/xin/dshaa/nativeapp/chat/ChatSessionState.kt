@@ -30,6 +30,12 @@ class ChatSessionState(modelName: String) {
     var model by mutableStateOf(modelName)
     val messages = mutableStateListOf<ChatMessage>()
     var streaming by mutableStateOf(false)
+    /**
+     * 正在停止（M79，用户 2026-11-12「点停止不能立刻停」）：
+     * 点停止后立刻置 true，按钮切成「停止中…」；引擎收尾（写 turn/end、补中断的 tool_result）
+     * 结束后由 finally 置回 false。取消本身走协程取消 + 工具自己杀进程，这个标记只管观感。
+     */
+    var stopping by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var usageText by mutableStateOf<String?>(null)
     var statusText by mutableStateOf<String?>(null)

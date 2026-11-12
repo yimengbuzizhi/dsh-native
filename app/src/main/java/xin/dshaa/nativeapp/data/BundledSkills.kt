@@ -18,6 +18,11 @@ object BundledSkills {
         Bundled("dsh-plugin-adapter", "skills/dsh-plugin-adapter/SKILL.md"),
     )
 
+    /** 内置技能名（M81：这些不给「删除」入口，只能关；用户自己导入的才能删）。 */
+    val names: Set<String> = skills.mapTo(LinkedHashSet()) { it.dir }
+
+    fun isBundled(name: String): Boolean = name in names
+
     fun ensureInstalled(context: Context) {
         skills.forEach { skill ->
             runCatching {

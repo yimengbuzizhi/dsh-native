@@ -172,7 +172,8 @@ class LlmClient(
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.SECONDS)
+            // M79：0=永不超时会让服务端假死的一轮永远挂着；180 秒没有任何字节就报网络错误。
+            .readTimeout(180, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()

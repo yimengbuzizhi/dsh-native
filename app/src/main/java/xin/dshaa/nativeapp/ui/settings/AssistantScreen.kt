@@ -1,6 +1,7 @@
 package xin.dshaa.nativeapp.ui.settings
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,13 +16,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -29,13 +35,16 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,9 +55,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -305,41 +318,38 @@ fun AssistantScreen(
                     onValueChange = { settings.updateAssistantProfile(editing.copy(name = it.trimStart())) },
                     placeholder = "鲸歌",
                 )
-                SettingsTextField(
+                AssistantLongField(
                     title = "简介",
                     subtitle = "只用于展示（设置页/预览），不进入提示词",
                     value = editing.desc,
                     onValueChange = { settings.updateAssistantProfile(editing.copy(desc = it)) },
                     placeholder = "一句话描述这个助手",
                 )
-                SettingsTextField(
+                AssistantLongField(
                     title = "开场白",
                     subtitle = "新会话还没消息时显示的第一句话（只显示，不写进提示词、不伪造 assistant 历史）",
                     value = editing.opening,
                     onValueChange = { settings.updateAssistantProfile(editing.copy(opening = it)) },
                     placeholder = "比如：今天想让我帮你做点什么？",
-                    singleLine = false,
                 )
             }
 
             Spacer(Modifier.height(16.dp))
             SettingsSectionHeader(icon = Icons.Rounded.Person, title = "人设与系统提示词")
             SettingsCard {
-                SettingsTextField(
+                AssistantLongField(
                     title = "人设",
                     subtitle = "注入 deployment:persona-prefix（order 0），替换默认的 coding agent 文案；留空 = 用上游默认人设",
                     value = editing.persona,
                     onValueChange = { settings.updateAssistantProfile(editing.copy(persona = it)) },
                     placeholder = "例如：你是一只住在手机里的鲸鱼，说话温柔、爱用短句，遇到问题先动手再解释。",
-                    singleLine = false,
                 )
-                SettingsTextField(
+                AssistantLongField(
                     title = "系统提示词",
                     subtitle = "注入 deployment:persona-suffix（order 10200，全文最后一段）；适合放行为规则/口癖/禁忌",
                     value = editing.system,
                     onValueChange = { settings.updateAssistantProfile(editing.copy(system = it)) },
                     placeholder = "例如：回答尽量简短；不确定时直接说不确定；不要用感叹号。",
-                    singleLine = false,
                 )
             }
             SettingsInfoBanner(
@@ -564,6 +574,185 @@ private fun previewVariables(text: String, variables: Map<String, String>): Stri
 
 /** 占位符正则：结尾 `}}` 必须转义（Android ICU 把裸 `}}` 当语法错误）。 */
 private val VARIABLE_PLACEHOLDER = Regex("\\{\\{([A-Za-z0-9_.:\\-]+)\\}\\}")
+
+/**
+ * 长文本字段（M79，用户 2026-11-12）：
+ * 「简介/开场白/人设/系统提示词有时候写得很长，很不方便」——照 RikkaHub 的 `TextArea`
+ * （`ui/components/ui/TextArea.kt`）做两件事：
+ * 1. 内联最多 6 行左右，再长就折叠（可滚动），点「全屏」进全屏编辑；
+ * 2. 「导入文件」从 md / txt / json 等文本文件整段读进来（SAF OpenDocument，UTF-8/UTF-16/GB18030）。
+ *
+ * 与 RikkaHub 的差别（故意的）：全屏是「取消/保存」两键，返回键丢弃修改前会先回到原值，
+ * 不会像上游那样点外面直接丢；导入有 2MB / 字面上限并在状态行显示字数。
+ */
+@Composable
+private fun AssistantLongField(
+    title: String,
+    subtitle: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+) {
+    val c = DshTheme2.colors
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var fullscreen by remember { mutableStateOf(false) }
+
+    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val text = withContext(Dispatchers.IO) { readTextDocument(context, uri) }
+            if (text == null) {
+                Toast.makeText(context, "读取失败：只支持 2MB 以内的文本文件", Toast.LENGTH_SHORT).show()
+            } else if (text.isBlank()) {
+                Toast.makeText(context, "文件是空的，没有导入", Toast.LENGTH_SHORT).show()
+            } else {
+                onValueChange(text)
+                Toast.makeText(context, "已导入 ${text.length} 字", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    SettingsTextField(
+        title = title,
+        subtitle = subtitle,
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = placeholder,
+        singleLine = false,
+        collapsedMaxHeight = 132.dp,
+        footerActions = {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("${value.length} 字", style = MaterialTheme.typography.labelSmall, color = c.faint)
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    onClick = {
+                        importer.launch(
+                            arrayOf("text/*", "text/markdown", "application/json", "application/octet-stream"),
+                        )
+                    },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Icon(Icons.Rounded.UploadFile, null, tint = c.brandBright, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("导入文件", style = MaterialTheme.typography.labelMedium, color = c.brandBright)
+                }
+                TextButton(
+                    onClick = { fullscreen = true },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Icon(Icons.Rounded.Fullscreen, null, tint = c.brandBright, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("全屏", style = MaterialTheme.typography.labelMedium, color = c.brandBright)
+                }
+            }
+        },
+    )
+
+    if (fullscreen) {
+        FullscreenTextDialog(
+            title = title,
+            initial = value,
+            onDismiss = { fullscreen = false },
+            onSave = { text ->
+                onValueChange(text)
+                fullscreen = false
+            },
+        )
+    }
+}
+
+/** 全屏文本编辑器（照 RikkaHub `TextArea.FullScreenTextEditor`：Dialog + 顶栏 + 大输入框）。 */
+@Composable
+private fun FullscreenTextDialog(
+    title: String,
+    initial: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    val c = DshTheme2.colors
+    var text by remember { mutableStateOf(initial) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(modifier = Modifier.fillMaxSize(), color = c.background) {
+            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
+                Row(
+                    Modifier.fillMaxWidth().background(c.surface).padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onDismiss) { Text("取消", color = c.sub) }
+                    Text(
+                        "编辑 · $title",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = c.text,
+                        modifier = Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                    Text(
+                        "${text.length} 字",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = c.faint,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    TextButton(onClick = { onSave(text) }) {
+                        Text("保存", color = c.brandBright, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                BasicTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(c.surface)
+                        .padding(14.dp),
+                    textStyle = TextStyle(color = c.text, fontSize = 15.sp, lineHeight = 23.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(c.brand),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 读一个用户选的文本文件：最多 2MB；BOM 探测（UTF-8 / UTF-16LE / UTF-16BE）→ 严格 UTF-8 →
+ * 失败回退 GB18030；统一 CRLF→LF，去掉末尾空白。读不了返回 null（调用方给 Toast）。
+ */
+private fun readTextDocument(context: android.content.Context, uri: Uri): String? = runCatching {
+    val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+        val limit = 2 * 1024 * 1024
+        val buffer = ByteArray(limit + 1)
+        var read = 0
+        while (read < buffer.size) {
+            val n = input.read(buffer, read, buffer.size - read)
+            if (n <= 0) break
+            read += n
+        }
+        buffer.copyOf(read)
+    } ?: return@runCatching null
+    if (bytes.size > 2 * 1024 * 1024) return@runCatching null
+    val text = when {
+        bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte() ->
+            String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
+        bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() ->
+            String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
+        bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() ->
+            String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
+        else -> runCatching {
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                .decode(java.nio.ByteBuffer.wrap(bytes))
+                .toString()
+        }.getOrElse { String(bytes, charset("GB18030")) }
+    }
+    text.replace("\r\n", "\n").replace("\r", "\n").trimEnd()
+}.getOrNull()
 
 private fun copyAvatarToFiles(context: android.content.Context, uri: Uri): String? = runCatching {
     val dir = File(context.filesDir, "avatars").apply { mkdirs() }

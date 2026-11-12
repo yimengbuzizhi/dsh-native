@@ -375,7 +375,9 @@ class OpenAiClient(
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.SECONDS)
+            // M79（用户 2026-11-12「发消息长时间没反应」）：以前是 0=永不超时，
+            // 服务端假死时这一轮会永远挂着；3 分钟内一个字节都没来就按网络错误收口。
+            .readTimeout(180, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()

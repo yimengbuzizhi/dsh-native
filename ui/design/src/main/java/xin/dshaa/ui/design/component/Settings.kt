@@ -133,6 +133,13 @@ fun SettingsTextField(
     onClick: (() -> Unit)? = null,
     /** 焦点变化（用于「编辑中不校验、失焦再规范化」的输入框）。 */
     onFocusChanged: ((Boolean) -> Unit)? = null,
+    /**
+     * 长文本折叠（M79，用户 2026-11-12）：内联只显示前几行，超出的靠「全屏」看/改。
+     * 非 null 且 [singleLine] = false 时给输入框加高度上限（内部可滚动）。
+     */
+    collapsedMaxHeight: androidx.compose.ui.unit.Dp? = null,
+    /** 输入框下方的一排小动作（「全屏」「导入文件」…），由调用方给。 */
+    footerActions: (@Composable () -> Unit)? = null,
 ) {
     val c = DshTheme2.colors
     Surface(
@@ -168,6 +175,13 @@ fun SettingsTextField(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(
+                                if (collapsedMaxHeight != null && !singleLine) {
+                                    Modifier.heightIn(max = collapsedMaxHeight)
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .then(
                                 if (onFocusChanged != null) {
                                     Modifier.onFocusChanged { onFocusChanged(it.isFocused) }
                                 } else {
@@ -199,6 +213,10 @@ fun SettingsTextField(
                     )
                 }
                 trailingContent?.invoke()
+            }
+            if (footerActions != null) {
+                Spacer(Modifier.height(8.dp))
+                footerActions()
             }
         }
     }

@@ -109,6 +109,8 @@ fun DshDrawer(
     onAbout: () -> Unit,
     onRenameSession: (String, String) -> Unit,
     onDeleteSession: (String) -> Unit,
+    /** M79：彻底删除（真删目录，不经回收站）；抽屉是用户最常用的会话入口，和会话页保持一致。 */
+    onDeleteSessionPermanently: (String) -> Unit = {},
 ) {
     val c = DshTheme2.colors
     var workspaceSheet by remember { mutableStateOf(false) }
@@ -116,6 +118,7 @@ fun DshDrawer(
     var menuFor by remember { mutableStateOf<SessionSummary?>(null) }
     var renameFor by remember { mutableStateOf<SessionSummary?>(null) }
     var deleteFor by remember { mutableStateOf<SessionSummary?>(null) }
+    var purgeFor by remember { mutableStateOf<SessionSummary?>(null) }
     val grouped = sessions.groupBy { drawerDayLabel(it.updatedAt) }
 
     ModalDrawerSheet(
@@ -369,6 +372,10 @@ fun DshDrawer(
                         menuFor = null
                         deleteFor = target
                     }
+                    DrawerMenuRow("彻底删除（不可恢复）", danger = true) {
+                        menuFor = null
+                        purgeFor = target
+                    }
                 }
             },
             confirmButton = { TextButton(onClick = { menuFor = null }) { Text("取消") } },
@@ -405,6 +412,34 @@ fun DshDrawer(
                 }) { Text("删除", color = c.danger) }
             },
             dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("取消") } },
+        )
+    }
+
+    // 彻底删除（M79）：真删目录，二次确认，文案与会话页一致（不可恢复）。
+    purgeFor?.let { target ->
+        AlertDialog(
+            onDismissRequest = { purgeFor = null },
+            containerColor = c.surface,
+            title = { Text("彻底删除这条会话？", color = c.danger) },
+            text = {
+                Column {
+                    Text(target.title, style = MaterialTheme.typography.bodyMedium, color = c.text)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "会把会话文件从手机里直接删掉，不经过回收站，删了找不回来。" +
+                            "只想先收起来的话，用「删除（移到回收站）」。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = c.sub,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteSessionPermanently(target.id)
+                    purgeFor = null
+                }) { Text("彻底删除", color = c.danger, fontWeight = FontWeight.SemiBold) }
+            },
+            dismissButton = { TextButton(onClick = { purgeFor = null }) { Text("取消") } },
         )
     }
 }

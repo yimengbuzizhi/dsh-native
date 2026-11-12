@@ -242,6 +242,11 @@ class EngineDeps(
      * 引擎用 [Compaction.Policy.resolve] 结合 [config] 的 maxTokens 算触发线与保留预算。
      */
     val contextWindow: () -> Int? = { null },
+    /**
+     * 自动压缩触发比例（M79）：窗口用到多少开始压。默认 0.8（上游 `THRESHOLD_RATIO`）；
+     * App 设置页可调 0.3–0.95，关掉自动压缩时 contextWindow 直接给 null。
+     */
+    val compactionRatio: () -> Double = { Compaction.Policy.THRESHOLD_RATIO },
     /** 引擎日志（自动压缩触发/跳过/失败）；App 接到 logcat，单测可收集。 */
     val log: (String) -> Unit = {},
     /** 会话级计划模式状态（M18）：引擎在 step 起点应用 pending、组装请求时记 activeAtLastHeader。 */

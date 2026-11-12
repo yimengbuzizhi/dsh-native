@@ -197,6 +197,15 @@ fun ChatComposer(
     /** Max 模式（Operit `max_mode`）：超大上下文，关掉自动压缩。 */
     maxMode: Boolean = false,
     onSetMaxMode: (Boolean) -> Unit = {},
+    /** 自动压缩（M79）：开关 + 触发比例（与设置 → 显示与行为同一份值）。 */
+    autoCompact: Boolean = true,
+    onSetAutoCompact: (Boolean) -> Unit = {},
+    autoCompactRatio: Float = 0.8f,
+    onSetAutoCompactRatio: (Float) -> Unit = {},
+    /** 「立即压缩」（发 `/compact`，走手工压缩路径；不受自动压缩开关影响）。 */
+    onCompactNow: () -> Unit = {},
+    /** 模型配置页里当前模型的窗口（本会话还没发过请求时，圆环/上下文面板用它兜底）。 */
+    modelContextWindow: Int = 0,
     /** 行为面板：思考过程默认展开 / 时间上下文（与设置 → 行为同一份值）。 */
     expandThinking: Boolean = true,
     onSetExpandThinking: (Boolean) -> Unit = {},
@@ -476,7 +485,7 @@ fun ChatComposer(
                     }
                     Spacer(Modifier.weight(1f))
                     // M76：上下文圆环（照 DSH ContextMeter）——放在模型 pill 与输入设置之间
-                    ContextMeter(state = state, onClick = { contextSheet = true })
+                    ContextMeter(state = state, fallbackWindow = modelContextWindow, onClick = { contextSheet = true })
                     Spacer(Modifier.width(4.dp))
                     ComposerIconButton(
                         icon = Icons.Rounded.Tune,
@@ -647,6 +656,76 @@ fun ChatComposer(
                 checked = maxMode,
                 onCheckedChange = onSetMaxMode,
             )
+
+            // 上下文（M79）：用户 2026-11-12 说「没有压缩上下文功能 / 没有一个可以设置上下文」。
+            // 这里给可见的用量、自动压缩开关、触发比例和「立即压缩」，不再藏在模型配置页里。
+            var contextMenuOpen by remember { mutableStateOf(false) }
+            val windowTokens = state.contextWindow.takeIf { it > 0 }
+                ?: modelContextWindow.takeIf { it > 0 }
+            val usedPercent = windowTokens?.let { (state.lastPromptTokens * 100 / it).coerceIn(0, 100) }
+            ComposerMenuGroupHeader(
+                title = "上下文",
+                value = when {
+                    usedPercent != null -> "$usedPercent%"
+                    else -> "窗口未知"
+                },
+                expanded = contextMenuOpen,
+                icon = Icons.Rounded.Memory,
+                onToggle = { contextMenuOpen = !contextMenuOpen },
+            )
+            ComposerMenuExpansion(contextMenuOpen) {
+                ComposerMenuGroupBody {
+                    ComposerMenuRow(
+                        title = "已用上下文",
+                        subtitle = if (windowTokens != null) {
+                            "最近一次请求 ${state.lastPromptTokens} / 窗口 $windowTokens tokens"
+                        } else {
+                            "模型配置页没填窗口，自动压缩不生效（手工压缩仍可用）"
+                        },
+                        value = usedPercent?.let { "$it%" } ?: "—",
+                    )
+                    SheetToggleRow(
+                        title = "自动压缩",
+                        subtitle = if (autoCompact) {
+                            "用到 ${(autoCompactRatio * 100).toInt()}% 时把较早历史换成摘要"
+                        } else {
+                            "关着：上下文满了会直接报超窗（仍可手动压缩）"
+                        },
+                        checked = autoCompact,
+                        onCheckedChange = onSetAutoCompact,
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(50, 70, 80, 90).forEach { percent ->
+                            val selected = (autoCompactRatio * 100).toInt() == percent
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (selected) c.brand else c.surfaceAlt.copy(alpha = 0.7f),
+                                modifier = Modifier.weight(1f).clickable { onSetAutoCompactRatio(percent / 100f) },
+                            ) {
+                                Box(Modifier.padding(vertical = 7.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        "${percent}%",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (selected) Color.White else c.sub,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    ComposerMenuRow(
+                        title = "立即压缩上下文",
+                        subtitle = "把较早的历史换成摘要（/compact，不占模型轮次）",
+                        value = "压缩",
+                        onClick = {
+                            settingsSheet = false
+                            onCompactNow()
+                        },
+                    )
+                }
+            }
 
             // 记忆 / 工具 / 行为 / 插件：照 Operit `AgentExtraSettingsPopup` 做成可折叠分组
             // （标题 + 值 + 上下箭头，点开原地展开；不是再弹一个底部面板）。
@@ -1098,9 +1177,9 @@ fun ChatComposer(
  * 右侧百分比。点开看三段明细。没有数据时显示「—」，不假装有值。
  */
 @Composable
-private fun ContextMeter(state: ChatSessionState, onClick: () -> Unit) {
+private fun ContextMeter(state: ChatSessionState, fallbackWindow: Int = 0, onClick: () -> Unit) {
     val c = DshTheme2.colors
-    val window = state.contextWindow
+    val window = state.contextWindow.takeIf { it > 0 } ?: fallbackWindow
     val used = state.lastPromptTokens
     val hasData = window > 0 && used > 0
     val percent = if (hasData) ((used.toLong() * 100 / window).toInt()).coerceIn(0, 100) else 0
@@ -1806,7 +1885,25 @@ private fun PackageSelectorDialog(
                                 Text("没有找到匹配的包", style = MaterialTheme.typography.bodyMedium, color = c.sub)
                             }
                         }
+                        // 2026-11-12（用户：聊天页的包/技能/MCP 全放一块了，要分类）：
+                        // options 本身按 包 → 技能 → MCP 顺序构建，这里按 kind 切段加小标题。
+                        var lastKind: PackageKind? = null
                         filtered.forEach { option ->
+                            if (option.kind != lastKind) {
+                                lastKind = option.kind
+                                Text(
+                                    when (option.kind) {
+                                        PackageKind.PLUGIN -> "包"
+                                        PackageKind.SKILL -> "技能"
+                                        PackageKind.MCP -> "MCP"
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 8.dp, top = 10.dp, bottom = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = c.faint,
+                                )
+                            }
                             Surface(
                                 onClick = { onSelect(option) },
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),

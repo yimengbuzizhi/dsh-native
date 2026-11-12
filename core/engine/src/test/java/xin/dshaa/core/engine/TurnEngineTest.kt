@@ -156,6 +156,26 @@ class TurnEngineTest {
     }
 
     @Test
+    fun toolLoopHasNoRoundCap() = runBlocking {
+        // 用户 2026-11-12：长任务干一半自己停。根因是单轮 12 步上限，到顶静默退出。
+        // 这里连做 15 轮工具调用，必须在同一轮里继续跑到模型自己收尾。
+        repeat(15) { i ->
+            responses += toolCallResponse("call-$i", "fake_tool", "{\"i\":$i}")
+        }
+        responses += textResponse("done-after-15")
+
+        engine().startTurn(ui, TurnInput("hi"))
+
+        assertEquals(16, requests.size)
+        val session = assertNotNull(repo.load(gateway.session!!.header.id))
+        assertEquals(16, session.events.count { it.type == "step/start" })
+        assertEquals(15, session.events.count { it.type == "tool/call" })
+        assertEquals(15, session.events.count { it.type == "tool/result" })
+        assertEquals("completed", turnEndKind(session))
+        assertEquals("done-after-15", ui.messages.last().content.first().text)
+    }
+
+    @Test
     fun deniedToolBecomesErrorResult() = runBlocking {
         approve = false
         responses += toolCallResponse("call-1", "fake_tool", "{}")

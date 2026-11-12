@@ -80,6 +80,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import xin.dshaa.core.plugins.PluginRecord
 import xin.dshaa.core.skill.SkillSummary
+import xin.dshaa.nativeapp.data.BundledSkills
 import xin.dshaa.nativeapp.data.McpConfigStore
 import xin.dshaa.nativeapp.data.McpServer
 import xin.dshaa.nativeapp.data.OperitBundledPackage
@@ -127,8 +128,13 @@ fun PackagesScreen(
     onDismissPluginNotice: () -> Unit,
     onLoadOperitPackages: () -> Unit,
     onInstallOperitPackage: (String) -> Unit,
+    /** M81：内置包的开关（开 = 未装则安装并启用，关 = 只禁用）。 */
+    onSetOperitPackageEnabled: (String, Boolean) -> Unit,
     onRefreshSkills: () -> Unit,
     onImportSkill: (Uri) -> Unit,
+    /** M81：技能开关 + 删除（内置技能给开关、不给删）。 */
+    onSetSkillEnabled: (String, Boolean) -> Unit,
+    onDeleteSkill: (SkillSummary) -> Unit,
     onDismissSkillNotice: () -> Unit,
 ) {
     val c = DshTheme2.colors
@@ -149,6 +155,7 @@ fun PackagesScreen(
     /** M76：内置包详情（未安装也能看完整介绍 / 工具 / 权限）。 */
     var selectedPackage by remember { mutableStateOf<OperitBundledPackage?>(null) }
     var pendingDeletePlugin by remember { mutableStateOf<PluginRecord?>(null) }
+    var pendingDeleteSkill by remember { mutableStateOf<SkillSummary?>(null) }
     var pendingDeleteMcp by remember { mutableStateOf<McpServer?>(null) }
     var showSkillWarnings by remember { mutableStateOf(false) }
 
@@ -208,10 +215,14 @@ fun PackagesScreen(
         }
     }
     val filteredSkills = remember(skills, search) {
+        // M81：内置（自带）技能排最前面
+        val ordered = skills.sortedWith(
+            compareByDescending<SkillSummary> { BundledSkills.isBundled(it.name) }.thenBy { it.name },
+        )
         if (search.isEmpty()) {
-            skills
+            ordered
         } else {
-            skills.filter { skill ->
+            ordered.filter { skill ->
                 skill.name.contains(search, true) ||
                     skill.description.contains(search, true) ||
                     skill.source.contains(search, true) ||
@@ -230,11 +241,13 @@ fun PackagesScreen(
             }
         }
     }
-    val filteredOperitPackages = remember(operitPackages, search) {
+    val filteredOperitPackages = remember(operitPackages, search, plugins) {
+        // M81（用户：自带默认开启的包放最前面）：已安装/已启用的排前面，其余保持内置顺序。
+        val ordered = operitPackages.sortedByDescending { pkg -> plugins.any { it.id == pkg.pluginId } }
         if (search.isEmpty()) {
-            operitPackages
+            ordered
         } else {
-            operitPackages.filter { pkg ->
+            ordered.filter { pkg ->
                 pkg.title.contains(search, true) ||
                     pkg.description.contains(search, true) ||
                     pkg.pluginId.contains(search, true) ||
@@ -424,10 +437,11 @@ fun PackagesScreen(
                                     pkg = pkg,
                                     installed = installed,
                                     busy = operitPackagesBusy || pluginsBusy,
-                                    onInstall = { onInstallOperitPackage(pkg.pluginId) },
-                                    onOpen = { selectedPackage = pkg },
-                                    onOpenPlugin = {
-                                        if (installed != null) selectedPluginId = installed.id
+                                    onToggle = { onSetOperitPackageEnabled(pkg.pluginId, it) },
+                                    onOpen = {
+                                        // 用户 2026-11-12：装过的包点进去就该是插件详情；
+                                        // 没装过的才看内置包介绍（介绍里有「启用」）。
+                                        if (installed != null) selectedPluginId = installed.id else selectedPackage = pkg
                                     },
                                 )
                             }
@@ -444,9 +458,13 @@ fun PackagesScreen(
                             items(filteredSkills, key = { it.path }) { skill ->
                                 SkillRow(
                                     skill = skill,
+                                    enabled = skill.enabled,
+                                    canDelete = !BundledSkills.isBundled(skill.name),
                                     homeDir = homeDir,
                                     workspaceDir = workspaceDir,
                                     onOpen = { selectedSkill = skill },
+                                    onToggle = { onSetSkillEnabled(skill.name, it) },
+                                    onDelete = { pendingDeleteSkill = skill },
                                 )
                             }
                         }
@@ -544,7 +562,7 @@ fun PackagesScreen(
                 installed = installed,
                 busy = operitPackagesBusy || pluginsBusy,
                 onDismiss = { selectedPackage = null },
-                onInstall = { onInstallOperitPackage(pkg.pluginId) },
+                onToggle = { onSetOperitPackageEnabled(pkg.pluginId, it) },
                 onOpenPlugin = {
                     selectedPackage = null
                     if (installed != null) selectedPluginId = installed.id
@@ -616,6 +634,33 @@ fun PackagesScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { pendingDeleteMcp = null }) { Text("取消", color = c.sub) }
+                },
+                containerColor = c.surface,
+            )
+        }
+
+        // M81：删技能要二次确认（和 MCP 一样），内置技能没有垃圾桶、走不到这里
+        pendingDeleteSkill?.let { skill ->
+            AlertDialog(
+                onDismissRequest = { pendingDeleteSkill = null },
+                title = { Text("删除技能？", color = c.text) },
+                text = {
+                    Text(
+                        "会删掉 ${shortPath(skill.path, homeDir, workspaceDir)}，删了找不回来。" +
+                            "只想先停用的话，把开关关掉即可。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = c.sub,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val target = skill
+                        pendingDeleteSkill = null
+                        onDeleteSkill(target)
+                    }) { Text("删除", color = c.danger) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingDeleteSkill = null }) { Text("取消", color = c.sub) }
                 },
                 containerColor = c.surface,
             )
@@ -764,9 +809,8 @@ private fun OperitPackageRow(
     pkg: OperitBundledPackage,
     installed: PluginRecord?,
     busy: Boolean,
-    onInstall: () -> Unit,
+    onToggle: (Boolean) -> Unit,
     onOpen: () -> Unit,
-    onOpenPlugin: () -> Unit,
 ) {
     val c = DshTheme2.colors
     Surface(
@@ -815,7 +859,13 @@ private fun OperitPackageRow(
                         append(" · ")
                         append(pkg.permissionLabel)
                         append(" · ")
-                        append(pkg.status.label)
+                        append(
+                            when {
+                                installed == null -> "未启用"
+                                installed.enabled -> "已启用"
+                                else -> "已关闭"
+                            },
+                        )
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = when (pkg.status) {
@@ -835,19 +885,18 @@ private fun OperitPackageRow(
                     )
                 }
             }
-            if (installed != null) {
-                TextButton(onClick = onOpenPlugin) {
-                    Text("已安装", color = c.brand, style = MaterialTheme.typography.labelMedium)
-                }
-            } else {
-                TextButton(onClick = onInstall, enabled = !busy) {
-                    Text(
-                        if (busy) "安装中…" else "安装",
-                        color = if (busy) c.faint else c.brand,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-            }
+            Switch(
+                checked = installed?.enabled == true,
+                onCheckedChange = onToggle,
+                enabled = !busy,
+                modifier = Modifier.size(width = 32.dp, height = 20.dp),
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = c.brand,
+                    checkedTrackColor = c.brandSoft,
+                    uncheckedThumbColor = c.faint,
+                    uncheckedTrackColor = c.surfaceAlt,
+                ),
+            )
         }
     }
 }
@@ -862,7 +911,7 @@ private fun OperitPackageDetailDialog(
     installed: PluginRecord?,
     busy: Boolean,
     onDismiss: () -> Unit,
-    onInstall: () -> Unit,
+    onToggle: (Boolean) -> Unit,
     onOpenPlugin: () -> Unit,
 ) {
     val c = DshTheme2.colors
@@ -878,9 +927,17 @@ private fun OperitPackageDetailDialog(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    if (installed != null) "已安装 · ${installed.version} · ${pkg.status.label}" else pkg.status.label,
+                    when {
+                        installed == null -> "未启用 · ${pkg.status.label}"
+                        installed.enabled -> "已启用 · ${installed.version} · ${pkg.status.label}"
+                        else -> "已关闭 · ${installed.version} · ${pkg.status.label}"
+                    },
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (installed != null) c.brand else if (pkg.status == OperitStatus.READY) c.sub else c.warn,
+                    color = when {
+                        installed == null -> if (pkg.status == OperitStatus.READY) c.sub else c.warn
+                        installed.enabled -> c.brand
+                        else -> c.faint
+                    },
                 )
                 Spacer(Modifier.height(12.dp))
                 Text("介绍", style = MaterialTheme.typography.labelSmall, color = c.faint)
@@ -916,9 +973,11 @@ private fun OperitPackageDetailDialog(
             }
         },
         confirmButton = {
+            // 用户 2026-11-12：详情底部的「已启用」+ 开关 + 插件详情挤成一排很突兀，改成纯文字。
+            // 开关只留在列表行；这里点「插件详情」去授权/配置，未装过的给「启用」。
             if (installed == null) {
-                TextButton(onClick = onInstall, enabled = !busy) {
-                    Text(if (busy) "安装中…" else "安装", color = if (busy) c.faint else c.brand)
+                TextButton(onClick = { onToggle(true) }, enabled = !busy) {
+                    Text(if (busy) "启用中…" else "启用", color = if (busy) c.faint else c.brand)
                 }
             } else {
                 TextButton(onClick = onOpenPlugin) {
@@ -935,10 +994,15 @@ private fun OperitPackageDetailDialog(
 
 /** Operit `SkillConfigScreen` 的行：图标 + 名称/描述 + 路径；点开详情。 */
 @Composable
-private fun SkillRow(    skill: SkillSummary,
+private fun SkillRow(
+    skill: SkillSummary,
+    enabled: Boolean,
+    canDelete: Boolean,
     homeDir: String,
     workspaceDir: String,
     onOpen: () -> Unit,
+    onToggle: (Boolean) -> Unit,
+    onDelete: () -> Unit,
 ) {
     val c = DshTheme2.colors
     Surface(
@@ -989,6 +1053,27 @@ private fun SkillRow(    skill: SkillSummary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            // M81（用户 2026-11-12：技能要有开关，像 MCP 一样；内置技能没有垃圾桶）
+            Switch(
+                checked = enabled,
+                onCheckedChange = onToggle,
+                modifier = Modifier.size(width = 32.dp, height = 20.dp),
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = c.brand,
+                    checkedTrackColor = c.brandSoft,
+                    uncheckedThumbColor = c.faint,
+                    uncheckedTrackColor = c.surfaceAlt,
+                ),
+            )
+            if (canDelete) {
+                Spacer(Modifier.width(4.dp))
+                Box(
+                    Modifier.size(30.dp).clip(CircleShape).clickable { onDelete() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.DeleteOutline, "删除", tint = c.danger, modifier = Modifier.size(18.dp))
+                }
             }
         }
     }

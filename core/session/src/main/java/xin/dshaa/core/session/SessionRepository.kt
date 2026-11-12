@@ -167,8 +167,100 @@ class SessionRepository(val root: File) {
         return runCatching { dir.renameTo(target) }.getOrDefault(false)
     }
 
-    /** 重命名：往会话里追加一条 session/title（与自动标题同一事件，后写生效）。 */
-    fun rename(id: String, title: String): Boolean {
+    /**
+     * 回收站里的一条（M79，用户 2026-11-12「到现在为止还不能彻底删除会话」）。
+     * 目录名是 `<id>-<删除时间戳>`，[id] 从会话头里读，[title] 解不出来时退化成「已删除的会话」。
+     */
+    data class TrashedSession(
+        val dirName: String,
+        val id: String,
+        val title: String,
+        /** 删除时间（目录名后缀；解析不出来时用目录 mtime）。 */
+        val deletedAt: Long,
+        /** 整个会话目录的字节数，用于「彻底删除」时告诉用户释放了多少。 */
+        val bytes: Long,
+    )
+
+    /** 回收站目录（`.trash/`），不存在就建。 */
+    private fun trashDir(): File = File(root, TRASH_DIR).apply { mkdirs() }
+
+    /** 列出回收站；解不开头的目录也列出来（id 用目录名），保证用户能删掉它。 */
+    fun listTrash(): List<TrashedSession> {
+        val dir = File(root, TRASH_DIR)
+        if (!dir.isDirectory) return emptyList()
+        return dir.listFiles().orEmpty()
+            .filter { it.isDirectory }
+            .map { entry ->
+                val suffixAt = entry.name.lastIndexOf('-')
+                val id = if (suffixAt > 0) entry.name.substring(0, suffixAt) else entry.name
+                val stamp = if (suffixAt > 0) entry.name.substring(suffixAt + 1).toLongOrNull() else null
+                val file = sessionFile(entry)
+                val header = if (file.isFile) {
+                    runCatching { decoder.decode(file.readBytes()).header }.getOrNull()
+                } else {
+                    null
+                }
+                val title = if (file.isFile) {
+                    runCatching { summarize(file, "").title }.getOrNull().orEmpty()
+                } else {
+                    ""
+                }
+                TrashedSession(
+                    dirName = entry.name,
+                    id = header?.id ?: id,
+                    title = title.ifBlank { "已删除的会话" },
+                    deletedAt = stamp ?: entry.lastModified(),
+                    bytes = entry.walkTopDown().filter { it.isFile }.sumOf { it.length() },
+                )
+            }
+            .sortedByDescending { it.deletedAt }
+    }
+
+    /** 恢复一条回收站会话：按会话头里的 cwd 放回原工作区目录（目标已存在则失败，不覆盖）。 */
+    fun restoreTrashed(dirName: String): Boolean {
+        val entry = File(root, "$TRASH_DIR/$dirName")
+        if (!entry.isDirectory) return false
+        val file = sessionFile(entry)
+        val header = if (file.isFile) {
+            runCatching { decoder.decode(file.readBytes()).header }.getOrNull()
+        } else {
+            null
+        } ?: return false
+        val workspaceDir = File(root, WorkspaceSlug.of(header.cwd)).apply { mkdirs() }
+        val target = File(workspaceDir, header.id)
+        if (target.exists()) return false
+        return runCatching { entry.renameTo(target) }.getOrDefault(false)
+    }
+
+    /** **彻底删除**一条回收站会话（真删目录，不进回收站）。 */
+    fun purgeTrashed(dirName: String): Boolean {
+        val entry = File(root, "$TRASH_DIR/$dirName")
+        if (!entry.isDirectory) return false
+        return runCatching { entry.deleteRecursively() }.getOrDefault(false)
+    }
+
+    /** 清空回收站，返回删掉的条数。 */
+    fun purgeAllTrash(): Int {
+        val dir = File(root, TRASH_DIR)
+        val entries = dir.listFiles().orEmpty().filter { it.isDirectory }
+        var removed = 0
+        entries.forEach { if (runCatching { it.deleteRecursively() }.getOrDefault(false)) removed++ }
+        return removed
+    }
+
+    /**
+     * **彻底删除**一条还活着的会话（M79）：直接删目录，不经过回收站。
+     * 与 [trash] 的区别只有这一步——用户明确要「彻底删除」时才调它。
+     */
+    fun purge(id: String): Boolean {
+        val file = findFile(id) ?: return false
+        val dir = file.parentFile ?: return false
+        val trashed = dir.parentFile?.name == TRASH_DIR
+        if (trashed) return purgeTrashed(dir.name)
+        return runCatching { dir.deleteRecursively() }.getOrDefault(false)
+    }
+
+    /** 重命名：往会话里追加一条 session/title（与自动标题同一事件，后写生效）。 */    fun rename(id: String, title: String): Boolean {
         val file = findFile(id) ?: return false
         return runCatching {
             val decoded = decoder.decode(file.readBytes())

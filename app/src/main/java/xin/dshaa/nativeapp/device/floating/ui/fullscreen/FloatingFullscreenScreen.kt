@@ -97,6 +97,7 @@ import xin.dshaa.nativeapp.device.floating.FloatingSpeechManager
 import xin.dshaa.nativeapp.device.floating.FloatingWindowState
 import xin.dshaa.nativeapp.device.floating.isInternalNotice
 import xin.dshaa.ui.design.component.MarkdownText
+import xin.dshaa.ui.design.theme.DshTheme
 import xin.dshaa.ui.design.theme.DshTheme2
 
 /**
@@ -199,7 +200,14 @@ fun FloatingFullscreenScreen(
     }
 
     // Operit 全屏是 0.22 scrim + 系统 48dp blur；不能画成接近不透明（会看不到后面的 App）。
-    Box(Modifier.fillMaxSize().background(Color(0x380B0F17))) {
+    // 2026-11-12（用户：全屏里字泛白、看不清）：Operit 那套依赖系统模糊，但这台 ColorOS 上
+    // `isCrossWindowBlurEnabled` 报 true、实际并没有模糊（截图/肉眼都是透的），0.22 遮罩等于没遮。
+    // 所以不再看模糊开关，固定 0.69 暗底——仍能隐约看到后面的 App，但白字和代码块能读清。
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xB00B0F17)),
+    ) {
         Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 30.dp),
@@ -269,13 +277,18 @@ fun FloatingFullscreenScreen(
                         }
                     }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
-                        reverseLayout = true,
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        items(messages.takeLast(100).asReversed(), key = { it.id }) { message ->
-                            FullscreenMessage(message)
+                    // 2026-11-12（用户）：全屏浮层是暗底，但整页此前套在系统浅色主题里，
+                    // Markdown 行内代码就成了「浅底 + 白字」（路径泛白看不清）。这里强制深色主题，
+                    // 行内代码/代码块才会是深底白字。
+                    DshTheme(darkTheme = true) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
+                            reverseLayout = true,
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            items(messages.takeLast(100).asReversed(), key = { it.id }) { message ->
+                                FullscreenMessage(message)
+                            }
                         }
                     }
                 }
@@ -394,8 +407,14 @@ fun FloatingFullscreenScreen(
 
 @Composable
 private fun FullscreenMessage(message: ChatMessage) {
+    // 2026-11-12（用户）：全屏正文只取 TEXT；思考、过程、工具结果都折起来，和窗口模式一致。
+    // 之前把 TEXT + REASONING 拼成一段正文、工具结果也当正文铺开，观感很乱。
+    val reasoning = message.content
+        .filter { it.type == BlockType.REASONING }
+        .joinToString("\n") { it.text }
+        .trim()
     val text = message.content
-        .filter { it.type == BlockType.TEXT || it.type == BlockType.REASONING }
+        .filter { it.type == BlockType.TEXT }
         .joinToString("\n") { it.text }
         .trim()
     if (message.role == MessageRole.USER) {
@@ -427,12 +446,151 @@ private fun FullscreenMessage(message: ChatMessage) {
         }
         return
     }
-    if (text.isBlank()) return
-    MarkdownText(
-        text = text,
-        modifier = Modifier.fillMaxWidth(),
-        style = MaterialTheme.typography.bodyMedium,
-        color = Color.White.copy(alpha = 0.92f),
+    val toolCalls = message.content.filter { it.type == BlockType.TOOL_CALL }
+    when (message.role) {
+        MessageRole.ASSISTANT -> Column(Modifier.fillMaxWidth()) {
+            if (toolCalls.isNotEmpty()) {
+                // 带工具调用的那条 = 过程消息：思考 + 中间叙述 + 工具调用全部折成一行。
+                FullscreenProcessRow(reasoning, text, toolCalls, message.streaming)
+            } else {
+                if (reasoning.isNotBlank()) FullscreenReasoningRow(reasoning, message.streaming)
+                if (text.isNotBlank()) {
+                    MarkdownText(
+                        text = text,
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = FsText,
+                    )
+                } else if (message.streaming && reasoning.isBlank()) {
+                    Text("…", color = FsFaint, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+
+        // 工具结果不铺正文：和聊天页一样只留一行痕迹。
+        MessageRole.TOOL -> Text(
+            "⚙ 工具结果 · ${text.length} 字",
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+            color = FsFaint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+
+        else -> if (text.isNotBlank()) {
+            Text(text, style = MaterialTheme.typography.labelSmall, color = FsSub)
+        }
+    }
+}
+
+// 全屏浮层是暗底：这几档颜色不跟主题走，避免浅色主题下再出现「浅底白字」。
+private val FsText = Color(0xFFEAF0FA)
+private val FsSub = Color(0xFFB9C6DA)
+private val FsFaint = Color(0xFF93A2B8)
+private val FsAccent = Color(0xFF8CB6FF)
+private val FsRowBg = Color.White.copy(alpha = 0.10f)
+private val FsRowLine = Color.White.copy(alpha = 0.16f)
+
+/**
+ * 过程行：一条带工具调用的 assistant 消息 = 思考 + 中间叙述 + N 个工具调用。
+ * 默认折成一行（流式中显示「正在执行 …」），点开才看全文；与窗口模式 `ProcessRow` 同一语义。
+ */
+@Composable
+private fun FullscreenProcessRow(
+    reasoning: String,
+    text: String,
+    toolCalls: List<xin.dshaa.core.model.ContentBlock>,
+    streaming: Boolean,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val lastTool = toolCalls.lastOrNull()?.name ?: "工具"
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = FsRowBg,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, FsRowLine, RoundedCornerShape(10.dp))
+            .clickable { expanded = !expanded },
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (streaming) "正在执行 $lastTool…" else "过程 · ${toolCalls.size} 个工具调用",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = FsSub,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    if (expanded) "收起" else "展开",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = FsAccent,
+                )
+            }
+            if (expanded) {
+                if (reasoning.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("思考：$reasoning", style = MaterialTheme.typography.labelSmall, color = FsFaint)
+                }
+                if (text.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(text, style = MaterialTheme.typography.bodySmall, color = FsSub)
+                }
+                toolCalls.forEach { call ->
+                    Spacer(Modifier.height(4.dp))
+                    FullscreenToolLine(call.name ?: "tool", call.arguments)
+                }
+            }
+        }
+    }
+}
+
+/** 思考块：默认只占一行「思考过程 · N 字」（流式中「正在思考…」），点开才看全文。 */
+@Composable
+private fun FullscreenReasoningRow(text: String, streaming: Boolean) {
+    var expanded by remember { mutableStateOf(false) }
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = FsRowBg,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, FsRowLine, RoundedCornerShape(10.dp))
+            .clickable { expanded = !expanded },
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (streaming) "正在思考…" else "思考过程 · ${text.length} 字",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = FsSub,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    if (expanded) "收起" else "展开",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = FsAccent,
+                )
+            }
+            if (expanded) {
+                Spacer(Modifier.height(6.dp))
+                Text(text, style = MaterialTheme.typography.labelSmall, color = FsFaint)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FullscreenToolLine(name: String, args: String) {
+    Text(
+        "⚙ $name ${args.take(80)}",
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color.White.copy(alpha = 0.06f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontFamily = FontFamily.Monospace),
+        color = FsFaint,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 

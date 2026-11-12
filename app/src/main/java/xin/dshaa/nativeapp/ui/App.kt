@@ -1,5 +1,13 @@
 package xin.dshaa.nativeapp.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,6 +91,21 @@ enum class Screen(val label: String, val icon: ImageVector) {
 enum class SubScreen { ModelConfig, Assistant, Behavior, Backup, DataMigration, Skills, Workspaces, Permissions, Privacy }
 
 /**
+ * 当前路由快照（M79，用户 2026-11-12 反馈「二级页进出一个动画都没有」）：
+ * `page` = 一级页名字（null = 聊天），`sub` = 设置里的二级页名字。
+ * 交给 [AnimatedContent] 当 targetState，进出二级页统一走滑入/滑出 + 淡入淡出。
+ */
+private data class NavRoute(val page: String?, val sub: String?) {
+    /** 层级：聊天 0（根） < 一级页/设置 1 < 设置二级页 2；用来决定滑动方向。 */
+    val depth: Int
+        get() = when {
+            page == null -> 0
+            sub != null -> 2
+            else -> 1
+        }
+}
+
+/**
  * 应用外壳（2026-11-07 第二次重做，仿 RikkaHub）：
  * - **落地页 = 聊天**（`screenName == null`），抽屉从聊天页左上角三条杠打开；
  * - 抽屉里是「当前工作区的会话列表」+ 工作区切换器 + 功能/设置/关于；
@@ -133,13 +156,36 @@ private fun DshAppContent(vm: AppViewModel) {
 
     val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
     val closeDrawer: () -> Unit = { scope.launch { drawerState.close() } }
+    // 转场方向（M79）：同层级互跳（设置→会话列表）没有深度差，用这个记住是「进」还是「退」。
+    var navForward by remember { mutableStateOf(true) }
+    // 一级页是从聊天页进的（记忆库/插件/任务…）还是从设置进的（会话列表…）：
+    // 用户 2026-11-12 第 4 条：从聊天页点「记忆」进记忆库，返回应该回聊天页，不该掉进设置。
+    var pageFromChat by rememberSaveable { mutableStateOf(false) }
     val go: (Screen) -> Unit = { screen ->
+        navForward = true
+        pageFromChat = false
         screenName = screen.name
         subScreenName = null
     }
-    /** 从功能页直接回设置（M74；这些页原来只能开抽屉，用户 23:00 第 1 条）。 */
-    val backToSettings: () -> Unit = {
-        screenName = Screen.Settings.name
+    /** 从聊天页直接进的功能页：返回落回聊天页。 */
+    val goFromChat: (Screen) -> Unit = { screen ->
+        navForward = true
+        pageFromChat = true
+        screenName = screen.name
+        subScreenName = null
+    }
+    val openSub: (SubScreen) -> Unit = { sub ->
+        navForward = true
+        subScreenName = sub.name
+    }
+    /** 功能页的返回：从聊天页来的回聊天，从设置来的回设置（M79）。 */
+    val backFromPage: () -> Unit = {
+        navForward = false
+        if (pageFromChat) {
+            screenName = null
+        } else {
+            screenName = Screen.Settings.name
+        }
         subScreenName = null
     }
     // 宽屏（平板 / 折叠屏展开）侧边栏常驻：600dp 是 Material 的 compact/expanded 断点
@@ -157,13 +203,14 @@ private fun DshAppContent(vm: AppViewModel) {
     androidx.activity.compose.BackHandler(
         enabled = drawerState.isOpen || subScreen != null || screenName != null || vm.canGoBackFromChat,
     ) {
+        navForward = false
         when {
             drawerState.isOpen -> closeDrawer()
             subScreen != null -> subScreenName = null
-            // 功能页回到设置（用户 23:00 第 1 条：此前直接回聊天，等于丢掉了来路）
+            // 功能页回到来路（M79：从聊天页进的回聊天，从设置进的回设置）
             screenName == Screen.Workspace.name -> screenName = null
             screenName == Screen.Settings.name -> screenName = null
-            screenName != null -> backToSettings()
+            screenName != null -> backFromPage()
             else -> vm.closeChat()
         }
     }
@@ -209,6 +256,8 @@ private fun DshAppContent(vm: AppViewModel) {
                 onSwitchAssistant = { id -> vm.settings.setActiveAssistant(id) },
                 onManageAssistants = {
                     closeDrawer()
+                    navForward = true
+                    pageFromChat = false
                     screenName = Screen.Settings.name
                     subScreenName = SubScreen.Assistant.name
                 },
@@ -217,30 +266,36 @@ private fun DshAppContent(vm: AppViewModel) {
                 badgeFor = { id -> vm.badgeFor(id) },
                 onOpenSession = { summary ->
                     closeDrawer()
+                    navForward = false
                     screenName = null
                     subScreenName = null
                     vm.openSession(summary)
                 },
                 onNewChat = {
                     closeDrawer()
+                    navForward = false
                     screenName = null
                     subScreenName = null
                     vm.newChat()
                 },
                 onSwitchWorkspace = { path ->
                     closeDrawer()
+                    navForward = false
                     screenName = null
                     subScreenName = null
                     vm.switchWorkspace(path)
                 },
                 onCreateWorkspace = { name, path ->
                     closeDrawer()
+                    navForward = false
                     screenName = null
                     subScreenName = null
                     vm.createWorkspace(name, path)
                 },
                 onManageWorkspaces = {
                     closeDrawer()
+                    navForward = true
+                    pageFromChat = false
                     screenName = Screen.Settings.name
                     subScreenName = SubScreen.Workspaces.name
                 },
@@ -254,13 +309,36 @@ private fun DshAppContent(vm: AppViewModel) {
                 },
                 onRenameSession = { id, title -> vm.renameSession(id, title) },
                 onDeleteSession = { id -> vm.deleteSession(id) },
+                onDeleteSessionPermanently = { id -> vm.deleteSessionPermanently(id) },
             )
     }
 
     // 屏幕主体：宽屏时和常驻抽屉并排，窄屏时铺满
     val body: @Composable () -> Unit = {
         Box(Modifier.fillMaxSize().background(c.background)) {
-            when (screenName) {
+            // M79：所有一级页/二级页共用一套转场（用户 2026-11-12：进二级页、退出都没有动画）。
+            // 方向按层级差决定：进更深一层从右滑入，返回从左滑入；同层级用 navForward（进/退）决定。
+            AnimatedContent(
+                targetState = NavRoute(screenName, subScreenName),
+                transitionSpec = {
+                    val forward = if (targetState.depth == initialState.depth) {
+                        navForward
+                    } else {
+                        targetState.depth > initialState.depth
+                    }
+                    val dir = if (forward) 1 else -1
+                    (
+                        slideInHorizontally(animationSpec = tween(260)) { full -> dir * full / 5 } +
+                            fadeIn(animationSpec = tween(200))
+                        ) togetherWith (
+                        slideOutHorizontally(animationSpec = tween(260)) { full -> -dir * full / 5 } +
+                            fadeOut(animationSpec = tween(160))
+                        ) using SizeTransform(clip = false)
+                },
+                label = "dsh-screen",
+            ) { route ->
+                val subScreen = route.sub?.let { name -> runCatching { SubScreen.valueOf(name) }.getOrNull() }
+                when (route.page) {
                 null -> {
                     val current = vm.chat
                     if (current != null) {
@@ -274,14 +352,14 @@ private fun DshAppContent(vm: AppViewModel) {
                             onOpenDrawer = openDrawer,
                             menuVisible = !wideLayout,
                             onNewChat = { vm.newChat() },
-                            onOpenWorkspace = { screenName = Screen.Workspace.name },
+                            onOpenWorkspace = { goFromChat(Screen.Workspace) },
                             onAttachImage = { uri -> vm.attachImage(uri) },
                             onAttachPhoto = { file -> vm.attachPhoto(file) },
                             onCaptureScreenshot = { vm.attachScreenshot() },
                             onRemovePendingImage = { id -> vm.removePendingImage(id) },
                             onAttachFile = { uri -> vm.attachFile(uri) },
-                            plugins = vm.pluginsUi,
-                            skills = vm.skillsUi,
+                            plugins = vm.pluginsUi.filter { it.enabled },
+                            skills = vm.skillsUi.filter { it.enabled },
                             onEnablePlugin = { id -> vm.setPluginEnabled(id, true) },
                             onRemovePendingFile = { name -> vm.removePendingFile(name) },
                             onSubmit = { vm.submit(it) },
@@ -293,7 +371,7 @@ private fun DshAppContent(vm: AppViewModel) {
                             onSetPlanMode = { vm.setPlanMode(it) },
                             schedules = { vm.currentSchedules() },
                             onDeleteSchedule = { id -> vm.deleteSchedule(id) },
-                            skillChoices = vm.skillsUi.filter { it.userInvocable },
+                            skillChoices = vm.skillsUi.filter { it.userInvocable && it.enabled },
                             onRefreshSkills = { vm.refreshSkills() },
                             fileCandidates = { query -> vm.fileCandidates(query) },
                             onDismissCommandNotice = { vm.dismissCommandNotice() },
@@ -303,7 +381,7 @@ private fun DshAppContent(vm: AppViewModel) {
                             onClearGoal = { vm.clearGoal() },
                             onOpenJobs = {
                                 // 不关当前聊天：任务页返回时还能继续刚才的对话（旧实现会丢会话视图）
-                                screenName = Screen.Jobs.name
+                                goFromChat(Screen.Jobs)
                                 vm.refreshJobs()
                             },
                             onOpenSubagent = { id -> vm.openSubagentSession(id) },
@@ -314,6 +392,7 @@ private fun DshAppContent(vm: AppViewModel) {
                             webSearchEnabled = vm.settings.webSearchEnabled,
                             onToggleWebSearch = { vm.settings.setWebSearchEnabled(it) },
                             onOpenModelSettings = {
+                                navForward = true
                                 screenName = Screen.Settings.name
                                 subScreenName = SubScreen.ModelConfig.name
                             },
@@ -325,12 +404,18 @@ private fun DshAppContent(vm: AppViewModel) {
                             onSetReasoningEffort = { vm.settings.setReasoningEffort(it) },
                             maxMode = vm.settings.maxMode,
                             onSetMaxMode = { vm.settings.setMaxMode(it) },
+                            autoCompact = vm.settings.autoCompact,
+                            onSetAutoCompact = { vm.settings.setAutoCompact(it) },
+                            autoCompactRatio = vm.settings.autoCompactRatio,
+                            onSetAutoCompactRatio = { vm.settings.setAutoCompactRatio(it) },
+                            onCompactNow = { vm.submit("/compact") },
+                            modelContextWindow = vm.settings.contextWindow,
                             onSetExpandThinking = { vm.settings.setExpandThinking(it) },
                             timeContext = vm.settings.timeContext,
                             onSetTimeContext = { vm.settings.setTimeContext(it) },
                             memorySpaceName = "Default",
-                            onOpenMemoryLibrary = { screenName = Screen.Memory.name },
-                            onOpenPlugins = { screenName = Screen.Plugins.name },
+                            onOpenMemoryLibrary = { goFromChat(Screen.Memory) },
+                            onOpenPlugins = { goFromChat(Screen.Plugins) },
                             // M78 并行：其它会话在等审批/回答时，顶部横幅一键切过去
                             waitingElsewhere = vm.waitingElsewhere(),
                             onFocusSession = { id -> vm.focusSession(id) },
@@ -352,17 +437,26 @@ private fun DshAppContent(vm: AppViewModel) {
                     assistantAvatar = vm.settings.assistantAvatar,
                     badgeFor = { id -> vm.badgeFor(id) },
                     onOpenDrawer = openDrawer,
-                    onBack = backToSettings,
+                    onBack = backFromPage,
                     onOpen = { summary ->
+                        navForward = false
                         screenName = null
                         vm.openSession(summary)
                     },
                     onNew = {
+                        navForward = false
                         screenName = null
                         vm.newChat()
                     },
                     onDelete = { vm.deleteSession(it.id) },
                     onRename = { summary, title -> vm.renameSession(summary.id, title) },
+                    onDeletePermanently = { vm.deleteSessionPermanently(it.id) },
+                    trash = vm.trashUi,
+                    trashBusy = vm.trashBusy,
+                    onOpenTrash = { vm.refreshTrash() },
+                    onRestoreTrash = { vm.restoreTrashed(it) },
+                    onPurgeTrash = { vm.purgeTrashed(it) },
+                    onPurgeAllTrash = { vm.purgeAllTrashed() },
                 )
 
                 Screen.Agents.name -> SubagentsScreen(
@@ -370,7 +464,7 @@ private fun DshAppContent(vm: AppViewModel) {
                     maxDepth = vm.agentMaxDepth,
                     loading = vm.subagentsLoading,
                     onOpenDrawer = openDrawer,
-                    onBack = backToSettings,
+                    onBack = backFromPage,
                     onRefresh = { vm.refreshSubagents() },
                     onOpen = { vm.openSubagentSession(it.id) },
                     onStop = { vm.stopSubagent(it.id) },
@@ -379,7 +473,7 @@ private fun DshAppContent(vm: AppViewModel) {
                 Screen.Jobs.name -> JobsScreen(
                     jobs = vm.jobs,
                     onOpenDrawer = openDrawer,
-                    onBack = backToSettings,
+                    onBack = backFromPage,
                     onRefresh = { vm.refreshJobs() },
                     onStop = { vm.stopJob(it) },
                     onPeek = { vm.peekJob(it) },
@@ -393,7 +487,7 @@ private fun DshAppContent(vm: AppViewModel) {
                     workspacePath = vm.workspacePath,
                     initialDetailId = vm.debugPluginDetailId,
                     onOpenDrawer = openDrawer,
-                    onBack = backToSettings,
+                    onBack = backFromPage,
                     onRefresh = { vm.refreshPlugins() },
                     onImport = { uri -> vm.importPlugin(uri) },
                     onToggle = { id, enabled -> vm.setPluginEnabled(id, enabled) },
@@ -405,7 +499,7 @@ private fun DshAppContent(vm: AppViewModel) {
                     onOpenPluginWindow = { record -> vm.openClientPluginWindow(record) },
                 )
 
-                Screen.Terminal.name -> TerminalPage(onBack = backToSettings)
+                Screen.Terminal.name -> TerminalPage(onBack = backFromPage)
 
                 Screen.Packages.name -> PackagesScreen(
                     plugins = vm.pluginsUi,
@@ -420,7 +514,7 @@ private fun DshAppContent(vm: AppViewModel) {
                     skillNotice = vm.skillNotice,
                     homeDir = vm.filesDirPath,
                     workspaceDir = vm.workspacePath,
-                    onBack = { go(Screen.Settings) },
+                    onBack = backFromPage,
                     onRefreshPlugins = { vm.refreshPlugins() },
                     onImportPlugin = { uri -> vm.importPlugin(uri) },
                     onTogglePlugin = { id, enabled -> vm.setPluginEnabled(id, enabled) },
@@ -431,44 +525,47 @@ private fun DshAppContent(vm: AppViewModel) {
                     onDismissPluginNotice = { vm.dismissPluginNotice() },
                     onLoadOperitPackages = { vm.loadOperitPackages() },
                     onInstallOperitPackage = { id -> vm.installOperitPackage(id) },
+                    onSetOperitPackageEnabled = { id, enabled -> vm.setOperitPackageEnabled(id, enabled) },
                     onRefreshSkills = { vm.refreshSkills() },
                     onImportSkill = { uri -> vm.importSkill(uri) },
+                    onSetSkillEnabled = { name, enabled -> vm.setSkillEnabled(name, enabled) },
+                    onDeleteSkill = { skill -> vm.deleteSkill(skill) },
                     onDismissSkillNotice = { vm.dismissSkillNotice() },
                 )
 
-                Screen.VirtualScreen.name -> VirtualScreenPage(onBack = { go(Screen.Settings) })
+                Screen.VirtualScreen.name -> VirtualScreenPage(onBack = backFromPage)
 
-                Screen.Memory.name -> MemoryScreen(onBack = { go(Screen.Settings) })
+                Screen.Memory.name -> MemoryScreen(onBack = backFromPage)
 
-                Screen.Accessibility.name -> AccessibilityScreen(onBack = { go(Screen.Settings) })
+                Screen.Accessibility.name -> AccessibilityScreen(onBack = backFromPage)
 
                 else -> {
                     when (subScreen) {
                         SubScreen.ModelConfig -> ModelConfigScreen(
                             settings = vm.settings,
-                            onBack = { subScreenName = null },
+                            onBack = { navForward = false; subScreenName = null },
                             onTestConnection = { vm.testConnection() },
                             onFetchModels = { vm.fetchModels() },
                         )
                         SubScreen.Assistant -> AssistantScreen(
                             settings = vm.settings,
                             plugins = vm.pluginsUi,
-                            onBack = { subScreenName = null },
+                            onBack = { navForward = false; subScreenName = null },
                         )
                         SubScreen.Behavior -> BehaviorScreen(
                             settings = vm.settings,
-                            onBack = { subScreenName = null },
+                            onBack = { navForward = false; subScreenName = null },
                         )
                         SubScreen.Privacy -> PrivacyScreen(
                             settings = vm.settings,
-                            onBack = { subScreenName = null },
+                            onBack = { navForward = false; subScreenName = null },
                             onOpenSessions = {
                                 subScreenName = null
                                 go(Screen.Sessions)
                             },
                         )
                         SubScreen.Backup -> BackupScreen(
-                            onBack = { subScreenName = null },
+                            onBack = { navForward = false; subScreenName = null },
                             onRestored = { vm.onRestoredFromBackup() },
                             currentWorkspace = vm.workspacePath,
                         )
@@ -476,7 +573,7 @@ private fun DshAppContent(vm: AppViewModel) {
                             sessionsRoot = vm.sessionsDir,
                             initialPath = vm.importRequest,
                             onInitialPathConsumed = { vm.consumeImportRequest() },
-                            onBack = { subScreenName = null },
+                            onBack = { navForward = false; subScreenName = null },
                             onImported = { vm.refreshSessions() },
                             onOpenSessions = {
                                 subScreenName = null
@@ -491,12 +588,12 @@ private fun DshAppContent(vm: AppViewModel) {
                             homeDir = vm.filesDirPath,
                             workspaceDir = vm.workspacePath,
                             onRefresh = { vm.refreshSkills() },
-                            onBack = { subScreenName = null },
+                            onBack = { navForward = false; subScreenName = null },
                         )
                         SubScreen.Workspaces -> WorkspacesScreen(
                             workspaces = vm.workspaces,
                             currentPath = vm.workspacePath,
-                            onBack = { subScreenName = null },
+                            onBack = { navForward = false; subScreenName = null },
                             onSwitch = { path ->
                                 vm.switchWorkspace(path)
                                 screenName = null
@@ -507,7 +604,7 @@ private fun DshAppContent(vm: AppViewModel) {
                             onDelete = { id -> vm.deleteWorkspace(id) },
                         )
                         SubScreen.Permissions -> xin.dshaa.nativeapp.ui.permissions.PermissionsScreen(
-                            onBack = { subScreenName = null },
+                            onBack = { navForward = false; subScreenName = null },
                         )
                         null -> SettingsScreen(
                             settings = vm.settings,
@@ -530,6 +627,7 @@ private fun DshAppContent(vm: AppViewModel) {
                         )
                     }
                 }
+            }
             }
         }
     }

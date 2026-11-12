@@ -37,8 +37,9 @@ import xin.dshaa.core.session.SessionSession
 import xin.dshaa.core.tools.ToolResult
 import java.util.Base64
 
-/** 单轮内最多的「模型 → 工具 → 模型」往返次数（与抽出前一致）。 */
-private const val MAX_ROUNDS = 12
+// 2026-11-12（用户：长任务干一半自己停）：这里原来有「单轮最多 12 步」的上限，一条诊断任务
+// 跑到第 12 步就被截断，而且是静默退出（turn/end=completed、没有任何提示）。用户明确要求
+// 不要上限：循环只在模型自己不再调用工具、max_tokens、用户停止/取消时结束（上游主循环同样没有上限）。
 
 /** 计划模式切换的 narration（上游 `dsh-plan-mode` `narration()` 逐字）。 */
 internal const val PLAN_ON_NOTICE = "The user switched this session to plan mode."
@@ -262,7 +263,9 @@ class TurnEngine(private val deps: EngineDeps) {
             var round = 0
             // 已从注册表取走、等下一个 step 起点落库的后台任务通知
             val queuedNotices = ArrayList<UserNotice>()
-            while (round < MAX_ROUNDS) {
+            // 不设步数上限（2026-11-12 用户要求）：模型继续调工具就继续跑，
+            // 只有模型自己停（toolCalls 为空）、max_tokens、用户停止/取消才会结束。
+            while (true) {
                 round++
                 if (round > 1) {
                     // 第二个及以后的 step：计划模式 pending 在 step/start 之前落库（上游 pre-step），
@@ -613,6 +616,10 @@ class TurnEngine(private val deps: EngineDeps) {
                 // 上游把 additionalContexts 接在这一步的工具结果后面，不插进 tool_result 中间。
                 val deferredNotices = ArrayList<xin.dshaa.core.tools.GoalNotice>()
                 for (call in toolCalls) {
+                    // M79（用户 2026-11-12「调用工具的时候点停止不能立刻停」）：
+                    // 工具可能吞掉 CancellationException（内部 runCatching 包了 Throwable），
+                    // 每进一个工具再显式确认一次「用户是否已经点了停止」。
+                    if (deps.stop.requested) throw kotlinx.coroutines.CancellationException("stopped by user")
                     ui.setStatus("运行工具 ${call.name}…")
                     if (!deps.approval(call)) {
                         val denied = ToolResult.err("User denied this tool call.")
@@ -1050,7 +1057,7 @@ class TurnEngine(private val deps: EngineDeps) {
     ): Boolean {
         val tag = trigger.logTag
         val window = deps.contextWindow() ?: 0
-        val policy = Compaction.Policy.resolve(window, config.maxTokens)
+        val policy = Compaction.Policy.resolve(window, config.maxTokens, deps.compactionRatio())
         if (trigger == CompactionTrigger.PRESSURE && policy == null) {
             val key = "${config.model}|$window|${config.maxTokens}"
             if (warnedCompactionTargets.add(key)) {
