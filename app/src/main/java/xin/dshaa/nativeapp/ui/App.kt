@@ -349,6 +349,8 @@ private fun DshAppContent(vm: AppViewModel) {
                             assistantOpening = vm.settings.assistantOpening,
                             expandThinking = vm.settings.expandThinking,
                             imagePath = { id -> vm.imagePathFor(id) },
+                            // 会话工作区根：`present` 交付物卡把相对路径拼成绝对路径用
+                            workspacePath = vm.workspacePath,
                             onOpenDrawer = openDrawer,
                             menuVisible = !wideLayout,
                             onNewChat = { vm.newChat() },

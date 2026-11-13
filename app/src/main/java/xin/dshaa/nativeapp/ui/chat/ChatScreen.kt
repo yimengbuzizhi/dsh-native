@@ -191,6 +191,13 @@ fun ChatScreen(
     /** 附件 id → 本地图片路径（read_image 的缩略图用；null = 附件缺失）。 */
     imagePath: (String) -> String?,
     /**
+     * 会话工作区根目录：`present` 卡片用它把模型给的**相对路径**拼成绝对路径。
+     * 上游契约（tools.json 的 present.path）写明「Relative paths use the Session working directory」，
+     * 所以相对路径是合法调用，卡片必须自己按工作区解析，不能当绝对路径用。
+     * null = 只认绝对路径（老调用方行为不变）。
+     */
+    workspacePath: String? = null,
+    /**
      * 左上角三条杠：打开侧边栏（2026-11-07 RikkaHub 外壳）。
      * 聊天页是 App 的落地页，返回键不再用来「退出聊天」。
      */
@@ -766,6 +773,7 @@ fun ChatScreen(
                                 }
                                 is ChatRow.Assistant -> AssistantTurn(
                                     row.messages, results, assistantName, assistantAvatar, expandThinking, imagePath,
+                                    workspacePath = workspacePath,
                                     linksEnabled = !state.streaming,
                                     // 工具执行期间 assistant 消息本身已「不再流式」，但整轮还在跑：
                                     // 折叠行要按轮次状态显示活动标题，不能显示「已完成」
@@ -2269,6 +2277,8 @@ private fun AssistantTurn(
     assistantAvatar: String,
     expandThinking: Boolean,
     imagePath: (String) -> String?,
+    /** 会话工作区根：`present` 卡片解析相对路径（见 [ChatScreen] 的同名参数）。 */
+    workspacePath: String? = null,
     /** 整轮还在跑（工具执行中 assistant 消息可能已不在流式），折叠行要显示活动标题。 */
     turnRunning: Boolean = false,
     /** 轮次进行中不显示工具卡跳转：切页/开子会话会取消当前 turn。 */
@@ -2359,7 +2369,13 @@ private fun AssistantTurn(
                 if (foldProcessBlocks) return@forEach
                 Spacer(Modifier.height(8.dp))
                 if (call.name == "present") {
-                    PresentedCard(arguments = call.arguments)
+                    // 卡片要拿工具结果：里面才有按会话 cwd 解析过的**绝对路径**和文件大小
+                    // （模型给的 path 可能是相对路径，见 PresentedCard 的注释）。
+                    PresentedCard(
+                        arguments = call.arguments,
+                        result = call.toolCallId?.let { results[it] },
+                        workspacePath = workspacePath,
+                    )
                 } else {
                     ToolCallCard(
                         name = call.name.orEmpty(),
@@ -2587,12 +2603,25 @@ private fun ThinkingTitle(title: String, pulse: Float?) {
 
 private fun Int.toDp() = this.dp
 
-/** `present` 的交付物卡：文件名 + 说明 + 打开（FileProvider）。 */
+/**
+ * `present` 的交付物卡：文件名 + 说明 + 大小 + 打开 / 分享（FileProvider）。
+ *
+ * 路径解析顺序（修复「点打开必然打不开」）：
+ * 1. 工具结果里每行的**绝对路径**——PresentTool 用 `resolvePath(path, ctx)` 按会话 cwd 解析过，
+ *    是最权威的值（子会话 / 自定义 cwd 也对）；
+ * 2. 结果缺失（压缩、工具结果修剪之后的历史卡片）时，用 [workspacePath] 把相对路径拼成绝对路径；
+ * 3. 都拿不到 → 显示「位置未知」、不出现按钮，绝不再把相对路径当绝对路径用。
+ *
+ * 上游契约：`tools.json` 里 present.path 写着 "Relative paths use the Session working
+ * directory"，所以模型传相对路径是合法调用，客户端必须自己补上工作区。
+ */
 @Composable
-private fun PresentedCard(arguments: String) {
+private fun PresentedCard(arguments: String, result: ChatMessage?, workspacePath: String?) {
     val c = DshTheme2.colors
     val context = LocalContext.current
-    val files = remember(arguments) { parsePresentedFiles(arguments) }
+    val files = remember(arguments, result, workspacePath) {
+        mergePresentedResult(parsePresentedFiles(arguments), parsePresentedResult(result))
+    }
     if (files.isEmpty()) return
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -2612,13 +2641,14 @@ private fun PresentedCard(arguments: String) {
                 )
             }
             files.forEach { file ->
+                val target = remember(file, workspacePath) { resolvePresentedFile(workspacePath, file) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(c.brandSoft),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            file.name.substringAfterLast('.', "").take(4).ifBlank { "FILE" }.uppercase(),
+                            file.extensionLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = c.brandBright,
                             fontWeight = FontWeight.Bold,
@@ -2635,30 +2665,62 @@ private fun PresentedCard(arguments: String) {
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            file.description.ifBlank { file.path },
+                            // 说明 + 大小（大小来自工具结果；没有结果时退回原始 path）
+                            listOf(file.description.ifBlank { file.path }, file.size)
+                                .filter { it.isNotBlank() }
+                                .joinToString(" · "),
                             style = MaterialTheme.typography.bodySmall,
                             color = c.sub,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Text(
-                        "打开",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = c.brandBright,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { openPresentedFile(context, file.path) }
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                    )
+                    if (target != null) {
+                        PresentedAction("打开") { openPresentedFile(context, target) }
+                        PresentedAction("分享") { sharePresentedFile(context, target) }
+                    } else {
+                        Text(
+                            "位置未知",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = c.faint,
+                            modifier = Modifier.padding(horizontal = 6.dp),
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-private data class PresentedFile(val path: String, val description: String) {
-    val name: String get() = path.substringAfterLast('/')
+/** 卡片行尾的小按钮（打开 / 分享）。 */
+@Composable
+private fun PresentedAction(label: String, onClick: () -> Unit) {
+    val c = DshTheme2.colors
+    Text(
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        color = c.brandBright,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+    )
+}
+
+/**
+ * 一张交付物条目：模型给的原始 path + 说明 + 工具结果里解析出的绝对路径 / 大小。
+ * [absolutePath] 为空 = 结果里没解析到，改由工作区兜底或显示「位置未知」。
+ */
+private data class PresentedFile(
+    val path: String,
+    val description: String,
+    val absolutePath: String? = null,
+    val size: String = "",
+) {
+    private val displayPath: String get() = absolutePath ?: path
+    val name: String get() = displayPath.substringAfterLast('/')
+    val extensionLabel: String
+        get() = name.substringAfterLast('.', "").take(4).ifBlank { "FILE" }.uppercase()
 }
 
 private fun parsePresentedFiles(arguments: String): List<PresentedFile> {
@@ -2675,29 +2737,120 @@ private fun parsePresentedFiles(arguments: String): List<PresentedFile> {
     }
 }
 
-private fun openPresentedFile(context: android.content.Context, path: String) {
-    runCatching {
-        val file = java.io.File(path)
-        val uri = androidx.core.content.FileProvider.getUriForFile(context, "xin.dshaa.nativeapp.files", file)
-        val mime = mimeOf(file.name)
-        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-            .setDataAndType(uri, mime)
-            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        context.startActivity(intent)
-    }.onFailure {
-        android.widget.Toast.makeText(context, "打不开：${it.message}", android.widget.Toast.LENGTH_SHORT).show()
+/** 工具结果里的一行：`- /abs/path (1.2 KB) — 说明`。 */
+private data class PresentedResultLine(val absolutePath: String, val size: String)
+
+// 路径用**惰性**匹配：说明里带 ASCII 括号（"Q3 report (final)"）时，贪婪的 .+ 会吞掉
+// "(1.2 KB) — 说明" 整段当路径，导致 file.exists() 为假、误报「文件已不存在」。
+private val presentedLineRegex = Regex("""^-\s+(.+?)\s+\(([^()]*)\)(?:\s+[—–-]\s+(.*))?$""")
+
+/**
+ * 从 present 的结果文本里解析「绝对路径 + 大小」。
+ * 结果文本是 `ToolResult.ok("Presented N file(s):\n- {absolutePath} ({humanSize}) — {desc}")`，
+ * 与 [ToolCallCard] 取结果文本的写法一致（只取 TEXT 块）。
+ */
+private fun parsePresentedResult(result: ChatMessage?): List<PresentedResultLine> {
+    val text = result?.content
+        ?.filter { it.type == BlockType.TEXT }
+        ?.joinToString("") { it.text }
+        .orEmpty()
+    if (text.isBlank()) return emptyList()
+    return text.lineSequence().mapNotNull { raw ->
+        val m = presentedLineRegex.find(raw.trim()) ?: return@mapNotNull null
+        PresentedResultLine(absolutePath = m.groupValues[1], size = m.groupValues[2])
+    }.toList()
+}
+
+/**
+ * 把结果行合回参数列表：按文件名配对，配不上的保持原样（交给工作区兜底）。
+ * 不按顺序硬配——工具会跳过无效文件（"not a file"），顺序会错位。
+ */
+private fun mergePresentedResult(
+    files: List<PresentedFile>,
+    lines: List<PresentedResultLine>,
+): List<PresentedFile> {
+    if (files.isEmpty() || lines.isEmpty()) return files
+    val unused = lines.toMutableList()
+    return files.map { file ->
+        val name = file.path.substringAfterLast('/')
+        val hit = unused.firstOrNull { it.absolutePath.substringAfterLast('/') == name } ?: return@map file
+        unused.remove(hit)
+        file.copy(absolutePath = hit.absolutePath, size = hit.size)
+    }
+}
+
+/** 卡片条目的真实文件：结果里的绝对路径 > 工作区 + 相对路径 > null（不猜）。 */
+private fun resolvePresentedFile(workspacePath: String?, file: PresentedFile): File? {
+    file.absolutePath?.takeIf { it.isNotBlank() }?.let { return File(it) }
+    val raw = file.path
+    if (raw.isBlank()) return null
+    val direct = File(raw)
+    if (direct.isAbsolute) return direct
+    val root = workspacePath?.takeIf { it.isNotBlank() } ?: return null
+    return File(root, raw)
+}
+
+/** FileProvider 的 authority 与 AndroidManifest 里的声明一致（无 applicationIdSuffix）。 */
+private fun presentedFileUri(context: android.content.Context, file: File): Uri? = runCatching {
+    androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+}.onFailure {
+    Toast.makeText(context, "文件不在可分享的目录里：${file.name}", Toast.LENGTH_SHORT).show()
+}.getOrNull()
+
+/** 打开：先查存在（历史卡片可能指向已删除的文件），再 ACTION_VIEW。 */
+private fun openPresentedFile(context: android.content.Context, file: File) {
+    if (!file.exists()) {
+        Toast.makeText(context, "文件已不存在：${file.name}", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val uri = presentedFileUri(context, file) ?: return
+    val intent = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, mimeOf(file.name))
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    runCatching { context.startActivity(intent) }.onFailure {
+        Toast.makeText(context, "没有能打开 ${file.name} 的应用", Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** 分享：ACTION_SEND + clipData（部分接收方只认 clipData 里的读权限授予）。 */
+private fun sharePresentedFile(context: android.content.Context, file: File) {
+    if (!file.exists()) {
+        Toast.makeText(context, "文件已不存在：${file.name}", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val uri = presentedFileUri(context, file) ?: return
+    val intent = Intent(Intent.ACTION_SEND)
+        .setType(mimeOf(file.name))
+        .putExtra(Intent.EXTRA_STREAM, uri)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        .apply { clipData = android.content.ClipData.newRawUri(file.name, uri) }
+    runCatching { context.startActivity(Intent.createChooser(intent, "分享 ${file.name}")) }.onFailure {
+        Toast.makeText(context, "没有能分享 ${file.name} 的应用", Toast.LENGTH_SHORT).show()
     }
 }
 
 private fun mimeOf(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
-    "md" -> "text/markdown"
-    "txt", "log" -> "text/plain"
+    "md", "markdown" -> "text/markdown"
+    "txt", "log", "kt", "kts", "java", "py", "js", "ts", "sh", "xml", "yml", "yaml", "toml", "ini" -> "text/plain"
     "json" -> "application/json"
+    "csv" -> "text/csv"
+    "html", "htm" -> "text/html"
     "png" -> "image/png"
     "jpg", "jpeg" -> "image/jpeg"
+    "gif" -> "image/gif"
+    "webp" -> "image/webp"
+    "svg" -> "image/svg+xml"
     "pdf" -> "application/pdf"
-    "html", "htm" -> "text/html"
-    "csv" -> "text/csv"
+    "zip" -> "application/zip"
+    // present 的主用例：Office 文档 / 表格 / 幻灯片（旧实现落到 */*，选不出对应应用）
+    "doc" -> "application/msword"
+    "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    "xls" -> "application/vnd.ms-excel"
+    "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    "ppt" -> "application/vnd.ms-powerpoint"
+    "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    "mp4" -> "video/mp4"
+    "mp3" -> "audio/mpeg"
     else -> "*/*"
 }
 
