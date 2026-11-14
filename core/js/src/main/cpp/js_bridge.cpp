@@ -118,6 +118,7 @@ public:
     }
 
     ~JsMachine() {
+        CloseRuntime();
         JNIEnv* env = nullptr;
         if (bridge_ != nullptr && java_vm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK) {
             env->DeleteGlobalRef(bridge_);
@@ -128,8 +129,27 @@ public:
     JsMachine(const JsMachine&) = delete;
     JsMachine& operator=(const JsMachine&) = delete;
 
-    /// 执行一段 JS（全局脚本），阻塞到根 Promise settle 或中断。
+    /// 执行一段 JS（全局脚本），阻塞到根 Promise settle 或中断；runtime 用完立刻销毁。
     std::vector<uint8_t> Run(const std::vector<uint8_t>& code, const std::vector<uint8_t>& filename);
+
+    /**
+     * M84-H 常驻运行时：建一次 runtime/context，跑模块 + apply，**不销毁**。
+     *
+     * 之后每次 [Dispatch] 都在同一个 runtime 里调 JS 的全局 `__dshDispatch(method, payload)`，
+     * 等它结算（返回值可以是普通对象，也可以是 Promise）再看结果。插件注册的 per-event
+     * 回调（sessionProjections.apply 等）因此能保留闭包状态。
+     *
+     * 线程：Start/Dispatch/Shutdown 必须在**同一个线程**上调用（Kotlin 侧用单线程执行器保证）。
+     */
+    std::vector<uint8_t> Start(const std::vector<uint8_t>& code, const std::vector<uint8_t>& filename);
+
+    std::vector<uint8_t> Dispatch(const std::vector<uint8_t>& method, const std::vector<uint8_t>& payload);
+
+    /** 释放常驻 runtime（幂等）；之后可以重新 [Start]。 */
+    void Shutdown();
+
+    /** 常驻 runtime 是否已启动。 */
+    bool resident() const { return ctx_ != nullptr; }
 
     void Complete(int call_id, bool ok, const std::vector<uint8_t>& payload) {
         {
@@ -156,6 +176,27 @@ private:
     bool CurrentEnv(JNIEnv** env) {
         return java_vm_->GetEnv(reinterpret_cast<void**>(env), JNI_VERSION_1_6) == JNI_OK;
     }
+
+    /** 建 runtime/context 并装宿主 hook；失败返回 false（envelope 由调用方给）。 */
+    bool OpenRuntime();
+
+    /** 释放 runtime/context 与 pending；幂等。 */
+    void CloseRuntime();
+
+    /** 清空根结果槽（每次 Start/Dispatch 前调用，避免上一次的 JSValue 泄漏）。 */
+    void ResetRoot();
+
+    /**
+     * 跑一段脚本（脚本里用顶层 `return` 交结果）并阻塞等根 Promise settle。
+     * 返回 envelope JSON；返回前把根结果槽复位。
+     */
+    std::vector<uint8_t> EvalAndSettle(const std::string& wrapped, const std::string& name);
+
+    /** 阻塞等 done_/cancelled_，结算成 envelope 并复位根结果槽。 */
+    std::vector<uint8_t> WaitSettle();
+
+    /** 把一个 JS 返回值接到 __dshDone/__dshFail（thenable 才挂 then）。 */
+    void AdoptRootResult(JSContext* ctx, JSValueConst value);
 
     static jbyteArray ToBytes(JNIEnv* env, const std::string& text) {
         jbyteArray array = env->NewByteArray(static_cast<jsize>(text.size()));
@@ -400,31 +441,31 @@ private:
     std::atomic_int next_call_id_{0};
     std::unordered_map<int, PendingCall> pending_;  // 只在 JS 线程上访问
 
+    // 常驻运行时（M84-H）：Start 建好、Dispatch 复用、Shutdown 释放。
+    JSRuntime* runtime_ = nullptr;
+    JSContext* ctx_ = nullptr;
+
     // 根结果（只在 JS 线程上读写）：脚本以 done/fail 回调交回，避免依赖 PromiseState。
     bool done_ = false;
     bool ok_ = true;
     JSValue value_ = JS_UNDEFINED;
 };
 
-std::vector<uint8_t> JsMachine::Run(const std::vector<uint8_t>& code, const std::vector<uint8_t>& filename) {
-    const std::string name(filename.begin(), filename.end());
+bool JsMachine::OpenRuntime() {
+    if (runtime_ != nullptr) return true;
     JSRuntime* runtime = JS_NewRuntime();
-    if (runtime == nullptr) {
-        std::string envelope = ErrorEnvelope("JS_NewRuntime failed");
-        return std::vector<uint8_t>(envelope.begin(), envelope.end());
-    }
+    if (runtime == nullptr) return false;
     JS_SetRuntimeOpaque(runtime, this);
     JS_SetMemoryLimit(runtime, 256ull * 1024 * 1024);
     JS_SetMaxStackSize(runtime, 4ull * 1024 * 1024);
     JS_SetInterruptHandler(runtime, &JsMachine::InterruptHandler, this);
-
     JSContext* ctx = JS_NewContext(runtime);
     if (ctx == nullptr) {
         JS_FreeRuntime(runtime);
-        std::string envelope = ErrorEnvelope("JS_NewContext failed");
-        return std::vector<uint8_t>(envelope.begin(), envelope.end());
+        return false;
     }
-
+    runtime_ = runtime;
+    ctx_ = ctx;
     {
         JSValue global = JS_GetGlobalObject(ctx);
         JS_SetPropertyStr(ctx, global, "__dshCallSync",
@@ -437,30 +478,37 @@ std::vector<uint8_t> JsMachine::Run(const std::vector<uint8_t>& code, const std:
                           JS_NewCFunction(ctx, &JsMachine::HostFail, "__dshFail", 1));
         JS_FreeValue(ctx, global);
     }
+    return true;
+}
 
-    // 统一包装：脚本可以是普通表达式或返回 Promise 的表达式；两路最终都汇到 done/fail。
-    // 之所以不读 JS_PromiseState/JS_PromiseResult：QuickJS 的 promise 状态读取对
-    // 非 Promise 值/特定返回形态不可靠（真机实测过同一脚本偶发空错误栈），回调最稳。
-    std::string wrapped =
-        "(function(){ try { const __r = (function(){\n";
-    wrapped.append(reinterpret_cast<const char*>(code.data()), code.size());
-    wrapped += "\n})(); if (__r && typeof __r.then === \"function\") { __r.then(__dshDone, __dshFail); } "
-               "else { __dshDone(__r); } } catch (__e) { __dshFail(__e); } })();";
-
-    active_.store(true);
-    JSValue evaluated = JS_Eval(ctx, wrapped.c_str(), wrapped.size(), name.c_str(), JS_EVAL_TYPE_GLOBAL);
-    if (JS_IsException(evaluated)) {
-        JSValue exception = JS_GetException(ctx);
-        std::string rendered = RenderThrown(ctx, exception);
-        JS_FreeValue(ctx, exception);
-        active_.store(false);
-        JS_FreeContext(ctx);
-        JS_FreeRuntime(runtime);
-        std::string envelope = ErrorEnvelope(rendered);
-        return std::vector<uint8_t>(envelope.begin(), envelope.end());
+void JsMachine::CloseRuntime() {
+    if (ctx_ == nullptr && runtime_ == nullptr) return;
+    active_.store(false);
+    ResetRoot();
+    if (ctx_ != nullptr) {
+        JS_FreeContext(ctx_);  // 未结算的 pending JSValue 随 runtime 释放
+        ctx_ = nullptr;
     }
-    JS_FreeValue(ctx, evaluated);
+    if (runtime_ != nullptr) {
+        JS_FreeRuntime(runtime_);
+        runtime_ = nullptr;
+    }
+    pending_.clear();
+    {
+        std::lock_guard<std::mutex> guard(lock_);
+        queue_.clear();
+    }
+}
 
+void JsMachine::ResetRoot() {
+    if (ctx_ != nullptr && !JS_IsUndefined(value_)) JS_FreeValue(ctx_, value_);
+    value_ = JS_UNDEFINED;
+    done_ = false;
+    ok_ = true;
+}
+
+std::vector<uint8_t> JsMachine::WaitSettle() {
+    JSContext* ctx = ctx_;
     std::string envelope = "{\"status\":\"interrupted\"}";
     for (;;) {
         if (done_) {
@@ -468,7 +516,7 @@ std::vector<uint8_t> JsMachine::Run(const std::vector<uint8_t>& code, const std:
             break;
         }
         JSContext* job_context = nullptr;
-        while (JS_ExecutePendingJob(runtime, &job_context) > 0) {
+        while (JS_ExecutePendingJob(runtime_, &job_context) > 0) {
         }
         if (ApplyCompletions(ctx)) continue;
         if (cancelled_.load()) {
@@ -484,15 +532,133 @@ std::vector<uint8_t> JsMachine::Run(const std::vector<uint8_t>& code, const std:
             return !queue_.empty() || cancelled_.load();
         });
     }
-
     active_.store(false);
-    if (!JS_IsUndefined(value_)) JS_FreeValue(ctx, value_);
-    value_ = JS_UNDEFINED;
-    JS_FreeContext(ctx);
-    JS_FreeRuntime(runtime);  // 未结算的 pending JSValue 随 runtime 释放
-    pending_.clear();
+    ResetRoot();
     return std::vector<uint8_t>(envelope.begin(), envelope.end());
 }
+
+std::vector<uint8_t> JsMachine::EvalAndSettle(const std::string& wrapped, const std::string& name) {
+    ResetRoot();
+    cancelled_.store(false);
+    active_.store(true);
+    JSValue evaluated = JS_Eval(ctx_, wrapped.c_str(), wrapped.size(), name.c_str(), JS_EVAL_TYPE_GLOBAL);
+    if (JS_IsException(evaluated)) {
+        JSValue exception = JS_GetException(ctx_);
+        std::string rendered = RenderThrown(ctx_, exception);
+        JS_FreeValue(ctx_, exception);
+        active_.store(false);
+        ResetRoot();
+        std::string envelope = ErrorEnvelope(rendered);
+        return std::vector<uint8_t>(envelope.begin(), envelope.end());
+    }
+    JS_FreeValue(ctx_, evaluated);
+    return WaitSettle();
+}
+
+void JsMachine::AdoptRootResult(JSContext* ctx, JSValueConst value) {
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue done = JS_GetPropertyStr(ctx, global, "__dshDone");
+    JSValue fail = JS_GetPropertyStr(ctx, global, "__dshFail");
+    JSValue then = JS_UNDEFINED;
+    bool thenable = false;
+    if (JS_IsObject(value) || JS_IsFunction(ctx, value)) {
+        then = JS_GetPropertyStr(ctx, value, "then");
+        thenable = JS_IsFunction(ctx, then);
+    }
+    JSValue ignored;
+    if (thenable) {
+        JSValueConst args[2] = {done, fail};
+        ignored = JS_Call(ctx, then, value, 2, args);
+    } else {
+        JSValueConst args[1] = {value};
+        ignored = JS_Call(ctx, done, JS_UNDEFINED, 1, args);
+    }
+    if (JS_IsException(ignored)) JS_FreeValue(ctx, JS_GetException(ctx));
+    else JS_FreeValue(ctx, ignored);
+    if (thenable) JS_FreeValue(ctx, then);
+    JS_FreeValue(ctx, done);
+    JS_FreeValue(ctx, fail);
+    JS_FreeValue(ctx, global);
+}
+
+std::vector<uint8_t> JsMachine::Run(const std::vector<uint8_t>& code, const std::vector<uint8_t>& filename) {
+    const std::string name(filename.begin(), filename.end());
+    if (!OpenRuntime()) {
+        std::string envelope = ErrorEnvelope(runtime_ == nullptr ? "JS_NewRuntime failed" : "JS_NewContext failed");
+        return std::vector<uint8_t>(envelope.begin(), envelope.end());
+    }
+
+    // 统一包装：脚本可以是普通表达式或返回 Promise 的表达式；两路最终都汇到 done/fail。
+    // 之所以不读 JS_PromiseState/JS_PromiseResult：QuickJS 的 promise 状态读取对
+    // 非 Promise 值/特定返回形态不可靠（真机实测过同一脚本偶发空错误栈），回调最稳。
+    std::string wrapped =
+        "(function(){ try { const __r = (function(){\n";
+    wrapped.append(reinterpret_cast<const char*>(code.data()), code.size());
+    wrapped += "\n})(); if (__r && typeof __r.then === \"function\") { __r.then(__dshDone, __dshFail); } "
+               "else { __dshDone(__r); } } catch (__e) { __dshFail(__e); } })();";
+
+    std::vector<uint8_t> result = EvalAndSettle(wrapped, name);
+    CloseRuntime();
+    return result;
+}
+
+std::vector<uint8_t> JsMachine::Start(const std::vector<uint8_t>& code, const std::vector<uint8_t>& filename) {
+    if (ctx_ != nullptr) {
+        std::string envelope = ErrorEnvelope("resident runtime already started");
+        return std::vector<uint8_t>(envelope.begin(), envelope.end());
+    }
+    const std::string name(filename.begin(), filename.end());
+    if (!OpenRuntime()) {
+        std::string envelope = ErrorEnvelope(runtime_ == nullptr ? "JS_NewRuntime failed" : "JS_NewContext failed");
+        return std::vector<uint8_t>(envelope.begin(), envelope.end());
+    }
+    std::string wrapped =
+        "(function(){ try { const __r = (function(){\n";
+    wrapped.append(reinterpret_cast<const char*>(code.data()), code.size());
+    wrapped += "\n})(); if (__r && typeof __r.then === \"function\") { __r.then(__dshDone, __dshFail); } "
+               "else { __dshDone(__r); } } catch (__e) { __dshFail(__e); } })();";
+    return EvalAndSettle(wrapped, name);
+}
+
+std::vector<uint8_t> JsMachine::Dispatch(const std::vector<uint8_t>& method, const std::vector<uint8_t>& payload) {
+    if (ctx_ == nullptr) {
+        std::string envelope = ErrorEnvelope("resident runtime is not started");
+        return std::vector<uint8_t>(envelope.begin(), envelope.end());
+    }
+    ResetRoot();
+    cancelled_.store(false);
+    active_.store(true);
+    JSValue global = JS_GetGlobalObject(ctx_);
+    JSValue fn = JS_GetPropertyStr(ctx_, global, "__dshDispatch");
+    JS_FreeValue(ctx_, global);
+    if (!JS_IsFunction(ctx_, fn)) {
+        JS_FreeValue(ctx_, fn);
+        active_.store(false);
+        std::string envelope = ErrorEnvelope("__dshDispatch is not defined by the plugin script");
+        return std::vector<uint8_t>(envelope.begin(), envelope.end());
+    }
+    const std::string method_text(method.begin(), method.end());
+    JSValue args[2] = {
+        JS_NewStringLen(ctx_, method_text.c_str(), method_text.size()),
+        JS_NewStringLen(ctx_, reinterpret_cast<const char*>(payload.data()), payload.size()),
+    };
+    JSValue result = JS_Call(ctx_, fn, JS_UNDEFINED, 2, args);
+    JS_FreeValue(ctx_, args[0]);
+    JS_FreeValue(ctx_, args[1]);
+    JS_FreeValue(ctx_, fn);
+    if (JS_IsException(result)) {
+        JSValue exception = JS_GetException(ctx_);
+        std::string rendered = RenderThrown(ctx_, exception);
+        JS_FreeValue(ctx_, exception);
+        active_.store(false);
+        return std::vector<uint8_t>(ErrorEnvelope(rendered).begin(), ErrorEnvelope(rendered).end());
+    }
+    AdoptRootResult(ctx_, result);
+    JS_FreeValue(ctx_, result);
+    return WaitSettle();
+}
+
+void JsMachine::Shutdown() { CloseRuntime(); }
 
 JsMachine* FromHandle(jlong handle) { return reinterpret_cast<JsMachine*>(handle); }
 
@@ -557,4 +723,63 @@ extern "C" JNIEXPORT void JNICALL
 Java_xin_dshaa_core_js_NativeQuickJs_interrupt(JNIEnv*, jobject, jlong handle) {
     JsMachine* machine = FromHandle(handle);
     if (machine != nullptr) machine->Interrupt();
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_xin_dshaa_core_js_NativeQuickJs_start(JNIEnv* env, jobject, jlong handle, jbyteArray code, jbyteArray filename) {
+    JsMachine* machine = FromHandle(handle);
+    if (machine == nullptr || code == nullptr) return nullptr;
+    std::vector<uint8_t> code_bytes;
+    std::vector<uint8_t> filename_bytes;
+    {
+        jsize length = env->GetArrayLength(code);
+        code_bytes.resize(static_cast<size_t>(length));
+        if (length > 0) env->GetByteArrayRegion(code, 0, length, reinterpret_cast<jbyte*>(code_bytes.data()));
+    }
+    if (filename != nullptr) {
+        jsize length = env->GetArrayLength(filename);
+        filename_bytes.resize(static_cast<size_t>(length));
+        if (length > 0) env->GetByteArrayRegion(filename, 0, length, reinterpret_cast<jbyte*>(filename_bytes.data()));
+    }
+    std::vector<uint8_t> result = machine->Start(code_bytes, filename_bytes);
+    jbyteArray array = env->NewByteArray(static_cast<jsize>(result.size()));
+    if (array == nullptr) return nullptr;
+    if (!result.empty()) {
+        env->SetByteArrayRegion(array, 0, static_cast<jsize>(result.size()),
+                                reinterpret_cast<const jbyte*>(result.data()));
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_xin_dshaa_core_js_NativeQuickJs_dispatch(JNIEnv* env, jobject, jlong handle, jbyteArray method,
+                                              jbyteArray payload) {
+    JsMachine* machine = FromHandle(handle);
+    if (machine == nullptr || method == nullptr) return nullptr;
+    std::vector<uint8_t> method_bytes;
+    std::vector<uint8_t> payload_bytes;
+    {
+        jsize length = env->GetArrayLength(method);
+        method_bytes.resize(static_cast<size_t>(length));
+        if (length > 0) env->GetByteArrayRegion(method, 0, length, reinterpret_cast<jbyte*>(method_bytes.data()));
+    }
+    if (payload != nullptr) {
+        jsize length = env->GetArrayLength(payload);
+        payload_bytes.resize(static_cast<size_t>(length));
+        if (length > 0) env->GetByteArrayRegion(payload, 0, length, reinterpret_cast<jbyte*>(payload_bytes.data()));
+    }
+    std::vector<uint8_t> result = machine->Dispatch(method_bytes, payload_bytes);
+    jbyteArray array = env->NewByteArray(static_cast<jsize>(result.size()));
+    if (array == nullptr) return nullptr;
+    if (!result.empty()) {
+        env->SetByteArrayRegion(array, 0, static_cast<jsize>(result.size()),
+                                reinterpret_cast<const jbyte*>(result.data()));
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_xin_dshaa_core_js_NativeQuickJs_shutdown(JNIEnv*, jobject, jlong handle) {
+    JsMachine* machine = FromHandle(handle);
+    if (machine != nullptr) machine->Shutdown();
 }

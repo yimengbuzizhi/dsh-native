@@ -17,6 +17,7 @@ import xin.dshaa.core.protocol.ProtocolJson
 import xin.dshaa.core.protocol.SseReader
 import xin.dshaa.core.protocol.StreamErrorBody
 import xin.dshaa.core.protocol.StreamParser
+import xin.dshaa.core.protocol.TokenUsage
 import java.util.concurrent.TimeUnit
 
 /**
@@ -50,14 +51,22 @@ interface SseTap {
 }
 
 sealed interface LlmEvent {
-    data class MessageStart(val id: String?, val model: String?, val inputTokens: Int) : LlmEvent
+    data class MessageStart(
+        val id: String?, val model: String?, val inputTokens: Int,
+        /** Cumulative normalized snapshot. Legacy zero means unknown; new adapters pass explicit zero. */
+        val usage: TokenUsage = TokenUsage(inputTokens = inputTokens.takeIf { it > 0 }),
+    ) : LlmEvent
     data class BlockStart(val index: Int, val type: String, val toolId: String?, val toolName: String?) : LlmEvent
     data class TextDelta(val index: Int, val text: String) : LlmEvent
     data class ThinkingDelta(val index: Int, val text: String) : LlmEvent
     data class SignatureDelta(val index: Int, val signature: String) : LlmEvent
     data class ToolInputDelta(val index: Int, val partialJson: String) : LlmEvent
     data class BlockStop(val index: Int) : LlmEvent
-    data class MessageDelta(val stopReason: String?, val outputTokens: Int) : LlmEvent
+    data class MessageDelta(
+        val stopReason: String?, val outputTokens: Int,
+        /** Snapshot totals, never increments. May carry late input/cache fields too. */
+        val usage: TokenUsage = TokenUsage(outputTokens = outputTokens.takeIf { it > 0 }),
+    ) : LlmEvent
     data object MessageStop : LlmEvent
     data class Failed(
         val message: String,
@@ -130,7 +139,7 @@ class LlmClient(
                         is SseReader.Event.Data -> {
                             when (val ev = StreamParser.parse(sse.payload)) {
                                 is StreamParser.Event.MessageStart ->
-                                    emit(LlmEvent.MessageStart(ev.id, ev.model, ev.inputTokens))
+                                    emit(LlmEvent.MessageStart(ev.id, ev.model, ev.inputTokens, ev.usage))
                                 is StreamParser.Event.BlockStart ->
                                     emit(LlmEvent.BlockStart(ev.index, ev.type, ev.toolId, ev.toolName))
                                 is StreamParser.Event.TextDelta -> emit(LlmEvent.TextDelta(ev.index, ev.text))
@@ -139,7 +148,7 @@ class LlmClient(
                                 is StreamParser.Event.ToolInputDelta -> emit(LlmEvent.ToolInputDelta(ev.index, ev.partialJson))
                                 is StreamParser.Event.BlockStop -> emit(LlmEvent.BlockStop(ev.index))
                                 is StreamParser.Event.MessageDelta ->
-                                    emit(LlmEvent.MessageDelta(ev.stopReason, ev.outputTokens))
+                                    emit(LlmEvent.MessageDelta(ev.stopReason, ev.outputTokens, ev.usage))
                                 StreamParser.Event.MessageStop -> emit(LlmEvent.MessageStop)
                                 StreamParser.Event.Ping -> Unit
                                 is StreamParser.Event.Error ->

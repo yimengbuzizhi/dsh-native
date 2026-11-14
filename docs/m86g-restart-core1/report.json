@@ -1,0 +1,129 @@
+{
+  "fixture": "M86-G-real-process-restart",
+  "version": 1,
+  "pluginId": "m86g.restart.fixture.20261114185543329116",
+  "providerId": "m86g.restart.fixture.20261114185543329116.llm",
+  "sessionId": "5e30a14b-f136-4654-ba43-42e5694d6318",
+  "queuedPromptId": null,
+  "marker": "M86GUI_20261114185543329116_PROCESS_RESTART_HOLD",
+  "input": null,
+  "originalSendMode": "queue",
+  "createdSessionIds": [
+    "5e30a14b-f136-4654-ba43-42e5694d6318"
+  ],
+  "processRestarts": [],
+  "phases": [],
+  "checks": [
+    {
+      "id": "all_local_turns_and_writers_idle_before_model_switch",
+      "passed": true
+    },
+    {
+      "id": "no_unsaved_draft_or_attachments_before_fixture",
+      "passed": true
+    },
+    {
+      "id": "native_shell_selected_before_fixture",
+      "passed": true
+    },
+    {
+      "id": "restart_preflight_all_global_writers_idle",
+      "passed": true
+    },
+    {
+      "id": "restart_preflight_no_unsaved_inputs",
+      "passed": true
+    },
+    {
+      "id": "restart_original_send_mode_observed",
+      "passed": true
+    },
+    {
+      "id": "restart_requires_builtin_agent",
+      "passed": true
+    },
+    {
+      "id": "restart_requires_builtin_durable_storage_and_prompt",
+      "passed": true
+    },
+    {
+      "id": "fixture_requests_no_permissions",
+      "passed": true
+    },
+    {
+      "id": "fixture_installed_and_provider_registered",
+      "passed": true
+    },
+    {
+      "id": "behavior_exposes_both_delivery_modes",
+      "passed": true
+    },
+    {
+      "id": "behavior_has_selected_delivery_mode",
+      "passed": true
+    },
+    {
+      "id": "behavior_selected_row_resolvable",
+      "passed": true
+    },
+    {
+      "id": "behavior_selection_indicator_matches_queue",
+      "passed": true
+    },
+    {
+      "id": "process_restart_real_partial_and_stop",
+      "passed": false
+    },
+    {
+      "id": "cleanup_captured_exact_started_fixture",
+      "passed": true
+    },
+    {
+      "id": "cleanup_running_target_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "behavior_exposes_both_delivery_modes",
+      "passed": true
+    },
+    {
+      "id": "behavior_has_selected_delivery_mode",
+      "passed": true
+    },
+    {
+      "id": "behavior_selected_row_resolvable",
+      "passed": true
+    },
+    {
+      "id": "behavior_selection_indicator_matches_queue",
+      "passed": true
+    },
+    {
+      "id": "cleanup_restore_delivery_preference",
+      "passed": true
+    },
+    {
+      "id": "cleanup_restore_native_and_model_follow",
+      "passed": true
+    },
+    {
+      "id": "cleanup_disable_fixture_keep_data",
+      "passed": true
+    },
+    {
+      "id": "cleanup_verified_native_and_no_active_writers",
+      "passed": false
+    }
+  ],
+  "screenshots": [
+    "behavior-queue.png",
+    "behavior-queue.png"
+  ],
+  "failures": [
+    "process_restart_real_partial_and_stop",
+    "cleanup_fixture_identity_or_stop_refusing_stop_without_fixture_marker",
+    "cleanup_final_observation_cleanup_verified_native_and_no_active_writers"
+  ],
+  "passed": false,
+  "accessibilityBoundRecheckRequired": false
+}

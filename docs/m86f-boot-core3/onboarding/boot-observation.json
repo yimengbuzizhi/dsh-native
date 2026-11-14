@@ -1,0 +1,95 @@
+{
+  "owner": "builtin.loading.native",
+  "selection": "builtin.loading.native",
+  "times": {
+    "loadingFirstDraw": 688,
+    "coreReady": 1052,
+    "shellFirstDraw": 1251,
+    "reportFullyDrawn": 1252
+  },
+  "lines": [
+    "11-14 13:23:36.985 16149 16149 I DshBoot : loadingSnapshot owner=builtin.loading.native selection=builtin.loading.native revision=ea2341debc7e",
+    "11-14 13:23:37.019 16149 16149 I DshBoot : loading:ea2341debc7eb5e5cd7b747f3e0c64e979513e36fc327ed94d85e97f883883f9:0 drawCallback=frameCommit elapsedMs=688 presentationConfirmed=false",
+    "11-14 13:23:37.019 16149 16149 I DshBoot : loadingFirstDraw elapsedMs=688",
+    "11-14 13:23:37.383 16149 16149 I DshBoot : coreReady elapsedMs=1052",
+    "11-14 13:23:37.581 16149 16149 I DshBoot : shell drawCallback=frameCommit elapsedMs=1250 presentationConfirmed=false",
+    "11-14 13:23:37.582 16149 16149 I DshBoot : shellFirstDraw elapsedMs=1251",
+    "11-14 13:23:37.582 16149 16149 I DshBoot : firstInteractive mode=shell elapsedMs=1251 presentationConfirmed=false",
+    "11-14 13:23:37.582 16149 16149 I DshBoot : reportFullyDrawn elapsedMs=1252"
+  ],
+  "ordered": true,
+  "crash": false,
+  "frames": [
+    {
+      "path": "onboarding\\burst\\frame-000.png",
+      "hostStartMs": 0,
+      "hostEndMs": 516
+    },
+    {
+      "path": "onboarding\\burst\\frame-001.png",
+      "hostStartMs": 625,
+      "hostEndMs": 954
+    },
+    {
+      "path": "onboarding\\burst\\frame-002.png",
+      "hostStartMs": 1079,
+      "hostEndMs": 1375
+    },
+    {
+      "path": "onboarding\\burst\\frame-003.png",
+      "hostStartMs": 1485,
+      "hostEndMs": 1829
+    },
+    {
+      "path": "onboarding\\burst\\frame-004.png",
+      "hostStartMs": 1922,
+      "hostEndMs": 2266
+    },
+    {
+      "path": "onboarding\\burst\\frame-005.png",
+      "hostStartMs": 2360,
+      "hostEndMs": 2688
+    },
+    {
+      "path": "onboarding\\burst\\frame-006.png",
+      "hostStartMs": 2782,
+      "hostEndMs": 3079
+    },
+    {
+      "path": "onboarding\\burst\\frame-007.png",
+      "hostStartMs": 3172,
+      "hostEndMs": 3500
+    },
+    {
+      "path": "onboarding\\burst\\frame-008.png",
+      "hostStartMs": 3610,
+      "hostEndMs": 3938
+    },
+    {
+      "path": "onboarding\\burst\\frame-009.png",
+      "hostStartMs": 4047,
+      "hostEndMs": 4329
+    },
+    {
+      "path": "onboarding\\burst\\frame-010.png",
+      "hostStartMs": 4454,
+      "hostEndMs": 4750
+    },
+    {
+      "path": "onboarding\\burst\\frame-011.png",
+      "hostStartMs": 4844,
+      "hostEndMs": 5188
+    },
+    {
+      "path": "onboarding\\burst\\frame-012.png",
+      "hostStartMs": 5282,
+      "hostEndMs": 5563
+    },
+    {
+      "path": "onboarding\\burst\\frame-013.png",
+      "hostStartMs": 5672,
+      "hostEndMs": 5969
+    }
+  ],
+  "videoAvailable": false
+}

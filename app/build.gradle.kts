@@ -15,8 +15,8 @@ android {
         // showerclient / OperitTerminalCore 都是 minSdk 26（虚拟屏与 PTY 的最低要求）
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.3.2"
+        versionCode = 6
+        versionName = "0.3.3"
     }
 
     buildFeatures {
@@ -83,6 +83,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     implementation(project(":ui:design"))
+    implementation(project(":ui:shell-api"))
+    implementation(project(":ui:native-shell"))
+    implementation(project(":support"))
     implementation(project(":core:model"))
     // zstd：core:session 用普通 jar 编译/测试，Android 运行时用同一版本的 AAR（带 .so）
     implementation(project(":core:session")) {
@@ -100,6 +103,8 @@ dependencies {
     implementation(project(":core:skill"))
     implementation(project(":core:input"))
     implementation(project(":core:agents"))
+    implementation(project(":core:agent-api"))
+    implementation(project(":core:capability-api"))
     implementation(project(":core:engine")) {
         exclude(group = "com.github.luben")
     }

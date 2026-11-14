@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "contract": "agent/v1",
+  "pref": "native",
+  "active": {
+    "agent": "builtin.agent.dsh",
+    "plugin": "",
+    "label": "dsH 引擎（内置）",
+    "builtin": true
+  },
+  "safety": "",
+  "builtin": {
+    "id": "builtin.agent.dsh",
+    "enabled": true,
+    "label": "dsH 引擎（内置）"
+  },
+  "candidates": [
+    {
+      "agent": "builtin.agent.dsh",
+      "plugin": "",
+      "label": "dsH 引擎（内置）",
+      "provider": "内置",
+      "builtin": true,
+      "enabled": true,
+      "permitted": true,
+      "active": true,
+      "unavailable": ""
+    },
+    {
+      "agent": "m86.recovery.agent",
+      "plugin": "m86.selftest.recovery.7152a80315dc45f59069124e2ae1986e",
+      "label": "M86 recovery agent",
+      "provider": "M86 F recovery agent fixture",
+      "builtin": false,
+      "enabled": false,
+      "permitted": true,
+      "active": false,
+      "unavailable": "插件已停用"
+    },
+    {
+      "agent": "m86.recovery.agent",
+      "plugin": "m86.selftest.recovery.a8f39f7163b44cc29c1ffb23c2f62962",
+      "label": "M86 recovery agent",
+      "provider": "M86 F recovery agent fixture",
+      "builtin": false,
+      "enabled": false,
+      "permitted": true,
+      "active": false,
+      "unavailable": "插件已停用"
+    },
+    {
+      "agent": "m86.recovery.agent",
+      "plugin": "m86.selftest.recovery.d2b92bea2d494af8ae2312225006b1ee",
+      "label": "M86 recovery agent",
+      "provider": "M86 F recovery agent fixture",
+      "builtin": false,
+      "enabled": false,
+      "permitted": true,
+      "active": false,
+      "unavailable": "插件已停用"
+    },
+    {
+      "agent": "m86.recovery.agent",
+      "plugin": "m86.selftest.recovery.344616d00e554b5aabc9d4237bcb48eb",
+      "label": "M86 recovery agent",
+      "provider": "M86 F recovery agent fixture",
+      "builtin": false,
+      "enabled": false,
+      "permitted": true,
+      "active": false,
+      "unavailable": "插件已停用"
+    },
+    {
+      "agent": "builtin.agent.dsh",
+      "plugin": "m85d.sameid-agent",
+      "label": "同 id 回合（第三方接管）",
+      "provider": "M85-D 同 id 回合",
+      "builtin": false,
+      "enabled": false,
+      "permitted": true,
+      "active": false,
+      "unavailable": "插件已停用"
+    },
+    {
+      "agent": "m85.echo",
+      "plugin": "m85d.echo-agent",
+      "label": "Echo 回合（演示）",
+      "provider": "M85-D Echo 回合",
+      "builtin": false,
+      "enabled": false,
+      "permitted": true,
+      "active": false,
+      "unavailable": "插件已停用"
+    }
+  ],
+  "resident": []
+}

@@ -1,0 +1,9 @@
+{
+  "id": "m85f.capability-demo",
+  "name": "M85-F 能力演示",
+  "version": "1.0.0",
+  "description": "M85-F 验收：用 ctx.capability.register 提供 NFC / adb-shell，并同 id 覆盖内置 notify",
+  "main": "index.js",
+  "format": "dsh",
+  "permissions": ["capability"]
+}

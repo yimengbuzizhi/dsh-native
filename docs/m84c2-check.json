@@ -1,0 +1,59 @@
+{
+  "batch": "M84-C2",
+  "device": "192.0.2.10:45111 (OPPO A55 5G, PEMM00, Android 13)",
+  "time": "2026-11-13 19:37 (Asia/Shanghai)",
+  "hooks": {
+    "tag": "DshTurnHook",
+    "provider": "debug.tool",
+    "tool_call": "bash {\"command\":\"echo hi\"}",
+    "tool_result_text": "hi",
+    "tool_result_chars": 3,
+    "log": [
+      "11-13 19:37:30.825 15554 15554 I DshTurnHook: step-start turn=1 step=1",
+      "11-13 19:37:30.989 15554 15554 I DshTurnHook: tool-start name=bash id=debug-tool-call-1",
+      "11-13 19:37:31.021 15554 15554 I DshTurnHook: tool-end name=bash id=debug-tool-call-1 error=false chars=3",
+      "11-13 19:37:31.026 15554 15554 I DshTurnHook: step-end turn=1 step=1",
+      "11-13 19:37:31.060 15554 15554 I DshTurnHook: step-start turn=1 step=2",
+      "11-13 19:37:31.122 15554 15554 I DshTurnHook: step-end turn=1 step=2"
+    ],
+    "order_ok": true,
+    "event_order_unchanged": "step-start → tool-start → tool-end → step-end → step-start → step-end",
+    "screenshots": ["docs/shots/125-01-turn-hook.png", "docs/shots/125-02-turn-hook-tool-card.png"]
+  },
+  "session_store": {
+    "registered": ["file", "memory"],
+    "file": {"store": "file", "activeCount": 78, "diskCount": 78, "trash": 0},
+    "memory": {"store": "memory", "activeCount": 1, "diskCount": 77},
+    "memory_after_process_restart": {"store": "memory", "activeCount": 0, "diskCount": 77},
+    "file_after_switch_back": {"store": "file", "activeCount": 77, "diskCount": 77},
+    "memory_session_created": "fe10c5c7-3602-435d-bf2f-ca056e6797f6",
+    "memory_chat_reply": "来自 debug 供应商的一轮（M84-C 验收）",
+    "file_ui": {
+      "sessions_before": 77,
+      "after_trash": 76,
+      "trash_entries": 1,
+      "after_restore": 77,
+      "open_session": "tool（预览：工具跑完了（debug.tool 验收））"
+    },
+    "dump_files": [
+      "docs/m84c2-store-file.json",
+      "docs/m84c2-store-memory.json",
+      "docs/m84c2-store-memory-restart.json"
+    ],
+    "screenshots": ["docs/shots/125-03-memory-store-chat.png", "docs/shots/125-05-file-store-drawer.png", "docs/shots/125-06-sessions-page.png", "docs/shots/125-08-session-menu.png", "docs/shots/125-09-session-trash-confirm.png", "docs/shots/125-10-trash-page.png", "docs/shots/125-11-session-restored.png"]
+  },
+  "tests": {
+    "core:session:SessionStoreTest": "3 passed / 0 failed",
+    "core:engine:TurnEngineTest": "44 passed / 0 failed (含新增 4 个 hooks 用例)",
+    "full_command": ":app:assembleDebug :core:tools:test :core:plugins:test :core:engine:test :core:prompt:test :core:llm:test :core:session:test = BUILD SUCCESSFUL"
+  },
+  "reset": {
+    "llmActive": "",
+    "promptActive": "",
+    "debug_session_store": null,
+    "debug_llm_provider": null,
+    "debug_prompt_override": null,
+    "accessibility": "enabled_accessibility_services=xin.dshaa.nativeapp/.device.a11y.DshAccessibilityService, accessibility_enabled=1, Bound services=DSH 无障碍",
+    "note": "approval_mode=auto 是设备原有设置，本批未改动（dsh_auto_approve 用的是 --es，不会写这个键）"
+  }
+}

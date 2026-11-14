@@ -1,0 +1,899 @@
+{
+  "fixture": "M86-G-real-process-restart",
+  "version": 1,
+  "pluginId": "m86g.restart.fixture.20261114185932198887",
+  "providerId": "m86g.restart.fixture.20261114185932198887.llm",
+  "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+  "queuedPromptId": "prompt-250c6909-5669-49d5-b28e-c5967263f608",
+  "marker": "M86GUI_20261114185932198887_PROCESS_RESTART_HOLD",
+  "input": "M86GUI_PROCESS_RESTART_20261114185932198887_INPUT",
+  "originalSendMode": "queue",
+  "createdSessionIds": [
+    "8c8b210e-cd12-4f44-83bf-c311a70b4fc7"
+  ],
+  "processRestarts": [
+    {
+      "phase": "first_process_stop",
+      "beforePids": [
+        23967
+      ],
+      "afterPids": [],
+      "absenceConfirmed": true,
+      "coldStartPids": [
+        25730
+      ]
+    },
+    {
+      "phase": "second_process_stop",
+      "beforePids": [
+        25730
+      ],
+      "afterPids": [],
+      "absenceConfirmed": true,
+      "coldStartPids": [
+        26094
+      ]
+    }
+  ],
+  "phases": [
+    {
+      "phase": "paused-before-process-stop",
+      "observationSerial": 13,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "first_cold_start",
+      "observationSerial": 17,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "recovered_queue_remains_paused_0",
+      "observationSerial": 18,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "recovered_queue_remains_paused_1",
+      "observationSerial": 19,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "recovered_queue_remains_paused_2",
+      "observationSerial": 20,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "recovered_queue_remains_paused_3",
+      "observationSerial": 21,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "recovered_queue_remains_paused_4",
+      "observationSerial": 22,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "recovered_queue_remains_paused_5",
+      "observationSerial": 23,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "recovered_queue_remains_paused_6",
+      "observationSerial": 24,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "recovered_queue_remains_paused_7",
+      "observationSerial": 25,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "recovered_queue_remains_paused_8",
+      "observationSerial": 26,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "recovered_queue_remains_paused_9",
+      "observationSerial": 27,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "restart_before_manual_continue",
+      "observationSerial": 28,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted"
+      ],
+      "queueIds": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ],
+      "delivered": []
+    },
+    {
+      "phase": "completed-before-second-stop",
+      "observationSerial": 32,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    },
+    {
+      "phase": "second_cold_start",
+      "observationSerial": 36,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    },
+    {
+      "phase": "second_restart_has_no_replay_0",
+      "observationSerial": 37,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    },
+    {
+      "phase": "second_restart_has_no_replay_1",
+      "observationSerial": 38,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    },
+    {
+      "phase": "second_restart_has_no_replay_2",
+      "observationSerial": 39,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    },
+    {
+      "phase": "second_restart_has_no_replay_3",
+      "observationSerial": 40,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    },
+    {
+      "phase": "second_restart_has_no_replay_4",
+      "observationSerial": 41,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    },
+    {
+      "phase": "second_restart_has_no_replay_5",
+      "observationSerial": 42,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    },
+    {
+      "phase": "second_restart_has_no_replay_6",
+      "observationSerial": 43,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    },
+    {
+      "phase": "second_restart_has_no_replay_7",
+      "observationSerial": 44,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    },
+    {
+      "phase": "second_restart_has_no_replay_8",
+      "observationSerial": 45,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    },
+    {
+      "phase": "second_restart_has_no_replay_9",
+      "observationSerial": 46,
+      "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+      "turnEnds": [
+        "aborted",
+        "completed"
+      ],
+      "queueIds": [],
+      "delivered": [
+        "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "all_local_turns_and_writers_idle_before_model_switch",
+      "passed": true
+    },
+    {
+      "id": "no_unsaved_draft_or_attachments_before_fixture",
+      "passed": true
+    },
+    {
+      "id": "native_shell_selected_before_fixture",
+      "passed": true
+    },
+    {
+      "id": "restart_preflight_all_global_writers_idle",
+      "passed": true
+    },
+    {
+      "id": "restart_preflight_no_unsaved_inputs",
+      "passed": true
+    },
+    {
+      "id": "restart_original_send_mode_observed",
+      "passed": true
+    },
+    {
+      "id": "restart_requires_builtin_agent",
+      "passed": true
+    },
+    {
+      "id": "restart_requires_builtin_durable_storage_and_prompt",
+      "passed": true
+    },
+    {
+      "id": "fixture_requests_no_permissions",
+      "passed": true
+    },
+    {
+      "id": "fixture_installed_and_provider_registered",
+      "passed": true
+    },
+    {
+      "id": "behavior_exposes_both_delivery_modes",
+      "passed": true
+    },
+    {
+      "id": "behavior_has_selected_delivery_mode",
+      "passed": true
+    },
+    {
+      "id": "behavior_selected_row_resolvable",
+      "passed": true
+    },
+    {
+      "id": "behavior_selection_indicator_matches_queue",
+      "passed": true
+    },
+    {
+      "id": "process_restart_real_partial_and_stop",
+      "passed": true
+    },
+    {
+      "id": "new_fixture_session_has_id",
+      "passed": true
+    },
+    {
+      "id": "restart_fixture_is_a_new_recorded_chat",
+      "passed": true
+    },
+    {
+      "id": "fixture_composer_editable",
+      "passed": true
+    },
+    {
+      "id": "process_restart_20261114185932198887_draft_send_and_stop_coexist",
+      "passed": true
+    },
+    {
+      "id": "process_restart_20261114185932198887_draft_mode_switch_visible",
+      "passed": true
+    },
+    {
+      "id": "process_restart_20261114185932198887_queue_visible",
+      "passed": true
+    },
+    {
+      "id": "process_restart_20261114185932198887_queue_cancel_enabled",
+      "passed": true
+    },
+    {
+      "id": "process_restart_20261114185932198887_exact_pending_entry_and_running_writer",
+      "passed": true
+    },
+    {
+      "id": "restart_pending_entry_has_stable_id",
+      "passed": true
+    },
+    {
+      "id": "fixture_stopped",
+      "passed": true
+    },
+    {
+      "id": "new_fixture_session_has_id",
+      "passed": true
+    },
+    {
+      "id": "fixture_disabled_before_runtime_reset",
+      "passed": true
+    },
+    {
+      "id": "restart_stopped_fixture_writer_completed",
+      "passed": true
+    },
+    {
+      "id": "restart_before_first_stop_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "restart_stop_saved_exact_paused_queue",
+      "passed": true
+    },
+    {
+      "id": "restart_stop_closed_aborted_hold_turn",
+      "passed": true
+    },
+    {
+      "id": "first_process_stop_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "first_process_stop_requires_no_active_global_writer",
+      "passed": true
+    },
+    {
+      "id": "first_process_stop_exact_queue_still_paused",
+      "passed": true
+    },
+    {
+      "id": "first_process_stop_pid_present",
+      "passed": true
+    },
+    {
+      "id": "first_process_stop_pid_absent",
+      "passed": true
+    },
+    {
+      "id": "first_cold_start_new_process_present",
+      "passed": true
+    },
+    {
+      "id": "first_cold_start_old_pid_not_reused",
+      "passed": true
+    },
+    {
+      "id": "first_cold_start_same_fixture_loaded",
+      "passed": true
+    },
+    {
+      "id": "first_cold_start_own_provider_selected",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_0_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_0_same_entry_id_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_0_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_1_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_1_same_entry_id_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_1_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_2_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_2_same_entry_id_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_2_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_3_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_3_same_entry_id_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_3_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_4_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_4_same_entry_id_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_4_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_5_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_5_same_entry_id_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_5_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_6_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_6_same_entry_id_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_6_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_7_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_7_same_entry_id_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_7_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_8_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_8_same_entry_id_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_8_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_9_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_9_same_entry_id_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_9_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "recovered_queue_remains_paused_observed_window",
+      "passed": true
+    },
+    {
+      "id": "restart_paused_queue_has_ui_continue",
+      "passed": true
+    },
+    {
+      "id": "restart_before_manual_continue_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "restart_before_manual_continue_same_entry_id_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "restart_before_manual_continue_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "restart_manual_continue_completes_once",
+      "passed": true
+    },
+    {
+      "id": "restart_manual_continue_exact_input_delivery_count",
+      "passed": true
+    },
+    {
+      "id": "restart_manual_continue_successful_reply_and_completed_turn",
+      "passed": true
+    },
+    {
+      "id": "second_process_stop_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "second_process_stop_requires_no_active_global_writer",
+      "passed": true
+    },
+    {
+      "id": "second_process_stop_successful_delivery_still_exactly_once",
+      "passed": true
+    },
+    {
+      "id": "second_process_stop_pid_present",
+      "passed": true
+    },
+    {
+      "id": "second_process_stop_pid_absent",
+      "passed": true
+    },
+    {
+      "id": "second_cold_start_new_process_present",
+      "passed": true
+    },
+    {
+      "id": "second_cold_start_old_pid_not_reused",
+      "passed": true
+    },
+    {
+      "id": "second_cold_start_same_fixture_loaded",
+      "passed": true
+    },
+    {
+      "id": "second_cold_start_own_provider_selected",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_0_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_0_delivery_and_unique_reply_still_once",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_0_no_additional_turn_after_restart",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_1_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_1_delivery_and_unique_reply_still_once",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_1_no_additional_turn_after_restart",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_2_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_2_delivery_and_unique_reply_still_once",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_2_no_additional_turn_after_restart",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_3_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_3_delivery_and_unique_reply_still_once",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_3_no_additional_turn_after_restart",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_4_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_4_delivery_and_unique_reply_still_once",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_4_no_additional_turn_after_restart",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_5_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_5_delivery_and_unique_reply_still_once",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_5_no_additional_turn_after_restart",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_6_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_6_delivery_and_unique_reply_still_once",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_6_no_additional_turn_after_restart",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_7_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_7_delivery_and_unique_reply_still_once",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_7_no_additional_turn_after_restart",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_8_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_8_delivery_and_unique_reply_still_once",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_8_no_additional_turn_after_restart",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_9_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_9_delivery_and_unique_reply_still_once",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_9_no_additional_turn_after_restart",
+      "passed": true
+    },
+    {
+      "id": "second_restart_has_no_replay_observed_window",
+      "passed": true
+    },
+    {
+      "id": "behavior_exposes_both_delivery_modes",
+      "passed": true
+    },
+    {
+      "id": "behavior_has_selected_delivery_mode",
+      "passed": true
+    },
+    {
+      "id": "behavior_selected_row_resolvable",
+      "passed": true
+    },
+    {
+      "id": "behavior_selection_indicator_matches_queue",
+      "passed": true
+    },
+    {
+      "id": "cleanup_restore_delivery_preference",
+      "passed": true
+    },
+    {
+      "id": "cleanup_restore_native_and_model_follow",
+      "passed": true
+    },
+    {
+      "id": "cleanup_disable_fixture_keep_data",
+      "passed": true
+    },
+    {
+      "id": "cleanup_verified_native_and_no_active_writers",
+      "passed": true
+    },
+    {
+      "id": "cleanup_verified_original_send_mode",
+      "passed": true
+    },
+    {
+      "id": "cleanup_verified_fixture_disabled",
+      "passed": true
+    },
+    {
+      "id": "cleanup_verified_original_whale_switch",
+      "passed": true
+    },
+    {
+      "id": "cleanup_verified_debug_provider_off",
+      "passed": true
+    },
+    {
+      "id": "cleanup_verified_model_follows_protocol",
+      "passed": true
+    },
+    {
+      "id": "cleanup_queue_target_exact_created_fixture",
+      "passed": true
+    },
+    {
+      "id": "cleanup_retains_unfinished_queue_or_single_ack",
+      "passed": true
+    }
+  ],
+  "screenshots": [
+    "behavior-queue.png",
+    "process_restart_20261114185932198887-draft-and-stop.png",
+    "process_restart_20261114185932198887-queued.png",
+    "paused-before-process-stop.png",
+    "after-first-cold-start-paused.png",
+    "after-manual-continue-completed.png",
+    "after-second-cold-start-no-replay.png",
+    "behavior-queue.png"
+  ],
+  "failures": [],
+  "passed": true,
+  "accessibilityBoundRecheckRequired": true
+}

@@ -1,0 +1,94 @@
+{
+  "batch": "M84-F",
+  "date": "2026-11-13",
+  "device": "OPPO A55 5G（PEMM00），Android 13，720×1600",
+  "build": "debug，versionName 0.3.2 / versionCode 5（未发布）",
+  "method": "adb 冷启（force-stop 后 am start -W）；内置插件用 --es dsh_builtin_off all / --ez dsh_builtin_reset true，导入插件用 --ez dsh_plugins_all_off true / --es dsh_dump_plugins；耗时取 am start -W 的 TotalTime，5 次取中位数。",
+  "emptyShell": {
+    "builtinPlugins": 23,
+    "builtinDisabled": 22,
+    "builtinDisabledNote": "22 = 23 个内置里显式关掉的 22 个；builtin.floating.demo 本来就是默认关，关掉不写进 disabled 集合。语义上 23 个全关。",
+    "userPlugins": 30,
+    "userPluginsEnabled": 0,
+    "userPluginTools": 0,
+    "pages": 22,
+    "pagesEnabled": 2,
+    "enabledPages": ["Plugins", "Settings"],
+    "routes": {
+      "Chat": "ok（冷启默认落在聊天）",
+      "Plugins": "ok（核心页，无内置插件也进得去）",
+      "Settings": "ok（核心页，只剩账号/GitHub 等核心行）",
+      "Sessions": "blocked（dsh_open_screen Sessions 无 DshPage route 日志，界面停在 Settings）"
+    },
+    "toolsRegistryAll": 0,
+    "toolsOffered": 0,
+    "toolsNote": "F 首次验收时这里还有 26 个非内置工具（设备/终端/记忆）；F2 已把它们归进 builtin.page.device / builtin.shell / builtin.memory 三个已有组，空壳 tools[] 变为 0。见 docs/130、docs/m84f2-check.json。",
+    "providers": ["debug.echo", "debug.slow", "debug.tool", "deepseek", "openai"],
+    "coldStartMs": [1841, 1844, 1831, 1843, 1847],
+    "coldStartMedianMs": 1843,
+    "screenshots": ["129-01-empty-chat.png", "129-02-empty-plugins.png", "129-03-empty-settings.png", "129-04-empty-blocked-sessions.png"]
+  },
+  "fullAssembly": {
+    "builtinPlugins": 23,
+    "builtinDisabled": 0,
+    "builtinDisabledNote": "reset 后无显式关闭；builtin.floating.demo 仍为默认关（截图 129-07 悬浮窗插件开关 OFF）。",
+    "userPlugins": 30,
+    "userPluginsEnabled": 19,
+    "userPluginTools": 68,
+    "toolsRegistryAll": 126,
+    "toolsCatalog": 32,
+    "toolsOffered": 126,
+    "pages": 22,
+    "pagesEnabled": 22,
+    "routes": {
+      "Chat": "ok（冷启默认）",
+      "Plugins": "ok（page=Plugins）",
+      "Settings": "ok（page=Settings）",
+      "Sessions": "ok（page=Sessions）"
+    },
+    "chatTurn": {
+      "provider": "真实 DeepSeek（deepseek-flash）",
+      "steps": 2,
+      "tool": "bash",
+      "toolResultChars": 558,
+      "log": "step-start(1.1) → tool-start(bash) → tool-end(error=false, chars=558) → step-end(1.1) → step-start(1.2) → step-end(1.2)"
+    },
+    "directBuiltinTool": {
+      "name": "bash",
+      "args": {"command": "echo F_FULL_ASSEMBLY_OK"},
+      "ok": true,
+      "output": "F_FULL_ASSEMBLY_OK"
+    },
+    "coldStartMs": [1847, 1848, 1843, 1846, 1867],
+    "coldStartMedianMs": 1847,
+    "screenshots": ["129-05-full-chat.png", "129-06-full-plugins.png", "129-07-builtin-bottom.png", "129-08-full-settings.png", "129-09-full-sessions.png"]
+  },
+  "regression": {
+    "builtinPluginCount": "23（22 + builtin.floating.demo）",
+    "pageCount": "22（11 一级 + 11 二级）",
+    "floatingDemoDefaultOff": true,
+    "floatingDemoEvidence": "129-07 底部「悬浮窗插件（1）」开关 OFF；builtin_plugins_disabled 为空 = 没有显式打开。",
+    "m84b142CheckRerun": false,
+    "routeSmoke22": {
+      "pass": 22,
+      "total": 22,
+      "evidence": "docs/m84f-routes.json",
+      "note": "11 个一级页 route page=<id>；11 个二级页 route page=Settings sub=<id>；每次先回 Chat 再打开，避免同页 no-op。"
+    },
+    "note": "M84-B 的 142 项逐页对拍未重跑；本次回归了页面总数/全开状态/22 条路由冒烟/空壳拦截。"
+  },
+  "results": {
+    "emptyShellUsable": true,
+    "fullAssemblyToolsAndPages": true,
+    "coldStartUnder3s": true,
+    "coldStartUnder3sNote": "空壳中位数 1843ms、全装配 1847ms；均为 force-stop 后 am start -W TotalTime。",
+    "functionalParity0352": "抽样：聊天一轮 + bash 工具（经模型与直接调用）+ 插件页 + 设置页 + 会话页；不等于 0.3.2 全功能逐项对拍。"
+  },
+  "limitations": [
+    "F2 前空壳有 26 个非内置工具（设备/MCP/记忆）；F2 已归组，空壳 tools[]=0（docs/130）。",
+    "M84-B 的 142 项逐页矩阵未重跑，只做页面总数/路由抽样。",
+    "冷启动耗时是 debug 包 + 85 个会话的设备状态；release 未测。",
+    "全装配用户插件按设备原有 19/30 启用，不是 30 个全开；11 个原本停用的插件保持停用。",
+    "未发布。"
+  ]
+}

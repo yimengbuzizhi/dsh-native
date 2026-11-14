@@ -1,0 +1,7 @@
+{
+  "name": "m84j-demo",
+  "version": "1.0.0",
+  "description": "M84-J 验收：ctx.llm.register 带 stream 回调的模型供应商（模型由插件在常驻运行时里产出）",
+  "main": "index.js",
+  "format": "esm"
+}

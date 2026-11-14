@@ -52,6 +52,13 @@
             </intent-filter>
         </activity>
 
+        <!-- M84-G：插件整页（插件自己的 dsh.client 全屏跑，不是悬浮窗） -->
+        <activity
+            android:name=".pluginui.PluginPageActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
         <!-- 虚拟屏自己的桌面：Home 键/启动虚拟屏时在 display 13 上打开，只影响虚拟屏 -->
         <activity
             android:name=".VirtualHomeActivity"

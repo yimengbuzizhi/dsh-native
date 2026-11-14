@@ -1,0 +1,16 @@
+﻿11-13 21:07:30.482  8490  8525 I DshProjection: resident started plugin=m84h-demo keys=m84hTurns subscriptions= cleanups=0
+11-13 21:07:30.488  8490  8526 I DshProjection: resident started plugin=svc-consumer-b keys= subscriptions=turn/end cleanups=1
+11-13 21:07:30.493  8490  8524 I DshProjection: resident started plugin=m84i-demo keys=m84iTurns subscriptions=turn/start,tool/result cleanups=1
+11-13 21:07:30.497  8490  8528 I DshProjection: resident started plugin=whale-compat-test keys= subscriptions=session/event cleanups=0
+11-13 21:07:30.558  8490  8526 I DshProjection: event plugin=whale-compat-test event=request/header handlers=1
+11-13 21:07:31.291  8490  8536 I DshProjection: resident m84i-demo console: {"level":"info","message":"m84i turn/start #1 seq=1"}
+11-13 21:07:31.292  8490  8526 I DshProjection: event plugin=whale-compat-test event=turn/start handlers=1
+11-13 21:07:31.293  8490  8524 I DshProjection: event plugin=m84i-demo event=turn/start handlers=1
+11-13 21:07:31.297  8490  8531 I DshProjection: event plugin=whale-compat-test event=step/start handlers=1
+11-13 21:07:31.303  8490  8526 I DshProjection: event plugin=whale-compat-test event=user/message handlers=1
+11-13 21:07:31.708  8490  8530 I DshProjection: event plugin=whale-compat-test event=user/message handlers=1
+11-13 21:07:35.622  8490  8527 I DshProjection: event plugin=whale-compat-test event=assistant/message handlers=1
+11-13 21:07:35.692  8490  8526 I DshProjection: event plugin=whale-compat-test event=step/end handlers=1
+11-13 21:07:35.722  8490  8529 I DshProjection: event plugin=svc-consumer-b event=turn/end handlers=1
+11-13 21:07:35.722  8490  8525 I DshProjection: event plugin=whale-compat-test event=turn/end handlers=1
+11-13 21:07:35.748  8490  8561 I DshProjection: event plugin=whale-compat-test event=session/title handlers=1

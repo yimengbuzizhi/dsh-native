@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.rounded.AttachFile
@@ -57,6 +58,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -85,17 +87,18 @@ import kotlinx.coroutines.launch
 import xin.dshaa.core.model.BlockType
 import xin.dshaa.core.model.ChatMessage
 import xin.dshaa.core.model.MessageRole
-import xin.dshaa.nativeapp.chat.ATTACHMENT_REFERENCE_HINT
+import xin.dshaa.ui.shellapi.chat.ATTACHMENT_REFERENCE_HINT
 import xin.dshaa.nativeapp.chat.ChatMirror
-import xin.dshaa.nativeapp.ui.chat.QuotedAttachment
-import xin.dshaa.nativeapp.ui.chat.consumeInnerScroll
-import xin.dshaa.nativeapp.ui.chat.parseQuotedAttachment
+import xin.dshaa.ui.design.chat.QuotedAttachment
+import xin.dshaa.ui.design.chat.consumeInnerScroll
+import xin.dshaa.ui.design.chat.parseQuotedAttachment
 import xin.dshaa.nativeapp.device.attach.AttachmentCapture
 import xin.dshaa.nativeapp.device.attach.LocationCapture
 import xin.dshaa.nativeapp.device.floating.FloatingMode
 import xin.dshaa.nativeapp.device.floating.FloatingSpeechManager
 import xin.dshaa.nativeapp.device.floating.FloatingWindowState
 import xin.dshaa.nativeapp.device.floating.isInternalNotice
+import xin.dshaa.nativeapp.device.floating.ui.window.FloatingPromptQueue
 import xin.dshaa.ui.design.component.MarkdownText
 import xin.dshaa.ui.design.theme.DshTheme
 import xin.dshaa.ui.design.theme.DshTheme2
@@ -117,12 +120,14 @@ fun FloatingFullscreenScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val speech = remember { FloatingSpeechManager(context) }
+    val chat = ChatMirror.state
+    var voiceTarget by remember { mutableStateOf<xin.dshaa.ui.shellapi.chat.ChatSessionState?>(null) }
     var waveActive by remember { mutableStateOf(false) }
     var recording by remember { mutableStateOf(false) }
     var processing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("按住说话 · 上滑取消") }
     var preview by remember { mutableStateOf("") }
-    var input by remember { mutableStateOf("") }
+    var input by remember(chat) { mutableStateOf("") }
     var ttsMuted by remember { mutableStateOf(false) }
     var attachScreen by remember { mutableStateOf(false) }
     var attachNotifications by remember { mutableStateOf(false) }
@@ -131,6 +136,7 @@ fun FloatingFullscreenScreen(
     // 按住说话（Operit 全屏语音的手势）：按下开始识别，松开发送，上滑取消。
     fun startVoice() {
         if (recording) return
+        voiceTarget = ChatMirror.state
         preview = ""
         waveActive = true
         recording = true
@@ -141,6 +147,7 @@ fun FloatingFullscreenScreen(
         if (!recording) return
         recording = false
         if (cancel) {
+            voiceTarget = null
             speech.stopListening(true)
             status = "已取消"
         } else {
@@ -148,7 +155,12 @@ fun FloatingFullscreenScreen(
         }
     }
 
-    val chat = ChatMirror.state
+    val canSend = chat != null && !chat.readOnly && !chat.stopping &&
+        (input.isNotBlank() || chat.pendingImages.isNotEmpty() || chat.pendingFiles.isNotEmpty())
+    val sendMode = ChatMirror.sendWhileRunningMode
+    val sendLabel = if (chat?.streaming == true) {
+        if (sendMode == "steer") "插话发送" else "排队发送"
+    } else "发送"
     // 内部注入消息（time-context/goal/tool-jobs…）不按 user 气泡显示，见 FloatingMessageFilter
     val messages = chat?.messages.orEmpty().filterNot { it.isInternalNotice() }
 
@@ -160,15 +172,22 @@ fun FloatingFullscreenScreen(
         }
         speech.onFinal = { text ->
             preview = ""
-            status = "已识别，发送中…"
-            if (ChatMirror.send(text)) {
+            recording = false
+            val target = voiceTarget
+            voiceTarget = null
+            if (target == null || ChatMirror.state !== target) {
+                processing = false
+                status = "会话已切换，请在目标会话重新发送"
+            } else if (ChatMirror.send(text)) {
                 processing = true
+                status = if (target.streaming) "已接受，等待处理" else "已识别，发送中…"
             } else {
-                status = "发送失败（没有打开的会话？）"
-                recording = false
+                processing = false
+                status = "消息未发送，请检查当前会话"
             }
         }
         speech.onError = {
+            voiceTarget = null
             recording = false
             processing = false
             preview = ""
@@ -294,6 +313,40 @@ fun FloatingFullscreenScreen(
                 }
             }
 
+            if (chat != null) {
+                DshTheme(darkTheme = true) { FloatingPromptQueue(chat) }
+            }
+            if (chat != null && (chat.streaming || chat.stopping)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (chat.stopping) "停止中…" else "生成中可继续发送", color = FsSub,
+                        style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        ChatMirror.setSendWhileRunningMode(if (sendMode == "steer") "queue" else "steer")
+                    }, enabled = !chat.readOnly && !chat.stopping) {
+                        Text("$sendLabel · 切换", color = FsAccent, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+            chat?.attachError?.let { error ->
+                Text(error, color = Color(0xFFFFB4AB), style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp))
+            }
+            if (chat != null && (chat.pendingImages.isNotEmpty() || chat.pendingFiles.isNotEmpty())) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    chat.pendingImages.forEach { image ->
+                        TextButton(onClick = { ChatMirror.removePendingImage(image.ref.attachmentId) }) {
+                            Text("${image.ref.name ?: "图片"} ×", color = FsAccent,
+                                style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    chat.pendingFiles.forEach { file ->
+                        TextButton(onClick = { ChatMirror.removePendingFile(file.name) }) {
+                            Text("${file.name} ×", color = FsAccent, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
             if (recording) {
                 Text(
                     "松开结束 · 上滑取消",
@@ -365,7 +418,7 @@ fun FloatingFullscreenScreen(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(
                         onSend = {
-                            if (ChatMirror.send(input)) input = ""
+                            if (canSend && ChatMirror.send(input)) input = ""
                         },
                     ),
                 )
@@ -390,15 +443,26 @@ fun FloatingFullscreenScreen(
                     Modifier
                         .size(46.dp)
                         .background(
-                            if (input.isNotBlank()) Color(0xFF2F6FE0) else Color.White.copy(alpha = 0.08f),
+                            if (canSend) Color(0xFF2F6FE0) else Color.White.copy(alpha = 0.08f),
                             CircleShape,
                         )
-                        .clickable(enabled = input.isNotBlank()) {
-                            if (ChatMirror.send(input)) input = ""
+                        .clickable(enabled = canSend) {
+                            if (canSend && ChatMirror.send(input)) input = ""
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Default.Send, "发送", tint = Color.White, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Send, sendLabel, tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+                if (chat != null && (chat.streaming || chat.stopping)) {
+                    Spacer(Modifier.width(6.dp))
+                    IconButton(onClick = { ChatMirror.stop() }, enabled = !chat.stopping,
+                        modifier = Modifier.size(40.dp).background(Color(0xFFE05A5A), CircleShape)) {
+                        if (chat.stopping) {
+                            CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Stop, "停止", tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
+                    }
                 }
             }
         }

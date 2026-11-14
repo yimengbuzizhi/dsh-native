@@ -1,0 +1,17 @@
+{
+  "observedAt": 1794654009006,
+  "activeTurnCount": 0,
+  "writerCount": 0,
+  "streamingCount": 0,
+  "sessionId": "",
+  "streaming": false,
+  "stopping": false,
+  "shell": "native",
+  "sendMode": "queue",
+  "errorPresent": false,
+  "hasDraft": false,
+  "pendingImageCount": 0,
+  "pendingFileCount": 0,
+  "fixtureSession": false,
+  "turnEnds": []
+}

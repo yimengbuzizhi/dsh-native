@@ -1,0 +1,861 @@
+{
+  "device": "192.0.2.10:39905",
+  "time": "2026-11-14 12:08:53",
+  "total": 142,
+  "passed": 142,
+  "failed": 0,
+  "results": [
+    {
+      "plugin": "baseline",
+      "step": "pages",
+      "ok": true,
+      "detail": "pages=22"
+    },
+    {
+      "plugin": "baseline",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "baseline",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "baseline",
+      "step": "catalogMatch",
+      "ok": true,
+      "detail": "catalogMatch=True"
+    },
+    {
+      "plugin": "baseline",
+      "step": "unowned",
+      "ok": true,
+      "detail": "unowned=['Plugins', 'Settings']"
+    },
+    {
+      "plugin": "builtin.fs",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.fs']"
+    },
+    {
+      "plugin": "builtin.fs",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "Workspace=False"
+    },
+    {
+      "plugin": "builtin.fs",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.fs",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.fs",
+      "step": "entry-gone",
+      "ok": true,
+      "detail": "chat content-desc 工作区"
+    },
+    {
+      "plugin": "builtin.fs",
+      "step": "blocked:Workspace",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.fs",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "Workspace=True"
+    },
+    {
+      "plugin": "builtin.fs",
+      "step": "route:Workspace",
+      "ok": true,
+      "detail": "want=page=Workspace sub=-"
+    },
+    {
+      "plugin": "builtin.shell",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.shell']"
+    },
+    {
+      "plugin": "builtin.shell",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "Terminal=False"
+    },
+    {
+      "plugin": "builtin.shell",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.shell",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.shell",
+      "step": "entry-gone:Terminal",
+      "ok": true,
+      "detail": "entry=终端"
+    },
+    {
+      "plugin": "builtin.shell",
+      "step": "blocked:Terminal",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.shell",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "Terminal=True"
+    },
+    {
+      "plugin": "builtin.shell",
+      "step": "route:Terminal",
+      "ok": true,
+      "detail": "want=page=Terminal sub=-"
+    },
+    {
+      "plugin": "builtin.jobs",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.jobs']"
+    },
+    {
+      "plugin": "builtin.jobs",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "Jobs=False"
+    },
+    {
+      "plugin": "builtin.jobs",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.jobs",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.jobs",
+      "step": "entry-gone:Jobs",
+      "ok": true,
+      "detail": "entry=后台任务"
+    },
+    {
+      "plugin": "builtin.jobs",
+      "step": "blocked:Jobs",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.jobs",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "Jobs=True"
+    },
+    {
+      "plugin": "builtin.jobs",
+      "step": "route:Jobs",
+      "ok": true,
+      "detail": "want=page=Jobs sub=-"
+    },
+    {
+      "plugin": "builtin.agent",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.agent']"
+    },
+    {
+      "plugin": "builtin.agent",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "Agents=False"
+    },
+    {
+      "plugin": "builtin.agent",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.agent",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.agent",
+      "step": "entry-gone:Agents",
+      "ok": true,
+      "detail": "entry=子代理"
+    },
+    {
+      "plugin": "builtin.agent",
+      "step": "blocked:Agents",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.agent",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "Agents=True"
+    },
+    {
+      "plugin": "builtin.agent",
+      "step": "route:Agents",
+      "ok": true,
+      "detail": "want=page=Agents sub=-"
+    },
+    {
+      "plugin": "builtin.skill",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.skill']"
+    },
+    {
+      "plugin": "builtin.skill",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "Skills=False"
+    },
+    {
+      "plugin": "builtin.skill",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.skill",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.skill",
+      "step": "entry-gone:Skills",
+      "ok": true,
+      "detail": "entry=技能"
+    },
+    {
+      "plugin": "builtin.skill",
+      "step": "blocked:Skills",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.skill",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "Skills=True"
+    },
+    {
+      "plugin": "builtin.skill",
+      "step": "route:Skills",
+      "ok": true,
+      "detail": "want=page=Settings sub=Skills"
+    },
+    {
+      "plugin": "builtin.memory",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.memory']"
+    },
+    {
+      "plugin": "builtin.memory",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "Memory=False"
+    },
+    {
+      "plugin": "builtin.memory",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.memory",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.memory",
+      "step": "entry-gone:Memory",
+      "ok": true,
+      "detail": "entry=记忆库"
+    },
+    {
+      "plugin": "builtin.memory",
+      "step": "blocked:Memory",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.memory",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "Memory=True"
+    },
+    {
+      "plugin": "builtin.memory",
+      "step": "route:Memory",
+      "ok": true,
+      "detail": "want=page=Memory sub=-"
+    },
+    {
+      "plugin": "builtin.page.sessions",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.page.sessions']"
+    },
+    {
+      "plugin": "builtin.page.sessions",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "Sessions=False"
+    },
+    {
+      "plugin": "builtin.page.sessions",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.page.sessions",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.page.sessions",
+      "step": "entry-gone:Sessions",
+      "ok": true,
+      "detail": "entry=对话历史管理"
+    },
+    {
+      "plugin": "builtin.page.sessions",
+      "step": "blocked:Sessions",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.sessions",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "Sessions=True"
+    },
+    {
+      "plugin": "builtin.page.sessions",
+      "step": "route:Sessions",
+      "ok": true,
+      "detail": "want=page=Sessions sub=-"
+    },
+    {
+      "plugin": "builtin.page.workspaces",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.page.workspaces']"
+    },
+    {
+      "plugin": "builtin.page.workspaces",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "Workspaces=False"
+    },
+    {
+      "plugin": "builtin.page.workspaces",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.page.workspaces",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.page.workspaces",
+      "step": "entry-gone:Workspaces",
+      "ok": true,
+      "detail": "entry=工作区管理"
+    },
+    {
+      "plugin": "builtin.page.workspaces",
+      "step": "blocked:Workspaces",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.workspaces",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "Workspaces=True"
+    },
+    {
+      "plugin": "builtin.page.workspaces",
+      "step": "route:Workspaces",
+      "ok": true,
+      "detail": "want=page=Settings sub=Workspaces"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.page.device']"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "VirtualScreen=False,Accessibility=False,Permissions=False"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "entry-gone:VirtualScreen",
+      "ok": true,
+      "detail": "entry=虚拟屏"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "entry-gone:Accessibility",
+      "ok": true,
+      "detail": "entry=无障碍"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "entry-gone:Permissions",
+      "ok": true,
+      "detail": "entry=权限与能力"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "blocked:VirtualScreen",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "blocked:Accessibility",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "blocked:Permissions",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "VirtualScreen=True,Accessibility=True,Permissions=True"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "route:VirtualScreen",
+      "ok": true,
+      "detail": "want=page=VirtualScreen sub=-"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "route:Accessibility",
+      "ok": true,
+      "detail": "want=page=Accessibility sub=-"
+    },
+    {
+      "plugin": "builtin.page.device",
+      "step": "route:Permissions",
+      "ok": true,
+      "detail": "want=page=Settings sub=Permissions"
+    },
+    {
+      "plugin": "builtin.page.packages",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.page.packages']"
+    },
+    {
+      "plugin": "builtin.page.packages",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "Packages=False"
+    },
+    {
+      "plugin": "builtin.page.packages",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.page.packages",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.page.packages",
+      "step": "entry-gone:Packages",
+      "ok": true,
+      "detail": "entry=包管理"
+    },
+    {
+      "plugin": "builtin.page.packages",
+      "step": "blocked:Packages",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.packages",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "Packages=True"
+    },
+    {
+      "plugin": "builtin.page.packages",
+      "step": "route:Packages",
+      "ok": true,
+      "detail": "want=page=Packages sub=-"
+    },
+    {
+      "plugin": "builtin.page.model",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.page.model']"
+    },
+    {
+      "plugin": "builtin.page.model",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "ModelConfig=False"
+    },
+    {
+      "plugin": "builtin.page.model",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.page.model",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.page.model",
+      "step": "entry-gone:ModelConfig",
+      "ok": true,
+      "detail": "entry=模型与参数配置"
+    },
+    {
+      "plugin": "builtin.page.model",
+      "step": "blocked:ModelConfig",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.model",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "ModelConfig=True"
+    },
+    {
+      "plugin": "builtin.page.model",
+      "step": "route:ModelConfig",
+      "ok": true,
+      "detail": "want=page=Settings sub=ModelConfig"
+    },
+    {
+      "plugin": "builtin.page.assistant",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.page.assistant']"
+    },
+    {
+      "plugin": "builtin.page.assistant",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "Assistant=False,Behavior=False"
+    },
+    {
+      "plugin": "builtin.page.assistant",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.page.assistant",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.page.assistant",
+      "step": "entry-gone:Assistant",
+      "ok": true,
+      "detail": "entry=助手配置"
+    },
+    {
+      "plugin": "builtin.page.assistant",
+      "step": "entry-gone:Behavior",
+      "ok": true,
+      "detail": "entry=显示与行为"
+    },
+    {
+      "plugin": "builtin.page.assistant",
+      "step": "blocked:Assistant",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.assistant",
+      "step": "blocked:Behavior",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.assistant",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "Assistant=True,Behavior=True"
+    },
+    {
+      "plugin": "builtin.page.assistant",
+      "step": "route:Assistant",
+      "ok": true,
+      "detail": "want=page=Settings sub=Assistant"
+    },
+    {
+      "plugin": "builtin.page.assistant",
+      "step": "route:Behavior",
+      "ok": true,
+      "detail": "want=page=Settings sub=Behavior"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.page.data']"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "Backup=False,DataMigration=False,Privacy=False"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "entry-gone:Backup",
+      "ok": true,
+      "detail": "entry=备份与恢复"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "entry-gone:DataMigration",
+      "ok": true,
+      "detail": "entry=旧版数据导入"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "entry-gone:Privacy",
+      "ok": true,
+      "detail": "entry=隐私与数据清理"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "blocked:Backup",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "blocked:DataMigration",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "blocked:Privacy",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "Backup=True,DataMigration=True,Privacy=True"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "route:Backup",
+      "ok": true,
+      "detail": "want=page=Settings sub=Backup"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "route:DataMigration",
+      "ok": true,
+      "detail": "want=page=Settings sub=DataMigration"
+    },
+    {
+      "plugin": "builtin.page.data",
+      "step": "route:Privacy",
+      "ok": true,
+      "detail": "want=page=Settings sub=Privacy"
+    },
+    {
+      "plugin": "builtin.page.remote",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.page.remote']"
+    },
+    {
+      "plugin": "builtin.page.remote",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "RemoteDsh=False"
+    },
+    {
+      "plugin": "builtin.page.remote",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.page.remote",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.page.remote",
+      "step": "entry-gone:RemoteDsh",
+      "ok": true,
+      "detail": "entry=远程 DSH"
+    },
+    {
+      "plugin": "builtin.page.remote",
+      "step": "blocked:RemoteDsh",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.remote",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "RemoteDsh=True"
+    },
+    {
+      "plugin": "builtin.page.remote",
+      "step": "route:RemoteDsh",
+      "ok": true,
+      "detail": "want=page=Settings sub=RemoteDsh"
+    },
+    {
+      "plugin": "builtin.page.about",
+      "step": "disabled",
+      "ok": true,
+      "detail": "disabled=['builtin.page.about']"
+    },
+    {
+      "plugin": "builtin.page.about",
+      "step": "pages-off",
+      "ok": true,
+      "detail": "About=False"
+    },
+    {
+      "plugin": "builtin.page.about",
+      "step": "unknown",
+      "ok": true,
+      "detail": "unknown=[]"
+    },
+    {
+      "plugin": "builtin.page.about",
+      "step": "duplicates",
+      "ok": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "plugin": "builtin.page.about",
+      "step": "entry-gone:About",
+      "ok": true,
+      "detail": "entry=关于 DSH 原生版"
+    },
+    {
+      "plugin": "builtin.page.about",
+      "step": "blocked:About",
+      "ok": true,
+      "detail": "routes=[]"
+    },
+    {
+      "plugin": "builtin.page.about",
+      "step": "pages-on",
+      "ok": true,
+      "detail": "About=True"
+    },
+    {
+      "plugin": "builtin.page.about",
+      "step": "route:About",
+      "ok": true,
+      "detail": "want=page=Settings sub=About"
+    },
+    {
+      "plugin": "final",
+      "step": "all-enabled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "plugin": "final",
+      "step": "disabled-empty",
+      "ok": true,
+      "detail": "disabled=[]"
+    }
+  ]
+}

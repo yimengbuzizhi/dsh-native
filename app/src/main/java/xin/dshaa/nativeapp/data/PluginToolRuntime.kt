@@ -67,6 +67,8 @@ class PluginToolRuntime(
         val workspace: File,
         /** 已合并默认值的插件配置（M30）：每次 apply 都拿到它。 */
         val configJson: String,
+        /** M83 服务容器：其他已启用插件提供的服务快照（服务名 → JSON 文本），每次 apply 交给 ctx.inject。 */
+        val services: Map<String, String> = emptyMap(),
     )
 
     @Volatile
@@ -76,6 +78,8 @@ class PluginToolRuntime(
     fun refresh(records: List<PluginRecord>, workspace: File): List<Binding> {
         val bindings = ArrayList<Binding>()
         val used = HashSet<String>()
+        // M83：服务快照每次刷新重建一次（相当于一次「依赖解析」），工具执行时 ctx.inject 拿到同一份。
+        val services = xin.dshaa.core.plugins.PluginServices.snapshot(records)
         records.filter { it.enabled }.forEach { record ->
             val entry = File(record.path, record.main)
             if (!entry.isFile) return@forEach
@@ -100,6 +104,7 @@ class PluginToolRuntime(
                     grantedPermissions = record.grantedPermissions,
                     workspace = workspace,
                     configJson = configJson,
+                    services = services,
                 )
             }
         }
@@ -212,9 +217,14 @@ class PluginToolRuntime(
             Thread(runnable, "plugin-host-${binding.pluginId}").apply { isDaemon = true }
         }
         val jsRef = AtomicReference<QuickJs?>(null)
+        // M83：插件工具在 apply 里写 ctx.inject 时要拿到同一份服务快照（不用每次重建）。
+        val serviceHost = xin.dshaa.core.plugins.PluginServiceHost(initial = binding.services)
         val js = runCatching {
             QuickJs(object : JsHost {
                 override fun callSync(method: String, payloadJson: String): String? {
+                    if (method.startsWith("plugin.services.")) {
+                        return serviceHost.callSync(method, payloadJson)
+                    }
                     if (method == "log") {
                         logPluginConsole(binding, payloadJson)
                         return """{"ok":true}"""

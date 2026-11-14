@@ -1,0 +1,48 @@
+11-13 23:15:10.412 15140 15140 I DshBundled: 内置插件 builtin.shell.whale install ok=true 已导入 鲸歌默认壳（Surface） 1.3.3；没有注册工具（可能只是 hook 插件）
+11-13 23:15:10.542 15140 15140 I DshShell: shell resolved=builtin.shell.whale:builtin.shell.whale pref=builtin.shell.whale
+11-13 23:15:10.543 15140 15140 I DshShell: active=builtin.shell.whale:builtin.shell.whale pref=builtin.shell.whale
+11-13 23:15:10.929 15140 15140 I DshTurn : turn start session=ca9a800c-ef2b-4650-b8e9-0723c82b93c5 foreground=true model=deepseek-flash
+11-13 23:15:11.022 15140 15140 I DshTurn : foreground start
+11-13 23:15:11.125 15140 15140 I DshShell: dispatch=shell.mount plugin=builtin.shell.whale elapsed=68ms status=COMPLETED bytes=7661
+11-13 23:15:11.780 15140 15140 I DshTurnHook: step-start turn=8 step=1
+11-13 23:15:11.965 15140 15140 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=35ms status=COMPLETED bytes=7661
+11-13 23:15:13.066 15140 15140 I DshTurnHook: tool-start name=ask_user_question id=call_00_ET_G7tNFYck6zGpYPGzXwAQ2009
+11-13 23:15:13.223 15140 15140 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=45ms status=COMPLETED bytes=7661
+11-13 23:15:22.943 15140 15140 I DshShell: action=answerOption row=color_singleRed index=0
+11-13 23:15:23.047 15140 15140 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=72ms status=COMPLETED bytes=7661
+11-13 23:15:23.680 15140 15140 I DshShell: action=answerOption row=color_singleGreen index=1
+11-13 23:15:23.773 15140 15140 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=56ms status=COMPLETED bytes=7661
+11-13 23:15:30.354 15140 15140 I DshShell: tap action=answerSkip
+11-13 23:15:30.355 15140 15140 I DshShell: action=answerSkip row=null index=-1
+11-13 23:15:30.430 15140 15140 I DshTurnHook: tool-end name=ask_user_question id=call_00_ET_G7tNFYck6zGpYPGzXwAQ2009 error=false chars=57
+11-13 23:15:30.617 15140 15140 I DshTurnHook: step-end turn=8 step=1
+11-13 23:15:30.617 15140 15140 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=230ms status=COMPLETED bytes=7661
+11-13 23:15:30.765 15140 15140 I DshTurnHook: step-start turn=8 step=2
+11-13 23:15:30.963 15140 15140 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=79ms status=COMPLETED bytes=7661
+11-13 23:15:32.110 15140 15140 I DshTurnHook: step-end turn=8 step=2
+11-13 23:15:32.138 15140 15140 I DshTurn : turn end after 21208ms
+11-13 23:15:32.157 15140 15140 I DshTurn : foreground stop
+11-13 23:15:32.289 15140 15140 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=45ms status=COMPLETED bytes=7661
+11-13 23:15:32.776 15140 15140 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=116ms status=COMPLETED bytes=7661
+11-13 23:16:33.495 15819 15819 I DshBundled: 内置插件 builtin.shell.whale install ok=true 已导入 鲸歌默认壳（Surface） 1.3.4；没有注册工具（可能只是 hook 插件）
+11-13 23:16:33.635 15819 15819 I DshShell: shell resolved=builtin.shell.whale:builtin.shell.whale pref=builtin.shell.whale
+11-13 23:16:33.635 15819 15819 I DshShell: active=builtin.shell.whale:builtin.shell.whale pref=builtin.shell.whale
+11-13 23:16:34.085 15819 15819 I DshTurn : turn start session=ca9a800c-ef2b-4650-b8e9-0723c82b93c5 foreground=true model=deepseek-flash
+11-13 23:16:34.165 15819 15819 I DshTurn : foreground start
+11-13 23:16:34.277 15819 15819 I DshShell: dispatch=shell.mount plugin=builtin.shell.whale elapsed=81ms status=COMPLETED bytes=7769
+11-13 23:16:34.787 15819 15819 I DshTurnHook: step-start turn=9 step=1
+11-13 23:16:34.987 15819 15819 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=47ms status=COMPLETED bytes=7769
+11-13 23:16:36.180 15819 15819 I DshTurnHook: tool-start name=ask_user_question id=call_00_ET_195TGHH7ovOaFbjAXGmh0434
+11-13 23:16:36.421 15819 15819 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=98ms status=COMPLETED bytes=7769
+11-13 23:16:53.559 15819 15819 I DshShell: tap action=answerSubmit
+11-13 23:16:53.560 15819 15819 I DshShell: action=answerSubmit row=null index=-1
+11-13 23:16:53.659 15819 15819 I DshTurnHook: tool-end name=ask_user_question id=call_00_ET_195TGHH7ovOaFbjAXGmh0434 error=false chars=54
+11-13 23:16:53.828 15819 15819 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=232ms status=COMPLETED bytes=7769
+11-13 23:16:53.834 15819 15819 I DshTurnHook: step-end turn=9 step=1
+11-13 23:16:53.983 15819 15819 I DshTurnHook: step-start turn=9 step=2
+11-13 23:16:54.181 15819 15819 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=84ms status=COMPLETED bytes=7769
+11-13 23:16:55.196 15819 15819 I DshTurnHook: step-end turn=9 step=2
+11-13 23:16:55.223 15819 15819 I DshTurn : turn end after 21138ms
+11-13 23:16:55.233 15819 15819 I DshTurn : foreground stop
+11-13 23:16:55.372 15819 15819 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=55ms status=COMPLETED bytes=7769
+11-13 23:16:55.844 15819 15819 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=120ms status=COMPLETED bytes=7769

@@ -1,0 +1,9 @@
+{
+  "id": "m85a.chat",
+  "name": "M85-A 最小壳",
+  "version": "1.0.0",
+  "description": "M85-A 验收：只用 Surface 18 原语拼出的聊天主界面（会话条 + 消息列表 + 输入框 + 发送/停止）",
+  "main": "index.js",
+  "format": "dsh",
+  "permissions": ["ui"]
+}

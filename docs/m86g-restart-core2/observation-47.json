@@ -1,0 +1,42 @@
+{
+  "observedAt": 1794654025205,
+  "activeTurnCount": 0,
+  "writerCount": 0,
+  "streamingCount": 0,
+  "sessionId": "8c8b210e-cd12-4f44-83bf-c311a70b4fc7",
+  "streaming": false,
+  "stopping": false,
+  "shell": "native",
+  "sendMode": "queue",
+  "errorPresent": false,
+  "hasDraft": false,
+  "pendingImageCount": 0,
+  "pendingFileCount": 0,
+  "fixtureSession": true,
+  "turnEnds": [
+    "aborted",
+    "completed"
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "text": "M86GUI_20261114185932198887_PROCESS_RESTART_HOLD"
+    },
+    {
+      "role": "assistant",
+      "text": "M86GUI_PARTIAL"
+    },
+    {
+      "role": "user",
+      "text": "M86GUI_PROCESS_RESTART_20261114185932198887_INPUT"
+    },
+    {
+      "role": "assistant",
+      "text": "M86GUI_REPLY_M86GUI_PROCESS_RESTART_20261114185932198887_INPUT"
+    }
+  ],
+  "queued": [],
+  "delivered": [
+    "prompt-250c6909-5669-49d5-b28e-c5967263f608"
+  ]
+}

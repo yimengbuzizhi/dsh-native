@@ -1,0 +1,9 @@
+{
+  "name": "m86.selftest.webcold.5acf56d017da4b568775b38cda6e5d29",
+  "version": "1.0.0",
+  "main": "index.js",
+  "permissions": [
+    "ui"
+  ],
+  "description": "Isolated retained M86 WebView cold-start fixture"
+}

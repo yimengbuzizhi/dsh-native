@@ -1,0 +1,8 @@
+{
+  "name": "m84p-node-matrix",
+  "version": "1.0.0",
+  "description": "M84-P 验收：Node 内置模块矩阵（path/fs/os/Buffer/events/timers/child_process/http）",
+  "main": "index.js",
+  "format": "esm",
+  "permissions": ["fs:workspace", "shell", "net:example.com"]
+}

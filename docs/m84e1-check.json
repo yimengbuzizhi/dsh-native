@@ -1,0 +1,47 @@
+{
+  "batch": "M84-E1",
+  "device": "192.0.2.10:45111 (OPPO A55 5G, PEMM00, Android 13)",
+  "time": "2026-11-13 19:52 (Asia/Shanghai)",
+  "capability": {
+    "id": "prompt.suppressRuntimeContext",
+    "js": "ctx.systemPrompt.suppressRuntimeContext()",
+    "version": "PluginCapabilities.VERSION=m84.1",
+    "implemented": "22 / 26（原 21 / 26）",
+    "screenshot": "docs/shots/127-02-capabilities.png"
+  },
+  "demo_plugin": {
+    "id": "suppress-runtime-demo",
+    "version": "1.0.0",
+    "path": "/data/user/0/xin.dshaa.nativeapp/files/plugins/suppress-runtime-demo",
+    "calls": ["ctx.systemPrompt.suppressRuntimeContext()", "ctx.systemPrompt.context({name:'suppress-demo-context',...})", "ctx.tools.register({name:'suppress_demo_ping',...})"],
+    "record_flag": "suppressRuntimeContext=true（plugins.json 落盘）",
+    "screenshot_on": "docs/shots/127-01-plugin-on.png"
+  },
+  "request_bodies": {
+    "before_plugin_off": {
+      "file": "docs/m84e1-before.json",
+      "runtime_context_present": true,
+      "plugin_context_present": false,
+      "suppress_demo_tool_offered": false,
+      "tools": 126,
+      "messages": 1
+    },
+    "after_plugin_on": {
+      "file": "docs/m84e1-after.json",
+      "runtime_context_present": false,
+      "plugin_context_present": true,
+      "suppress_demo_tool_offered": true,
+      "tools": 127,
+      "messages": 1
+    }
+  },
+  "tests": {
+    "core:plugins:PluginModuleTest": "新增 parsesSuppressRuntimeContextFlag；全套通过",
+    "full_command": ":app:assembleDebug :core:plugins:test :core:engine:test :core:session:test = BUILD SUCCESSFUL"
+  },
+  "reset": {
+    "plugin_enabled": false,
+    "debug_llm_provider": "off（prefs 无 debug_llm_provider）",
+    "accessibility": "已重发并 Bound"
+  }
+}

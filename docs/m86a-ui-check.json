@@ -1,0 +1,38 @@
+[
+  {
+    "name": "three-tabs",
+    "ok": true
+  },
+  {
+    "name": "builtin-enabled-state",
+    "ok": true
+  },
+  {
+    "name": "builtin-detail",
+    "ok": true
+  },
+  {
+    "name": "search-disabled-shell",
+    "ok": true
+  },
+  {
+    "name": "native-using-before-switch",
+    "ok": true
+  },
+  {
+    "name": "shell-selected-via-ui",
+    "ok": true
+  },
+  {
+    "name": "safe-mode",
+    "ok": true
+  },
+  {
+    "name": "safe-plugin-manager",
+    "ok": true
+  },
+  {
+    "name": "safe-select-alternative",
+    "ok": true
+  }
+]

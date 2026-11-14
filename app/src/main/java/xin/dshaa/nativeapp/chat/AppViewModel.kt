@@ -20,11 +20,14 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -37,10 +40,17 @@ import xin.dshaa.core.agents.AgentNotice
 import xin.dshaa.core.agents.AgentRecord
 import xin.dshaa.core.agents.AgentRegistry
 import xin.dshaa.core.agents.AgentTerminal
+import xin.dshaa.core.agent.AGENT_RUN_METHOD
+import xin.dshaa.core.agent.AgentCandidate
+import xin.dshaa.core.agent.AgentResolution
+import xin.dshaa.core.agent.AgentRouting
+import xin.dshaa.core.agent.BUILTIN_AGENT_ID
+import xin.dshaa.core.agent.ResolvedAgent
 import xin.dshaa.core.attachment.AttachmentStore
 import xin.dshaa.core.attachment.ImageNormalizer
 import xin.dshaa.core.engine.Compaction
 import xin.dshaa.core.engine.EngineDeps
+import xin.dshaa.core.engine.EngineHooks
 import xin.dshaa.core.engine.ImageOffload
 import xin.dshaa.core.engine.PlanModeState
 import xin.dshaa.core.engine.SessionGateway
@@ -61,21 +71,39 @@ import xin.dshaa.core.input.parseCommandLine
 import xin.dshaa.core.jobs.JobOutcome
 import xin.dshaa.core.jobs.JobRegistry
 import xin.dshaa.core.jobs.JobStatus
+import xin.dshaa.core.js.JsOutcome
+import xin.dshaa.core.js.JsStatus
+import xin.dshaa.core.llm.ConfiguredLlmProvider
+import xin.dshaa.core.llm.BUILTIN_MODEL_DEEPSEEK
+import xin.dshaa.core.llm.BUILTIN_MODEL_OPENAI
+import xin.dshaa.core.llm.MODEL_CONTRACT
+import xin.dshaa.core.llm.MODEL_PROVIDER_DEEPSEEK
+import xin.dshaa.core.llm.MODEL_PROVIDER_OPENAI
+import xin.dshaa.core.llm.ModelCandidate
+import xin.dshaa.core.llm.ModelResolution
+import xin.dshaa.core.llm.ModelRouting
+import xin.dshaa.core.llm.ResolvedModel
 import xin.dshaa.core.llm.LlmClient
 import xin.dshaa.core.llm.LlmConfig
 import xin.dshaa.core.llm.LlmEvent
+import xin.dshaa.core.llm.LlmProvider
+import xin.dshaa.core.llm.LlmProviderConfig
+import xin.dshaa.core.llm.LlmProviders
 import xin.dshaa.core.llm.OpenAiClient
 import xin.dshaa.core.llm.WebSearchClient
 import xin.dshaa.core.model.BlockType
 import xin.dshaa.core.model.ChatMessage
 import xin.dshaa.core.model.ContentBlock
+import xin.dshaa.core.model.GoalActivation
 import xin.dshaa.core.model.GoalAuthority
 import xin.dshaa.core.model.GoalException
+import xin.dshaa.core.model.GoalPhase
 import xin.dshaa.core.model.GoalView
 import xin.dshaa.core.model.ImageOffloadTarget
 import xin.dshaa.core.model.ImageRef
 import xin.dshaa.core.model.MessageRole
 import xin.dshaa.core.model.markOffloadedImages
+import xin.dshaa.core.model.toImageRef
 import xin.dshaa.core.model.ScheduleException
 import xin.dshaa.core.model.ScheduleTiming
 import xin.dshaa.core.model.ScheduledTask
@@ -93,11 +121,22 @@ import xin.dshaa.core.workflow.WorkflowStopReason
 import xin.dshaa.core.tools.workflow.WorkflowHost
 import xin.dshaa.core.tools.workflow.WorkflowToolOutcome
 import xin.dshaa.core.model.ToolCall
+import xin.dshaa.nativeapp.data.PluginShellHost
 import xin.dshaa.core.parity.ParityJson
 import xin.dshaa.core.plugins.PluginRecord
+import xin.dshaa.core.plugins.PluginRoute
 import xin.dshaa.core.parity.RunRecorder
 import xin.dshaa.core.parity.SseCaptureRecorder
 import xin.dshaa.core.prompt.PromptPack
+import xin.dshaa.core.prompt.PromptProviders
+import xin.dshaa.core.prompt.PromptRequest
+import xin.dshaa.core.prompt.BUILTIN_PROMPT_ID
+import xin.dshaa.core.prompt.PROMPT_ASSEMBLE_METHOD
+import xin.dshaa.core.prompt.PROMPT_CONTRACT
+import xin.dshaa.core.prompt.PromptCandidate
+import xin.dshaa.core.prompt.PromptResolution
+import xin.dshaa.core.prompt.PromptRouting
+import xin.dshaa.core.prompt.ResolvedPrompt
 import xin.dshaa.core.protocol.ApiMessage
 import xin.dshaa.core.protocol.ApiRequest
 import xin.dshaa.core.protocol.ApiTool
@@ -110,7 +149,19 @@ import xin.dshaa.core.session.GoalStore
 import xin.dshaa.core.session.GoalWrapup
 import xin.dshaa.core.session.ScheduleStore
 import xin.dshaa.core.session.SessionCodec
-import xin.dshaa.core.session.SessionRepository
+import xin.dshaa.core.session.FileSessionRepository
+import xin.dshaa.core.session.BUILTIN_STORAGE_ID
+import xin.dshaa.core.session.STORAGE_CONTRACT
+import xin.dshaa.core.session.StorageCandidate
+import xin.dshaa.core.session.StorageResolution
+import xin.dshaa.core.session.StorageRouting
+import xin.dshaa.core.session.ResolvedStorage
+import xin.dshaa.core.session.ZstdFrames
+import xin.dshaa.nativeapp.device.floating.FloatingDemoPlugin
+import xin.dshaa.nativeapp.device.floating.FloatingSlots
+import xin.dshaa.core.session.SessionStore
+import xin.dshaa.core.session.SessionStores
+import xin.dshaa.core.session.TrashedSession
 import xin.dshaa.core.session.SessionSession
 import xin.dshaa.core.skill.FileSystemSkills
 import xin.dshaa.core.skill.SkillCatalog
@@ -121,7 +172,7 @@ import xin.dshaa.core.skill.SkillSummary
 import xin.dshaa.core.skill.invokedSkillNames
 import xin.dshaa.core.skill.isSkillName
 import xin.dshaa.core.skill.renderSkillContent
-import xin.dshaa.core.tools.DefaultTools
+import xin.dshaa.core.tools.BuiltinToolCatalog
 import xin.dshaa.core.tools.AgentEntry
 import xin.dshaa.core.tools.AgentHost
 import xin.dshaa.core.tools.AgentSend
@@ -136,32 +187,51 @@ import xin.dshaa.core.tools.fs.sniffImageMediaType
 import xin.dshaa.core.tools.schedule.ScheduleTime
 import xin.dshaa.nativeapp.data.BackupManager
 import xin.dshaa.nativeapp.data.BundledSkills
+import xin.dshaa.nativeapp.data.PluginSessionStore
 import xin.dshaa.nativeapp.data.PluginStore
 import xin.dshaa.nativeapp.data.PluginToolRuntime
-import xin.dshaa.nativeapp.data.SettingsStore
+import xin.dshaa.nativeapp.data.RoutingSessionStore
+import xin.dshaa.nativeapp.data.StorageUnavailableException
+import xin.dshaa.ui.shellapi.data.SettingsStore
 import xin.dshaa.nativeapp.data.WorkspaceStore
 import xin.dshaa.nativeapp.fish.BigFish
-import xin.dshaa.nativeapp.data.WorkspaceUi
+import xin.dshaa.ui.shellapi.data.WorkspaceUi
 import xin.dshaa.nativeapp.device.DeviceShell
 import xin.dshaa.nativeapp.device.a11y.A11y
 import com.ai.assistance.showerclient.ShellIdentity
 import xin.dshaa.nativeapp.device.tools.AndroidDeviceTools
 import xin.dshaa.nativeapp.memory.MemoryTools
 import xin.dshaa.nativeapp.device.tools.TerminalTools
+import xin.dshaa.ui.shellapi.NativeShellHost
+import xin.dshaa.ui.shellapi.AgentTargetUi
+import xin.dshaa.ui.shellapi.RoleTargetUi
+import xin.dshaa.ui.shellapi.PluginPageEntry
+import xin.dshaa.ui.shellapi.PluginPageTarget
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.time.ZoneId
 import java.util.UUID
+import xin.dshaa.ui.shellapi.chat.ATTACHMENT_REFERENCE_HINT
+import xin.dshaa.ui.shellapi.chat.ChatSessionState
+import xin.dshaa.ui.shellapi.chat.CommandSheet
+import xin.dshaa.ui.shellapi.chat.JobUi
+import xin.dshaa.ui.shellapi.chat.PendingApproval
+import xin.dshaa.ui.shellapi.chat.PendingFile
+import xin.dshaa.ui.shellapi.chat.PendingImage
+import xin.dshaa.ui.shellapi.chat.READ_ONLY_IMPORT
+import xin.dshaa.ui.shellapi.chat.READ_ONLY_STORAGE
+import xin.dshaa.ui.shellapi.chat.READ_ONLY_SUBAGENT
+import xin.dshaa.ui.shellapi.chat.SessionBadge
+import xin.dshaa.ui.shellapi.chat.SubagentUi
+import xin.dshaa.ui.shellapi.chat.WaitingSession
+import xin.dshaa.ui.shellapi.chat.buildJobRows
+import xin.dshaa.ui.shellapi.chat.mergeSubagents
 
 private const val MAX_LOG_TEXT = 200_000
 
 /** 委托深度上限（上游 `dsh-subagent` 的默认 maxDepth = 1：根能委派一层，子代理不能再委派）。 */
 private const val MAX_AGENT_DEPTH = 1
-
-/** 只读会话的来源：旧版备份导入副本 / 子代理会话回放（聊天页底部说明文案不同）。 */
-const val READ_ONLY_IMPORT = "import"
-const val READ_ONLY_SUBAGENT = "subagent"
 
 /** 只读工具：审批策略为「每次询问」时也不弹窗（与上游权限分类一致）。 */
 private val READ_ONLY_TOOLS = setOf(
@@ -173,14 +243,20 @@ private val READ_ONLY_TOOLS = setOf(
     // 只读查询：报 Android 无 payload，不需要审批
     "load_workspace_dependencies",
     // 技能加载：只读 SKILL.md，内容就是它自己的说明
-    "skill",
+    "skill", "plugin_dev_list", "plugin_dev_test",
 )
+
+/** M85-D：第三方 JS 回合的最长等待（插件自己应尽快返回；超时按失败收尾，UI 可在 1.5s 后强制停）。 */
+private const val AGENT_TURN_TIMEOUT_MS = 120_000L
+
+/** M85-E：第三方提示词实现的最长等待（拼装要很快；超时就回退内置拼装并亮提示）。 */
+private const val PROMPT_ASSEMBLE_TIMEOUT_MS = 8_000L
 
 /**
  * 应用级状态：设置 + 会话仓库 + 当前聊天 + 工具循环。
  * 运行时暂时在 ViewModel；M2 后挪到前台服务持有的 ChatRuntimeHolder（01 §五.4）。
  */
-class AppViewModel(app: Application) : AndroidViewModel(app) {
+class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
 
     // ---- 插件（M26：本地导入 + 试运行） ----
     //
@@ -189,14 +265,191 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val pluginStore = PluginStore(app)
 
-    var pluginsUi by mutableStateOf(pluginStore.list())
+    var runtimeReady by mutableStateOf(false)
+        private set
+    var runtimeInitError by mutableStateOf<String?>(null)
+        private set
+    var runtimeCoreReady by mutableStateOf(false)
+        private set
+    private val initializationMutex = kotlinx.coroutines.sync.Mutex()
+    private var runtimeBindingsInstalled = false
+
+    /** 首帧由独立 BootHost 提供；耗时 IO 在后台准备，主线程统一登记后才开放发送。 */
+    suspend fun initializeRuntime(onPhase: (String, String) -> Unit = { _, _ -> }) {
+        initializationMutex.lock()
+        try {
+            if (runtimeReady) {
+                consumeStartupDebug()
+                return
+            }
+            runtimeInitError = null
+            onPhase("packages", "准备内置插件…")
+            val records = withContext(Dispatchers.IO) {
+                xin.dshaa.nativeapp.data.BundledPlugins.ensureWhaleShell(getApplication(), pluginStore)
+                BundledSkills.ensureInstalled(getApplication())
+                pluginStore.list()
+            }
+            pluginsUi = records
+            onPhase("registry", "登记工具与角色…")
+            initializeCoreRegistry()
+            syncPluginTools()
+            runtimeCoreReady = true
+            shellActive = resolveShellTarget(prefs.getString("dsh_shell", null))
+            onPhase("skills", "准备技能目录…")
+            val snapshot = withContext(Dispatchers.IO) { skills.snapshot() }
+            skillsUi = snapshot.skills
+            skillsComplete = snapshot.complete
+            skillsWarnings = withContext(Dispatchers.IO) { skills.lastWarnings() }
+            onPhase("roles", "等待当前角色…")
+            // Onboarding and the shell safety manager must remain reachable even with a broken role.
+            // Sending always checks exact registrations independently in inputReadinessError.
+            val requiresRoles = onboardingDone && (nativeUiEnabled() || shellActive != null)
+            val deadline = android.os.SystemClock.elapsedRealtime() + 10_000
+            while (requiresRoles && pendingRoleRegistrations().isNotEmpty() && android.os.SystemClock.elapsedRealtime() < deadline) {
+                delay(50)
+            }
+            check(!requiresRoles || pendingRoleRegistrations().isEmpty()) {
+                "当前角色运行时未就绪：" + pendingRoleRegistrations().joinToString("、")
+            }
+            onPhase("ready", "准备界面…")
+            runtimeReady = true
+            installRuntimeBindings()
+            consumeStartupDebug()
+            refreshSessions()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            runtimeReady = false
+            runtimeInitError = e.message ?: e.javaClass.simpleName
+            throw e
+        } finally {
+            initializationMutex.unlock()
+        }
+    }
+
+    private val loadingSnapshotStore by lazy {
+        xin.dshaa.nativeapp.data.LoadingSnapshotStore(File(getApplication<Application>().filesDir, "loading-snapshot.json"))
+    }
+    override var loadingSafetyNotice by mutableStateOf<String?>(null)
+        private set
+    override val loadingTargetsUi: List<RoleTargetUi>
+        get() {
+            val selected = prefs.getString("dsh_loading", null)?.ifBlank { null }
+                ?: xin.dshaa.nativeapp.data.BuiltinLoadingPlugin.ID
+            val snapshot = loadingSnapshotStore.read()
+            return buildList {
+                add(RoleTargetUi(role = "loading", implementationId = xin.dshaa.nativeapp.data.BuiltinLoadingPlugin.ID,
+                    label = "鲸歌加载页", builtin = true, active = snapshot?.ownerPlugin == xin.dshaa.nativeapp.data.BuiltinLoadingPlugin.ID ||
+                        (snapshot == null && selected == xin.dshaa.nativeapp.data.BuiltinLoadingPlugin.ID),
+                    selectionValue = xin.dshaa.nativeapp.data.BuiltinLoadingPlugin.ID))
+                pluginsUi.forEach { record -> record.loadings.forEach { loading ->
+                    val granted = "ui" in record.permissions && "ui" in record.grantedPermissions
+                    val value = "${record.id}#${loading.id}"
+                    add(RoleTargetUi(role = "loading", implementationId = loading.id, label = loading.label,
+                        pluginId = record.id, provider = record.name, enabled = record.enabled, permitted = granted,
+                        active = snapshot?.selection == value || (selected == record.id && snapshot?.ownerPlugin == record.id),
+                        selectionValue = value, unavailableReason = when {
+                            !record.enabled -> "提供方插件已停用"
+                            !granted -> "缺少 ui 授权"
+                            record.error != null -> "插件登记失败"
+                            else -> null
+                        }))
+                } }
+            }
+        }
+
+    override fun selectLoading(value: String): Boolean {
+        val candidate = loadingTargetsUi.firstOrNull { it.selectionValue == value } ?: return false
+        if (candidate.unavailableReason != null) { pluginNotice = candidate.unavailableReason; return false }
+        return runCatching {
+            val refreshed = loadingSnapshotStore.refresh(pluginsUi, value)
+            loadingSafetyNotice = refreshed.unavailableReason
+            check(refreshed.unavailableReason == null) { refreshed.unavailableReason.orEmpty() }
+            prefs.edit().putString("dsh_loading", value).apply()
+            pluginNotice = "加载页已选择，下次启动生效：${candidate.label}"
+            true
+        }.getOrElse { pluginNotice = "加载页选择失败：${it.message}"; false }
+    }
+
+    override fun restoreBuiltinLoading() { selectLoading(xin.dshaa.nativeapp.data.BuiltinLoadingPlugin.ID) }
+
+    /** M83 阶段 4：远程 DSH（设置 → 远程 DSH 的连接页/会话列表/远程聊天状态）。 */
+    override val remote = xin.dshaa.nativeapp.remote.RemoteDshController(app)
+    override val conversation: xin.dshaa.ui.shellapi.ShellConversation by lazy {
+        xin.dshaa.nativeapp.remote.ConversationAdapter(this, remote, viewModelScope)
+    }
+
+    override var pluginsUi by mutableStateOf(pluginStore.list())
         private set
 
-    var pluginsBusy by mutableStateOf(false)
+    // ---- M83 阶段 2：内置插件（工具/页面可单独开关） ----
+    private val builtinStore = xin.dshaa.nativeapp.data.BuiltinPluginStore(app)
+
+    override var builtinPluginsUi by mutableStateOf(builtinStore.ui())
+        private set
+
+    // ---- M85-D：回合插件（agent/v1） ----
+    //
+    // 每次发消息前重新解析 `dsh_agent`：内置 builtin.agent.dsh（TurnEngine）、导入插件的
+    // ctx.agent.register 声明、同 id 覆盖、停用 → 安全提示，都只在这一处判定。
+    /** 当前生效的回合；null = 没有可用回合（聊天页显示安全提示，发送被拦下）。 */
+    var activeAgent by mutableStateOf<ResolvedAgent?>(null)
+        private set
+
+    /** 无可用回合时的提示文案（停用/缺授权的具体原因）。 */
+    override var agentSafetyNotice by mutableStateOf<String?>(null)
+        private set
+
+    /** M85-E：当前生效的提示词实现（null = 不可用，发送被拦）。声明必须在 init 之前。 */
+    private var activePromptState by mutableStateOf<ResolvedPrompt?>(null)
+
+    /** M85-E：提示词不可用/插件运行失败时的提示（聊天页横幅）。 */
+    override var promptSafetyNotice by mutableStateOf<String?>(null)
+        private set
+
+    /** JS 回合插件 `ctx.abort()` 读的停止位（每次起轮清零，用户点停止置 true）。 */
+    @Volatile
+    private var pluginAgentAbort = false
+
+    /** 内置插件开关：关掉后工具不进 tools[]、页面入口消失（重启后保持）。 */
+    override fun setBuiltinPluginEnabled(id: String, enabled: Boolean) {
+        builtinStore.setEnabled(id, enabled)
+        // A2：工具组关掉要从 registry 注销，打开要重新注册（不只是请求侧过滤）
+        syncBuiltinTools()
+        // M84-D：悬浮窗插口插件关掉要从 FloatingSlots 注销（四个插口立即恢复默认）
+        syncFloatingSlots()
+        builtinPluginsUi = builtinStore.ui()
+        // M85-D：内置回合插件开关 → 立刻重解析（关掉 = 安全提示；重新打开 = 恢复）
+        refreshAgentResolution()
+        // 工具清单是每次请求现算的（offeredToolNames），这里只需要让界面立刻反映数量。
+        pluginNotice = "${builtinStore.ui().firstOrNull { it.plugin.id == id }?.plugin?.name ?: id}：" +
+            if (enabled) "已打开" else "已关闭"
+        Log.i("DshPlugin", "builtin plugin $id enabled=$enabled tools=${registry.names.size}")
+    }
+
+    /** 这个一级页面现在是否允许进入（内置页面被关掉时返回 false）。 */
+    override fun builtinScreenEnabled(screenName: String): Boolean {
+        // 读一次 Compose state：在设置页/抽屉里开关插件时，依赖它的界面要跟着重组；
+        // 只读 SharedPreferences 不会触发 Compose 快照，之前会出现「开关关了但入口还在」。
+        builtinPluginsUi.size
+        return builtinStore.screenEnabled(screenName)
+    }
+
+    /**
+     * M85-C：内置界面插件（`shell/v1` native 后端）是否启用。
+     *
+     * 同样读一次 `builtinPluginsUi`：在插件页关掉它时宿主立刻切到安全模式；重新打开立刻回原界面。
+     */
+    fun nativeUiEnabled(): Boolean {
+        builtinPluginsUi.size
+        return builtinStore.isEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_UI_SHELL)
+    }
+
+    override var pluginsBusy by mutableStateOf(false)
         private set
 
     /** 插件页顶部的一次性提示（导入/删除结果）。 */
-    var pluginNotice by mutableStateOf<String?>(null)
+    override var pluginNotice by mutableStateOf<String?>(null)
         private set
 
     /** 插件工具接入（M27）：已启用且 schema 可用的工具会注册进 `ToolRegistry`。 */
@@ -208,19 +461,82 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         hostBridge = xin.dshaa.nativeapp.data.AndroidPluginHostBridge(app),
     )
 
+    /**
+     * M84-H：注册了会话投影的插件各起一个常驻 QuickJS 运行时。
+     *
+     * 与 [pluginToolRuntime] 不是一回事：工具仍是「每次调用新建 QuickJS」；这里只为
+     * `ctx.sessionProjections.register(...)` 保留 apply 后的 runtime，宿主事件逐条 dispatch 进去。
+     */
+    private val pluginResidentRuntime = xin.dshaa.nativeapp.data.PluginResidentRuntime(
+        scope = viewModelScope,
+        notifier = { title, body -> xin.dshaa.nativeapp.data.PluginNotifier.notify(app, title, body) },
+        hostBridge = xin.dshaa.nativeapp.data.AndroidPluginHostBridge(app),
+        // M84-N：投影 checkpoint 落 files/projection-checkpoints.json；重启只重投 seq > lastSeq。
+        checkpoints = xin.dshaa.core.plugins.ProjectionCheckpoints(
+            java.io.File(app.filesDir, "projection-checkpoints.json"),
+        ),
+        // M85-D：JS 回合插件的 ctx 原语（agent/v1）。
+        onAgentStatus = { _, text -> setPluginAgentStatus(text) },
+        isAgentAborted = { pluginAgentAbort },
+        agentToolNames = { offeredToolNames().toList() },
+        // M85-E：存储/提示词插件要等常驻 runtime 起来才能列会话/拼提示词；起来后刷新一次。
+        onResidentStarted = { pluginId ->
+            Log.i("DshStorage", "resident started plugin=$pluginId -> refresh sessions")
+            refreshSessions()
+        },
+        // M85-E：只读导出器用的宿主导出原语（只读 builtin.storage.jsonl，不碰活动存储）。
+        builtinSessionExport = { method, payload -> exportBuiltinSessions(method, payload) },
+    )
+
     /** 当前由插件注册进工具表的名字（刷新时先注销这一批，再按最新清单注册）。 */
     private val pluginToolNames = mutableSetOf<String>()
 
+    /**
+     * M85-A：壳宿主（只有用户选了插件壳时才会 mount）。state 由 [shellStateJson] 在主线程现算；
+     * 连续失败回退原生壳（[fallbackFromShell]）。
+     */
+    val shellHost: PluginShellHost by lazy {
+        PluginShellHost(
+            scope = viewModelScope,
+            dispatch = { pluginId, method, payload, timeout ->
+                pluginResidentRuntime.dispatch(pluginId, method, payload, timeout)
+            },
+            residentReady = { pluginId -> pluginResidentRuntime.isResident(pluginId) },
+            stateProvider = { shellStateJson() },
+            onFallback = { reason -> fallbackFromShell(reason) },
+        )
+    }
+
+    /** M84-E2：当前由插件注册进 [LlmProviders] 的供应商 id（刷新时先收回这一批）。 */
+    private val pluginProviderIds = LinkedHashSet<String>()
+
+    /**
+     * M85-F：能力宿主（`capability/v1`）。内置平台能力 + 插件 `ctx.capability.register` 的提供方，
+     * 解析规则（插件优先/停用回落/如实不可用）在 `core:capability-api` 的单测里锁死。
+     */
+    val capabilityHost: xin.dshaa.nativeapp.data.CapabilityHost by lazy {
+        xin.dshaa.nativeapp.data.CapabilityHost(
+            context = app,
+            dispatch = { pluginId, method, payload, timeout ->
+                pluginResidentRuntime.dispatch(pluginId, method, payload, timeout)
+            },
+            records = { pluginsUi },
+        )
+    }
+
+    /** 插件页底部最近一次能力调用的结果（null = 还没调用过）。 */
+    override var capabilityNotice by mutableStateOf<String?>(null)
+        private set
     /** 当前请求可用的插件工具 schema（每次请求现取，随 `ToolRegistry` 同步刷新）。 */
     @Volatile
     private var pluginApiTools: List<ApiTool> = emptyList()
 
     /** 插件页展示：插件 id → 已接入对话的工具名（未启用/参数认不出 = 不在表里）。 */
-    var pluginInjected by mutableStateOf<Map<String, Set<String>>>(emptyMap())
+    override var pluginInjected by mutableStateOf<Map<String, Set<String>>>(emptyMap())
         private set
 
     /** 调试/截图用：启动即打开某个插件详情（`--es dsh_plugin_detail <id>`，只 debug 包）。 */
-    var debugPluginDetailId by mutableStateOf<String?>(null)
+    override var debugPluginDetailId by mutableStateOf<String?>(null)
         private set
 
     // ---- M67：随包内置的 Operit ToolPkg 目录（包管理 → 包） ----
@@ -228,18 +544,51 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val operitBundled = xin.dshaa.nativeapp.data.OperitBundledPackages(app)
 
     /** 「包」tab 的列表；第一次进 tab 时从 assets 扫出来。 */
-    var operitPackagesUi by mutableStateOf<List<xin.dshaa.nativeapp.data.OperitBundledPackage>>(emptyList())
+    override var operitPackagesUi by mutableStateOf<List<xin.dshaa.ui.shellapi.data.OperitBundledPackage>>(emptyList())
         private set
 
-    var operitPackagesBusy by mutableStateOf(false)
+    override var operitPackagesBusy by mutableStateOf(false)
         private set
 
-    val settings = SettingsStore(app.getSharedPreferences("dsh", 0))
+    override val settings = SettingsStore(app.getSharedPreferences("dsh", 0))
     private val prefs = app.getSharedPreferences("dsh", 0)
-    private val repo = SessionRepository(File(app.filesDir, "sessions"))
+
+    /**
+     * M85-A：当前由插件提供的整壳（null = 原生壳）。
+     *
+     * 选择规则（冷启动读 `dsh_shell` 调试项）：`native`/空 = 原生；`插件id` = 该插件的第一个壳；
+     * `插件id#壳id` = 指定壳。插件必须启用、有 `ui` 授权、常驻运行时能起来。
+     */
+    var shellActive by mutableStateOf<PluginShellHost.Target?>(null)
+        private set
+
+    /**
+     * M84-C2 / M85-E：会话存储。
+     *
+     * 默认 `builtin.storage.jsonl` = 原来的 `SessionRepository` 目录实现（行为/磁盘布局不变）；
+     * `dsh_storage` 可切到第三方只读导出器（同 id 覆盖内置 = 默认角色被接管）；
+     * debug 包仍可用 `--es dsh_session_store memory` 冷启动切到内存实现（M84-C2 验收通道）。
+     * [RoutingSessionStore] 负责在插件开关变化后换绑；写路径在只读/不可用时抛
+     * [StorageUnavailableException]，聊天页同时显示安全提示（不悄悄回退）。
+     */
+    private val sessionsRootDir = File(app.filesDir, "sessions")
+
+    private val builtinSessionStore: SessionStore = FileSessionRepository(sessionsRootDir)
+
+    private val storageRouter = RoutingSessionStore(sessionsRootDir, builtinSessionStore)
+
+    private val repo: SessionStore = storageRouter
+
+    /** 当前由 `dsh_storage` 解析出的存储（UI/dump 用；null = 不可用）。 */
+    var activeStorage by mutableStateOf<ResolvedStorage?>(null)
+        private set
+
+    /** 存储不可用/只读时的安全提示（聊天页横幅 + 插件页说明）。 */
+    override var storageSafetyNotice by mutableStateOf<String?>(null)
+        private set
 
     /** 原生备份 v1（M35，docs/59）：导出/恢复会话、插件、附件、设置（不含密钥）。 */
-    private val backupManager = BackupManager(app)
+    private val backupManager = BackupManager(app, xin.dshaa.nativeapp.BuildConfig.VERSION_NAME)
 
     /**
      * 首次启动的使用指导（2026-11-07）：引导页点「开始使用/跳过」置 true。
@@ -247,10 +596,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 放 prefs 而不是「有没有会话」：旧版导入的会话可能很多，但用户从没看过引导；
      * 反过来清数据重装也应该重新看一次。
      */
-    var onboardingDone by mutableStateOf(prefs.getBoolean("onboarding_done", false))
+    override var onboardingDone by mutableStateOf(prefs.getBoolean("onboarding_done", false))
         private set
 
-    fun completeOnboarding() {
+    override fun completeOnboarding() {
         prefs.edit().putBoolean("onboarding_done", true).apply()
         onboardingDone = true
     }
@@ -266,11 +615,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 工具的可写根、技能根、@file 索引与新会话的 cwd。默认 `files/workspace`。
      */
     private val workspaceStore = WorkspaceStore(File(app.filesDir, "workspaces.json"), prefs, app.filesDir)
-    var workspace: File = File(workspaceStore.currentPath()).apply { mkdirs() }
+    override var workspace: File = File(workspaceStore.currentPath()).apply { mkdirs() }
         private set
 
     /** 当前工作区下的会话（抽屉/会话页只显示这一份；全部会话另存 [allRootSessions]）。 */
-    var workspaces by mutableStateOf<List<WorkspaceUi>>(emptyList())
+    override var workspaces by mutableStateOf<List<WorkspaceUi>>(emptyList())
         private set
 
     /** 图片附件（内容寻址）；会话只存 attachmentId，请求时再读回字节。 */
@@ -278,6 +627,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 会话内提醒（宿主级，`files/schedules.json`；不进 v4 会话）。 */
     private val schedules = ScheduleStore(File(app.filesDir, "schedules.json"))
+
+    /**
+     * M85-B3：提醒列表的变化计数（Compose 状态）。
+     *
+     * 提醒不在 ChatSessionState 里，`currentSchedules()` 也不读任何快照状态；壳的
+     * `chat.hasSchedules` / `chat.schedules` 绑定若不用一个可观察的值，新建/删除提醒后
+     * 已组合的树会被 Compose 按「参数相等」跳过，界面上看不到变化。
+     */
+    var schedulesRevision by mutableStateOf(0)
+        private set
+
+    private fun bumpSchedulesRevision() {
+        schedulesRevision += 1
+    }
 
     /**
      * 技能系统（M19，对齐上游 `dsh-skill-filesystem`）：每个请求现扫这些根
@@ -351,8 +714,400 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** 记忆库工具（M56，照搬 Operit 8 个记忆工具）。 */
     private val memoryTools = MemoryTools(app)
 
+    private val pluginDevTools = xin.dshaa.nativeapp.data.PluginDevTools(pluginStore, onChanged = {
+        withContext(Dispatchers.IO) { pluginStore.reconcileServices() }
+        withContext(Dispatchers.Main) {
+            pluginsUi = pluginStore.list()
+            syncPluginTools()
+        }
+    }, callTool = { pluginId, toolName, args, ctx ->
+        val record = pluginsUi.firstOrNull { it.id == pluginId && it.enabled }
+        if (record == null || toolName !in record.tools || toolName !in pluginInjected[pluginId].orEmpty()) {
+            xin.dshaa.core.tools.ToolResult.err("该插件工具未启用或未接入：$pluginId / $toolName")
+        } else {
+            registry.execute(toolName, args, ctx)
+        }
+    }, testCapability = { id, args ->
+        val result = capabilityHost.invoke(id, args.toString())
+        if (result.ok) xin.dshaa.core.tools.ToolResult.ok(result.valueJson ?: "调用成功")
+        else xin.dshaa.core.tools.ToolResult.err(result.error ?: "能力调用失败")
+    })
+
     private val registry: ToolRegistry =
-        ToolRegistry(DefaultTools.registry().tools + androidDeviceTools.tools + terminalTools.tools + memoryTools.tools)
+        ToolRegistry(androidDeviceTools.tools + terminalTools.tools + memoryTools.tools + pluginDevTools.tools)
+
+    /**
+     * M84-F2：不属于 [xin.dshaa.core.tools.BuiltinToolCatalog] 的 app 工具（设备/终端/记忆），
+     * 也按内置插件组开关——关掉组 = 从 registry 注销，空壳 tools[] 才真的是 0。
+     */
+    private val appToolsByName =
+        (androidDeviceTools.tools + terminalTools.tools + memoryTools.tools + pluginDevTools.tools).associateBy { it.name }
+
+    /**
+     * M84-D：内置悬浮窗插口插件按开关注册/注销到 [FloatingSlots]。
+     * 现在只有一个示例插件；以后 JS 插件走同一个注册表，不需要改悬浮窗 UI。
+     */
+    private fun syncFloatingSlots() {
+        val wanted = builtinStore.isEnabled(FloatingDemoPlugin.PLUGIN_ID)
+        val present = FloatingSlots.get(FloatingDemoPlugin.ID) != null
+        when {
+            wanted && !present -> {
+                FloatingSlots.register(FloatingDemoPlugin())
+                Log.i("DshFloatingSlot", "registered ${FloatingDemoPlugin.ID}")
+            }
+            !wanted && present -> {
+                FloatingSlots.unregister(FloatingDemoPlugin.ID)
+                Log.i("DshFloatingSlot", "unregistered ${FloatingDemoPlugin.ID}")
+            }
+        }
+        Log.i("DshFloatingSlot", "sync demo=$wanted plugins=${FloatingSlots.ids()}")
+    }
+
+    /**
+     * M84-A2：内置工具由 [BuiltinToolCatalog] 按插件组提供，**开着的组才注册进 registry**。
+     * 关掉 = 注销该组全部工具（模型看不到、调不到，registry 里也没有）；打开 = 重新注册。
+     */
+    private fun syncBuiltinTools() {
+        for (group in BuiltinToolCatalog.groups) {
+            val wanted = builtinStore.isEnabled(group.id)
+            val present = group.tools.any { it.name in registry.names }
+            if (wanted && !present) {
+                group.tools.forEach { tool ->
+                    if (!registry.register(tool)) Log.w("DshPlugin", "内置工具名冲突，未注册：${tool.name}（${group.id}）")
+                }
+            } else if (!wanted && present) {
+                group.tools.forEach { registry.unregister(it.name) }
+            }
+        }
+        // M84-F2：设备/终端/记忆这些 app 工具不在 catalog 里，但已归到内置插件组的工具名上；
+        // 按同样的开关注册/注销，空壳（23 组全关）才不会有 26 个漏网工具。
+        for (group in xin.dshaa.nativeapp.data.BuiltinPlugins.all) {
+            val appTools = group.tools.mapNotNull { appToolsByName[it] }
+            if (appTools.isEmpty()) continue
+            val wanted = builtinStore.isEnabled(group.id)
+            if (wanted) {
+                appTools.forEach { tool ->
+                    if (tool.name !in registry.names) {
+                        if (!registry.register(tool)) Log.w("DshPlugin", "内置工具名冲突，未注册：${tool.name}（${group.id}）")
+                    }
+                }
+            } else {
+                appTools.forEach { registry.unregister(it.name) }
+            }
+        }
+    }
+
+    /**
+     * M84-C / M85-E：内置模型插件注册进 [LlmProviders]。
+     *
+     * 两条通道现在都是**内置模型插件**（`builtin.model.deepseek` / `builtin.model.openai`）：
+     * 关掉 = 不注册（选中它时由 [ModelRouting] 如实报错），不是「永远可用的宿主兜底」。
+     * 同 id 的插件 provider 仍可覆盖（[syncPluginLlmProviders] 在它们之后注册）。
+     */
+    private fun registerBuiltinProviders() {
+        if (builtinStore.isEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_MODEL_DEEPSEEK)) {
+            LlmProviders.register(object : LlmProvider {
+                override val id: String = MODEL_PROVIDER_DEEPSEEK
+                override val label: String = "DeepSeek · Anthropic Messages"
+                override fun stream(request: ApiRequest, config: LlmConfig): Flow<LlmEvent> =
+                    client.stream(request, config)
+            })
+        }
+        if (builtinStore.isEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_MODEL_OPENAI)) {
+            LlmProviders.register(object : LlmProvider {
+                override val id: String = MODEL_PROVIDER_OPENAI
+                override val label: String = "OpenAI 兼容"
+                override fun stream(request: ApiRequest, config: LlmConfig): Flow<LlmEvent> =
+                    openAiClient.stream(request, config)
+            })
+        }
+    }
+
+    /**
+     * 请求出口（M84-C / M85-E）：debug 供应商 > model/v1 解析（设置/协议）> 注册表。
+     *
+     * model/v1 的硬约定：选中的通道被停用/不存在时**如实报错**（LlmEvent.Failed），
+     * 不悄悄换回另一条内置通道。debug 通道（M84-C 验收）仍优先，且不参与角色解析。
+     */
+    private fun llmStream(request: ApiRequest, config: LlmConfig): Flow<LlmEvent> {
+        val debugId = if (xin.dshaa.nativeapp.BuildConfig.DEBUG) {
+            prefs.getString("debug_llm_provider", null)?.takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
+        if (debugId != null) {
+            val provider = LlmProviders.get(debugId)
+            return if (provider != null) {
+                provider.stream(request, config)
+            } else {
+                flow {
+                    emit(
+                        LlmEvent.Failed(
+                            "调试供应商 $debugId 未注册（插件可能已停用）",
+                            code = "MODEL_UNAVAILABLE",
+                        ),
+                    )
+                }
+            }
+        }
+        return when (val resolution = currentModelResolution()) {
+            is ModelResolution.Active -> {
+                val provider = LlmProviders.get(resolution.model.providerId)
+                if (provider != null) {
+                    provider.stream(request, config)
+                } else {
+                    flow {
+                        emit(
+                            LlmEvent.Failed(
+                                "模型通道 ${resolution.model.providerId} 未注册（插件可能已停用）",
+                                code = "MODEL_UNAVAILABLE",
+                            ),
+                        )
+                    }
+                }
+            }
+
+            is ModelResolution.Unavailable -> flow {
+                emit(LlmEvent.Failed(resolution.reason, code = "MODEL_UNAVAILABLE"))
+            }
+        }
+    }
+
+    /** M84-C 验收通道：热切换模型供应商 / 提示词实现（仅 debug 包注册了调试实现）。 */
+    fun applyDebugProviders(providerId: String?, promptMarker: String?) {
+        DebugProviders.apply(prefs, providerId, promptMarker)
+    }
+
+    /** M84-C 验收：当前注册的模型通道/提示词实现与选中的 id 落盘。 */
+    fun dumpProviders(dumpPath: String?) {
+        if (dumpPath.isNullOrBlank()) return
+        runCatching {
+            // M84-E2：插件供应商只落「能公开的部分」，apiKey 不写盘（有 key 只记 hasKey）
+            val pluginProviders = org.json.JSONArray()
+            pluginsUi.filter { it.enabled }.forEach { record ->
+                record.llmProviders.forEach { provider ->
+                    pluginProviders.put(
+                        org.json.JSONObject()
+                            .put("id", provider.id)
+                            .put("label", provider.label)
+                            .put("protocol", provider.protocol)
+                            .put("model", provider.model)
+                            .put("baseUrl", provider.baseUrl)
+                            .put("owner", record.id)
+                            .put("hasKey", provider.apiKey.isNotBlank())
+                            .put("hasStream", provider.hasStream),
+                    )
+                }
+            }
+            val payload = org.json.JSONObject()
+                .put("llm", org.json.JSONArray(LlmProviders.ids()))
+                .put("llmActive", LlmProviders.activeId ?: "")
+                .put("llmSelected", settings.llmProviderId)
+                .put("pluginProviders", pluginProviders)
+                .put("prompt", org.json.JSONArray(PromptProviders.ids()))
+                .put("promptActive", PromptProviders.activeId ?: "")
+            val file = File(dumpPath)
+            file.parentFile?.mkdirs()
+            file.writeText(payload.toString())
+            Log.i("DshProvider", "dump providers -> $dumpPath")
+        }.onFailure { Log.w("DshProvider", "dump providers failed: ${it.message}") }
+    }
+
+    /** M84-C2 验收：当前存储实现 / 活动会话 / 回收站 / 磁盘会话数落盘（证明不是写死文件实现）。 */
+    fun dumpSessionStore(dumpPath: String?) {
+        if (dumpPath.isNullOrBlank()) return
+        runCatching {
+            val active = repo.list()
+            val disk = runCatching {
+                FileSessionRepository(sessionsRootDir).list()
+            }.getOrDefault(emptyList())
+            val payload = org.json.JSONObject()
+                .put("store", repo.id)
+                .put("root", repo.root.absolutePath)
+                .put("registered", org.json.JSONArray(SessionStores.registeredIds()))
+                .put("active", org.json.JSONArray(active.map { it.id }))
+                .put("activeCount", active.size)
+                .put("trash", org.json.JSONArray(repo.listTrash().map { it.dirName }))
+                .put("diskCount", disk.size)
+            val file = File(dumpPath)
+            file.parentFile?.mkdirs()
+            file.writeText(payload.toString())
+            Log.i("DshSessionStore", "dump: store=${repo.id} active=${active.size} disk=${disk.size} -> $dumpPath")
+        }.onFailure { Log.w("DshSessionStore", "dump sessions failed: ${it.message}") }
+    }
+
+    /**
+     * M84-H 验收：常驻 JS 运行时状态 + 会话投影值落盘。
+     *
+     * 先让 syncPluginTools 走一遍（确保常驻运行时与插件开关一致），再写 active 会话的投影。
+     */
+    fun dumpProjections(dumpPath: String?) {
+        if (dumpPath.isNullOrBlank()) return
+        // 起 runtime 是异步的：dump 前等它落定，否则会把「刚启用」误读成没有常驻运行时。
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                syncPluginTools()
+                pluginResidentRuntime.awaitSettled()
+                // M84-N：dump 常和 `--es dsh_open_session` 一起用；等会话打开、checkpoint 恢复落定再写，
+                // 否则会把「刚恢复的值」误读成空（调试通道，最多多等 3 秒）。
+                val deadline = System.currentTimeMillis() + 3_000
+                while (current?.state?.sessionId == null && System.currentTimeMillis() < deadline) {
+                    kotlinx.coroutines.delay(100)
+                }
+                if (current?.state?.sessionId != null) kotlinx.coroutines.delay(300)
+                val activeSessionId = current?.state?.sessionId
+                val payload = pluginResidentRuntime.dumpJson(activeSessionId)
+                val file = File(dumpPath)
+                file.parentFile?.mkdirs()
+                file.writeText(payload)
+                Log.i(
+                    "DshProjection",
+                    "dump projections resident=${pluginResidentRuntime.residencyIds()} values=${pluginResidentRuntime.allValues().size} -> $dumpPath",
+                )
+            }.onFailure { Log.w("DshProjection", "dump projections failed: ${it.message}") }
+        }
+    }
+
+    /**
+     * M84-H 验收：单个导入插件的开/关 + 常驻运行时/投影落盘。
+     *
+     * `--es dsh_plugin_off <id>`：停用后常驻 runtime 关闭、该插件投影值收回；
+     * `--es dsh_plugin_on <id>`：启用后重新起 runtime，dump 能再看到投影。
+     */
+    fun applyDebugPluginToggle(offId: String?, onId: String?, dumpPath: String?) {
+        val target = (offId ?: onId)?.trim()
+        if (!target.isNullOrBlank()) {
+            setPluginEnabled(target, offId.isNullOrBlank())
+            Log.i("DshProjection", "debug plugin toggle id=$target enabled=${offId.isNullOrBlank()} resident=${pluginResidentRuntime.residencyIds()}")
+        }
+        if (!dumpPath.isNullOrBlank()) dumpProjections(dumpPath)
+    }
+
+    /** 当前活动会话的投影值（插件详情展示用；空 = 没有插件注册投影）。 */
+    fun projectionsForCurrentSession(): List<xin.dshaa.nativeapp.data.PluginResidentRuntime.ProjectionValue> =
+        pluginResidentRuntime.valuesFor(current?.state?.sessionId)
+
+    private fun initializeCoreRegistry() {
+        registerBuiltinProviders()
+        DebugProviders.install(prefs, xin.dshaa.nativeapp.BuildConfig.DEBUG)
+        syncBuiltinTools()
+        syncFloatingSlots()
+        // M85-E：三个新角色（存储/提示词/模型）冷启动先解析；存储要赶在第一次 refreshSessions 之前绑定。
+        refreshStorageResolution()
+        refreshPromptResolution()
+        refreshModelResolution()
+    }
+
+    /**
+     * M84-A 验收通道（只有 debug 包的 MainActivity 会调）：
+     * 改内置插件开关 + 把全部工具名 / 当前 tools[] 名单 / 重复归属落盘，用来逐组对拍（不发真请求）。
+     * 可重复调用：同一次进程里 `am start --es dsh_builtin_off … --es dsh_dump_tools …` 会走 onNewIntent。
+     */
+    fun applyDebugBuiltin(offIds: String?, onIds: String?, reset: Boolean, dumpPath: String?) {
+        if (reset) builtinStore.resetAll()
+        // M84-F：`all` = 23 个内置插件一起关/开（空壳与全装配验收）
+        if (offIds?.trim()?.equals("all", ignoreCase = true) == true) {
+            xin.dshaa.nativeapp.data.BuiltinPlugins.all.forEach { builtinStore.setEnabled(it.id, false) }
+        } else {
+            offIds?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+                ?.forEach { builtinStore.setEnabled(it, false) }
+        }
+        if (onIds?.trim()?.equals("all", ignoreCase = true) == true) {
+            xin.dshaa.nativeapp.data.BuiltinPlugins.all.forEach { builtinStore.setEnabled(it.id, true) }
+        } else {
+            onIds?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+                ?.forEach { builtinStore.setEnabled(it, true) }
+        }
+        syncBuiltinTools()
+        syncFloatingSlots()
+        builtinPluginsUi = builtinStore.ui()
+        // M85-D：内置回合插件被调试通道关/开时也要立刻重解析（安全提示 / 恢复）。
+        refreshAgentResolution()
+        // M85-E：内置存储/提示词/模型插件同样即时重解析。
+        refreshStorageResolution()
+        refreshPromptResolution()
+        refreshModelResolution()
+        Log.i(
+            "DshAgent",
+            "debug builtin off=${offIds ?: "-"} on=${onIds ?: "-"} reset=$reset " +
+                "agent=${activeAgent?.agentId ?: "-"} safety=${agentSafetyNotice ?: "-"}",
+        )
+        if (dumpPath.isNullOrBlank()) return
+        runCatching {
+            val payload = org.json.JSONObject()
+                .put("all", org.json.JSONArray(registry.names))
+                .put("catalog", org.json.JSONArray(BuiltinToolCatalog.allTools().map { it.name }))
+                .put("offered", org.json.JSONArray(offeredToolNames().sorted()))
+                .put("duplicates", org.json.JSONArray(xin.dshaa.nativeapp.data.BuiltinPlugins.duplicateTools()))
+                .put("disabled", org.json.JSONArray(builtinStore.disabled().sorted()))
+            val file = File(dumpPath)
+            file.parentFile?.mkdirs()
+            file.writeText(payload.toString())
+            Log.i("DshPlugin", "dump tools: all=${registry.names.size} offered=${offeredToolNames().size} -> $dumpPath")
+        }.onFailure { Log.w("DshPlugin", "dump tools failed: ${it.message}") }
+    }
+
+    /**
+     * M84-B 验收通道（只有 debug 包的 MainActivity 会调）：
+     * 把页面 / 归属插件 / 当前开关 / 未知 id / 重复归属落盘，用来对拍「页面清单由插件提供」。
+     *
+     * M85-C2：**页面清单已经不归宿主**——22 页的标题/层级由内置界面插件在 `shell/v1` 里声明
+     * （[xin.dshaa.ui.shellapi.NativeShell.pages]），宿主只读 [xin.dshaa.ui.shellapi.ShellPageRegistry]。
+     * M85-C3-4：注册表搬进 `ui:shell-api`，并把 M84-G 插件整页并进同一张表——dump 额外写
+     * `pluginPages`（独立插件页 / 同 id 覆盖项），`pages` 仍是壳声明的 22 页（M84-B 断言不变）。
+     */
+    fun applyDebugPages(dumpPath: String?) {
+        if (dumpPath.isNullOrBlank()) return
+        runCatching {
+            val registry = xin.dshaa.ui.shellapi.ShellPageRegistry
+            val pluginEntries = pluginPageEntries()
+            val declared = registry.declared()
+            val builtinScreens = xin.dshaa.nativeapp.data.BuiltinPlugins.all.flatMap { it.screens }
+            val pages = org.json.JSONArray()
+            declared.forEach { page ->
+                val owner = xin.dshaa.nativeapp.data.BuiltinPlugins.byScreen(page.id)
+                pages.put(
+                    org.json.JSONObject()
+                        .put("id", page.id)
+                        .put("title", page.title)
+                        .put("level", page.level.name)
+                        .put("plugin", owner?.id ?: "")
+                        .put("core", owner == null)
+                        .put("enabled", builtinStore.screenEnabled(page.id)),
+                )
+            }
+            val pluginPages = org.json.JSONArray()
+            registry.table(declared, pluginEntries).filter { it.isPlugin }.forEach { page ->
+                pluginPages.put(
+                    org.json.JSONObject()
+                        .put("id", page.id)
+                        .put("title", page.title)
+                        .put("level", page.level.name)
+                        .put("plugin", page.pluginId.orEmpty())
+                        .put("pluginName", page.pluginName.orEmpty())
+                        .put("overrides", page.overridesShellPage),
+                )
+            }
+            val payload = org.json.JSONObject()
+                .put("pages", pages)
+                .put("pluginPages", pluginPages)
+                .put("unknown", org.json.JSONArray(registry.unknownPluginScreens(builtinScreens)))
+                .put("duplicates", org.json.JSONArray(registry.duplicatePluginScreens(builtinScreens)))
+                // 壳声明 id 必须和宿主 id 词表一致；没有插件归属的只能是核心页（插件 / 设置）。
+                .put("catalogMatch", registry.catalogMatch())
+                .put("unowned", org.json.JSONArray(registry.unownedPages(builtinScreens.toSet())))
+                .put("disabled", org.json.JSONArray(builtinStore.disabled().sorted()))
+            val file = File(dumpPath)
+            file.parentFile?.mkdirs()
+            file.writeText(payload.toString())
+            Log.i("DshPlugin", "dump pages: ${pages.length()} plugin=${pluginPages.length()} -> $dumpPath")
+        }.onFailure { Log.w("DshPlugin", "dump pages failed: ${it.message}") }
+    }
+
+    /** 调试通道：热启动直接落页面（`--es dsh_open_screen X` 走 onNewIntent，不用冷启）。 */
+    fun requestDebugScreen(name: String) {
+        debugScreenRequest = name
+    }
 
     /**
      * goal 三件套的后端：读写**指定会话**的 goal/change 事件（见 GoalStore）。
@@ -448,7 +1203,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val now = System.currentTimeMillis()
                 val next = ScheduleTime.nextOccurrence(timing, now, now)
                     ?: throw ScheduleException("not_future", "the timing has no future occurrence")
-                return schedules.create(sessionId, title, prompt, timing, next, now)
+                val created = schedules.create(sessionId, title, prompt, timing, next, now)
+                bumpSchedulesRevision()
+                return created
             }
 
             override fun update(id: String, title: String?, prompt: String?, timing: ScheduleTiming?): ScheduledTask {
@@ -464,12 +1221,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     ScheduleTime.nextOccurrence(timing, now, anchor)
                         ?: throw ScheduleException("not_future", "the timing has no future occurrence")
                 }
-                return schedules.update(id, sessionId, title, prompt, timing, next, now)
+                return schedules.update(id, sessionId, title, prompt, timing, next, now).also {
+                    bumpSchedulesRevision()
+                }
             }
 
             override fun delete(id: String): ScheduledTask {
                 val sessionId = requireSession()
-                return schedules.delete(id, sessionId)
+                return schedules.delete(id, sessionId).also { bumpSchedulesRevision() }
             }
 
             private fun requireSession(): String = currentId()
@@ -527,7 +1286,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * `read_image` 的图片文件路径（UI 直接按 path 解码显示；null = 附件不存在）。
      * 放在 ViewModel 上是为了让会话里只有 attachmentId 的 image 块也能重放。
      */
-    fun imagePathFor(attachmentId: String): String? = attachments.imageFile(attachmentId)?.absolutePath
+    override fun imagePathFor(attachmentId: String): String? = attachments.imageFile(attachmentId)?.absolutePath
 
     /**
      * 当前模型路由的图片能力门（`read_image` 与「给模型发图」共用）。
@@ -548,7 +1307,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 关掉后请求里没有这个工具、system 的工具清单也不列它（模型不会再调）。
      */
     private fun offeredToolNames(): Set<String> {
-        val names = registry.names.toSet()
+        // M83 阶段 2：内置插件关掉后，它的工具不进 tools[]（模型看不到也调不到）。
+        val names = registry.names.filter { builtinStore.toolEnabled(it) }.toSet()
         return if (settings.webSearchEnabled) names else names - "web_search"
     }
 
@@ -558,9 +1318,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 相册/文件选择：读 Uri → 归一化落盘（内容寻址附件存储）→ 进当前会话的待发列表。
      * 图片不立即进模型请求，等用户按发送才随 `TurnInput.images` 一起走一轮。
      */
-    fun attachImage(uri: Uri) {
-        val state = chat ?: return
-        if (state.readOnly || state.streaming) return
+    private fun attachmentLive(state: ChatSessionState?): LiveChat? = state?.let { target ->
+        lives[target]?.takeIf { it.acceptingInputs && !target.readOnly }
+    }
+
+    override fun attachImage(uri: Uri, target: ChatSessionState?) {
+        val live = attachmentLive(target) ?: return
+        val state = live.state
         state.attachError = null
         viewModelScope.launch {
             val resolver = getApplication<Application>().contentResolver
@@ -588,22 +1352,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 相机拍照结果（FileProvider 临时文件）：读字节 → 落附件存储 → 删临时文件。 */
-    fun attachPhoto(file: File) {
-        val state = chat ?: return
-        if (state.readOnly || state.streaming) {
-            file.delete()
+    override fun attachPhoto(file: File, target: ChatSessionState?) {
+        val live = attachmentLive(target) ?: run {
+            deleteCameraTemp(file)
             return
         }
+        val state = live.state
         state.attachError = null
         viewModelScope.launch {
             val bytes = withContext(Dispatchers.IO) {
-                runCatching { file.readBytes() }.getOrNull().also { file.delete() }
+                runCatching { file.inputStream().use { readAtMost(it, maxImageFileBytes + 1) } }.getOrNull().also { deleteCameraTemp(file) }
             }
             if (bytes == null || bytes.isEmpty()) {
                 state.attachError = "无法读取相机照片"
                 return@launch
             }
+            if (bytes.size > maxImageFileBytes) {
+                state.attachError = "图片超过 50MB，请先压缩"
+                return@launch
+            }
             state.attachError = savePendingImage(state, bytes, null, file.name)
+        }
+    }
+
+    /** Only remove a verified regular file from the app's private camera cache. */
+    private fun deleteCameraTemp(file: File) {
+        val camera = File(getApplication<Application>().cacheDir, "camera").canonicalFile
+        val resolved = file.canonicalFile
+        if (resolved.parentFile == camera && resolved.isFile && !java.nio.file.Files.isSymbolicLink(file.toPath())) {
+            resolved.delete()
         }
     }
 
@@ -611,9 +1388,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 截图进待发附件：优先无障碍 takeScreenshot；无障碍没开（或服务没连上）时走 Shizuku
      * `screencap -p` 的 stdout —— 和悬浮窗 OCR 的截图通道一致，不依赖无障碍是否真的连上。
      */
-    fun attachScreenshot() {
-        val state = chat ?: return
-        if (state.readOnly || state.streaming) return
+    override fun attachScreenshot(target: ChatSessionState?) {
+        val live = attachmentLive(target) ?: return
+        val state = live.state
         state.attachError = null
         viewModelScope.launch {
             val bitmap = withContext(Dispatchers.IO) {
@@ -644,7 +1421,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun removePendingImage(attachmentId: String) {
+    override fun removePendingImage(attachmentId: String) {
         val list = chat?.pendingImages ?: return
         val index = list.indexOfFirst { it.ref.attachmentId == attachmentId }
         if (index >= 0) list.removeAt(index)
@@ -672,18 +1449,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * - 文本/代码 → 按 UTF-8 读进 [ChatSessionState.pendingFiles]，发送时作为额外 text 块；
      * - 二进制（PDF/Word/压缩包等）→ 明确提示暂不支持解析，不塞乱码给模型。
      */
-    fun attachFile(uri: Uri) {
-        val state = chat ?: return
-        if (state.readOnly || state.streaming) return
+    override fun attachFile(uri: Uri, target: ChatSessionState?) {
+        val live = attachmentLive(target) ?: return
+        val state = live.state
+        val attachmentWorkspace = File(live.queueWorkspace)
         state.attachError = null
         viewModelScope.launch {
-            val error = withContext(Dispatchers.IO) { readPendingFile(state, uri) }
-            if (chat !== state) return@launch
+            val error = readPendingFile(state, uri, attachmentWorkspace)
+            if (attachmentLive(state) !== live) return@launch
             state.attachError = error
         }
     }
 
-    fun removePendingFile(name: String) {
+    override fun removePendingFile(name: String) {
         val list = chat?.pendingFiles ?: return
         val index = list.indexOfFirst { it.name == name }
         if (index >= 0) list.removeAt(index)
@@ -693,29 +1471,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 把一段现成文本放进待发附件（悬浮窗「通知」「位置」附件用，docs/76 W24）。
      *
      * 和 [attachFile] 的区别：不经过 SAF 选文件，文本由调用方（NotificationListenerService /
-     * LocationAttachActivity）组好；只读会话和生成中不允许加，避免把附件塞进正在发的回合。
+     * LocationAttachActivity）组好；写入发起时的草稿，已交付的输入有独立快照。
      * 同名附件自动加序号，不覆盖用户已加的。
      */
-    fun attachTextFile(name: String, text: String): Boolean {
-        val state = chat ?: return false
-        if (state.readOnly || state.streaming) return false
+    override fun attachTextFile(name: String, text: String, target: ChatSessionState?): Boolean {
+        val state = attachmentLive(target)?.state ?: return false
         if (text.isBlank()) return false
-        val dot = name.lastIndexOf('.')
-        val base = if (dot > 0) name.substring(0, dot) else name
-        val ext = if (dot > 0) name.substring(dot) else ""
-        var finalName = name
+        addPendingFile(state, PendingFile(name, text))
+        state.attachError = null
+        return true
+    }
+
+    /** Main-thread mutation preserves all attachment completions even after switching foreground chat. */
+    private fun addPendingFile(state: ChatSessionState, file: PendingFile) {
+        val dot = file.name.lastIndexOf('.')
+        val base = if (dot > 0) file.name.substring(0, dot) else file.name
+        val ext = if (dot > 0) file.name.substring(dot) else ""
+        var finalName = file.name
         var n = 2
         while (state.pendingFiles.any { it.name == finalName }) {
             finalName = "$base ($n)$ext"
             n += 1
         }
-        state.pendingFiles += PendingFile(finalName, text)
-        state.attachError = null
-        return true
+        state.pendingFiles += file.copy(name = finalName)
     }
 
     /** 读一个用户选中的文件；返回面向用户的错误（null = 成功或已走图片管线）。 */
-    private suspend fun readPendingFile(state: ChatSessionState, uri: Uri): String? {
+    private suspend fun readPendingFile(state: ChatSessionState, uri: Uri, attachmentWorkspace: File): String? = withContext(Dispatchers.IO) {
+        readPendingFileContents(state, uri, attachmentWorkspace)
+    }
+
+    private suspend fun readPendingFileContents(state: ChatSessionState, uri: Uri, attachmentWorkspace: File): String? {
         val resolver = getApplication<Application>().contentResolver
         val name = runCatching {
             resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
@@ -746,14 +1532,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (textual && probe.size <= maxFileBytes) {
             val text = probe.toString(Charsets.UTF_8)
             if (text.isBlank()) return "文件里没有可发送的文字：$name"
-            var finalName = name
-            var n = 2
-            while (state.pendingFiles.any { it.name == finalName }) {
-                finalName = "${name.substringBeforeLast('.')} ($n).${name.substringAfterLast('.')}"
-                n += 1
+            return withContext(Dispatchers.Main.immediate) {
+                if (attachmentLive(state) == null) "原会话已关闭，附件未添加"
+                else { addPendingFile(state, PendingFile(name, text)); null }
             }
-            state.pendingFiles += PendingFile(finalName, text)
-            return null
         }
 
         // Operit 的做法：任何文件都复制到本地，消息里只放 <attachment id=路径 …/>，
@@ -761,33 +1543,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 这样现有 read / read_image 的 workspace 路径守卫不用放宽。
         return try {
             val (relative, bytes) = withContext(Dispatchers.IO) {
-                copyAttachmentToWorkspace(uri, name)
+                copyAttachmentToWorkspace(uri, name, attachmentWorkspace)
             }
             val mime = declared?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
                 ?: runCatching { android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) }.getOrNull()
                 ?: "application/octet-stream"
-            var finalName = name
-            var n = 2
-            while (state.pendingFiles.any { it.name == finalName }) {
-                finalName = "${name.substringBeforeLast('.')} ($n).${name.substringAfterLast('.')}"
-                n += 1
+            withContext(Dispatchers.Main.immediate) {
+                if (attachmentLive(state) == null) "原会话已关闭，附件未添加"
+                else {
+                    addPendingFile(state, PendingFile(name = name, text = "", path = relative, mime = mime, size = bytes))
+                    null
+                }
             }
-            state.pendingFiles += PendingFile(
-                name = finalName,
-                text = "",
-                path = relative,
-                mime = mime,
-                size = bytes,
-            )
-            null
         } catch (e: Exception) {
             "无法引用这个文件：${e.message ?: e.javaClass.simpleName}"
         }
     }
 
     /** 原样复制到 `<workspace>/.dsh/attachments/`，返回（相对工作区的路径, 字节数）。 */
-    private fun copyAttachmentToWorkspace(uri: Uri, name: String): Pair<String, Long> {
-        val dir = File(workspace, ".dsh/attachments").apply { mkdirs() }
+    private fun copyAttachmentToWorkspace(uri: Uri, name: String, attachmentWorkspace: File): Pair<String, Long> {
+        val dir = File(attachmentWorkspace, ".dsh/attachments").apply { mkdirs() }
         val safe = name
             .replace(Regex("""[\\/:*?"<>|\p{Cntrl}]"""), "_")
             .take(100)
@@ -809,10 +1584,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         outs.write(buffer, 0, read)
                     }
+                    outs.fd.sync()
                 }
             }
             if (total == 0L) error("文件是空的：$name")
-            val relative = target.relativeTo(workspace).path.replace('\\', '/')
+            val relative = target.relativeTo(attachmentWorkspace).path.replace('\\', '/')
             return relative to total
         } catch (e: Exception) {
             runCatching { target.delete() }
@@ -851,10 +1627,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return try {
             val ref = withContext(Dispatchers.IO) { attachments.saveImage(bytes, mediaType, name) }
             val path = attachments.imageFile(ref.attachmentId)?.absolutePath ?: return "附件写入失败"
-            // 选图期间用户切了会话：附件已落盘，但不该出现在新会话的草稿里
-            if (chat !== state) return null
-            state.pendingImages += PendingImage(ref, path)
-            null
+            withContext(Dispatchers.Main.immediate) {
+                if (attachmentLive(state) == null) "原会话已关闭，图片未添加"
+                else { state.pendingImages += PendingImage(ref, path); null }
+            }
         } catch (e: ImageStoreException) {
             imageStoreMessage(e)
         } catch (e: Throwable) {
@@ -887,14 +1663,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 当前工作区的会话（抽屉/会话页只显示这一份，按 `header.cwd` 过滤）。 */
-    var sessions by mutableStateOf<List<SessionSummary>>(emptyList())
+    override var sessions by mutableStateOf<List<SessionSummary>>(emptyList())
         private set
 
     /** 全部工作区的根会话（工作区清单/任务标题映射用）。 */
     private var allRootSessions: List<SessionSummary> = emptyList()
 
     /** 当前工作区（= [workspace]）的投影；工作区清单还没扫完时是默认项。 */
-    val currentWorkspace: WorkspaceUi
+    override val currentWorkspace: WorkspaceUi
         get() = workspaces.firstOrNull { it.current } ?: WorkspaceUi(
             id = WorkspaceStore.DEFAULT_ID,
             name = WorkspaceStore.displayName(workspace.absolutePath, workspaceStore.defaultPath),
@@ -906,24 +1682,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
 
     /** 聊天页里是否有「返回上一会话」的栈（子代理回放）。系统返回键用它决定是否拦截。 */
-    val canGoBackFromChat: Boolean get() = chatBackStack.isNotEmpty()
+    override val canGoBackFromChat: Boolean get() = chatBackStack.isNotEmpty()
 
     /**
      * 子代理面板数据（M17）：子会话文件 + 进程内 AgentRegistry 合并。
      * 子会话不进 [sessions]（主列表只放用户自己的会话）。
      */
-    var subagents by mutableStateOf<List<SubagentUi>>(emptyList())
+    override var subagents by mutableStateOf<List<SubagentUi>>(emptyList())
         private set
 
     /** 最近一次 `repo.list()` 里的子会话（磁盘骨架，重启后面板靠它）。 */
     private var childSessions: List<SessionSummary> = emptyList()
 
     /** 首次扫描会话目录还没完成（冷启动要解压 100+ 会话，面板不能先闪「没有子代理」）。 */
-    var subagentsLoading by mutableStateOf(true)
+    override var subagentsLoading by mutableStateOf(true)
         private set
 
     /** 子代理深度上限（面板状态卡显示）。 */
-    val agentMaxDepth: Int get() = agentRegistry.limit()
+    override val agentMaxDepth: Int get() = agentRegistry.limit()
 
     /** 工具箱/设置页展示当前注册的工具名（含 workflow 的第 32 个）。 */
     val toolNames: List<String> get() = registry.names
@@ -932,22 +1708,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 任务面板数据（M20）：进程内 `JobRegistry` 的全表投影（跨 owner）。
      * 后台任务不落盘，重启后为空——面板如实说明，不做假历史。
      */
-    var jobs by mutableStateOf<List<JobUi>>(emptyList())
+    override var jobs by mutableStateOf<List<JobUi>>(emptyList())
         private set
 
     /** 已实现的工具数量（工具页/工作台统计用）。 */
-    val toolCount: Int get() = registry.names.size
+    override val appVersionName: String get() = xin.dshaa.nativeapp.BuildConfig.VERSION_NAME
+    override val appVersionCode: Int get() = xin.dshaa.nativeapp.BuildConfig.VERSION_CODE
+
+    override val toolCount: Int get() = offeredToolNames().size
 
     /**
      * 当前打开的聊天。null = 停在列表/工作台。
      * 切会话只是把前台指到别的 [ChatSessionState]：原来那条的轮次在后台继续跑（[LiveChat.job]）。
      */
-    var chat by mutableStateOf<ChatSessionState?>(null)
+    override var chat by mutableStateOf<ChatSessionState?>(null)
         private set
 
     /** 打开过的会话运行时（state → LiveChat）：切走不销毁，切回来直接复用，不重读文件、不丢流式状态。 */
     private val lives = LinkedHashMap<ChatSessionState, LiveChat>()
     private var current: LiveChat? = null
+
+    /**
+     * 切工作区时被摘掉、但引擎收尾还没写完的 writer（按工作区绝对路径记账）。
+     * 删除工作区必须先 `join` 它们再移动目录，否则 NonCancellable 的收尾写入会落到回收站里。
+     */
+    private val writerBarrier = SessionWriterBarrier()
 
     /** 正在生成的会话集合（M77 起可多条并行）。Compose 状态：列表右侧转圈/橙点靠它。 */
     var runningStates by mutableStateOf<Set<ChatSessionState>>(emptySet())
@@ -967,7 +1752,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 会话列表右侧状态标：生成中转圈 / 等回答橙点 / 未读完成绿点。
      * 每次组合时读 [runningStates] 与它的审批/提问状态，状态一变列表自动重绘。
      */
-    fun badgeFor(sessionId: String?): SessionBadge? {
+    override fun badgeFor(sessionId: String?): SessionBadge? {
         if (sessionId.isNullOrBlank()) return null
         val running = liveById(sessionId)?.state
         if (running != null && running in runningStates) {
@@ -988,7 +1773,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * Compose 读的是 [runningStates] 和各会话的 `pendingApproval/pendingQuestions`
      * （都是 snapshot state），审批一来/一走横幅自动重绘。
      */
-    fun waitingElsewhere(): List<WaitingSession> {
+    override fun waitingElsewhere(): List<WaitingSession> {
         val here = current?.state
         return runningStates.mapNotNull { state ->
             if (state === here) return@mapNotNull null
@@ -1006,7 +1791,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 横幅点击：把前台切到那条会话（审批卡跟着会话走，切过去就能点）。 */
-    fun focusSession(id: String) {
+    override fun focusSession(id: String) {
         if (id == current?.state?.sessionId) return
         Log.i("DshTurn", "focus session=$id (from waiting banner)")
         liveById(id)?.let { live ->
@@ -1051,25 +1836,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val planState: PlanModeState get() = current?.plan ?: strayPlan
 
     /** 会话根目录（旧版导入页直接用）。 */
-    val sessionsDir: File get() = repo.root
+    override val sessionsDir: File get() = repo.root
 
     /**
      * 调试通道 `--es dsh_import_zip <路径>` 带进来的备份包：
      * 非空时外壳直接把「旧版数据导入」页打开并预扫描（真机无 SAF 也能验收）。
      */
-    var importRequest by mutableStateOf<String?>(null)
+    override var importRequest by mutableStateOf<String?>(null)
         private set
 
-    fun consumeImportRequest() {
+    override fun consumeImportRequest() {
         importRequest = null
         settings.debugImportPath = null
     }
 
     /** 调试通道 `--es dsh_open_screen <Screen>`：启动即落到指定一级页面（真机验收用）。 */
-    var debugScreenRequest by mutableStateOf<String?>(null)
+    override var debugScreenRequest by mutableStateOf<String?>(null)
         private set
 
-    fun consumeDebugScreen() {
+    override fun consumeDebugScreen() {
         debugScreenRequest = null
         settings.debugScreen = null
     }
@@ -1080,11 +1865,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 引擎是**每会话一个**，`sessions.current()` 绑死自己的句柄——后台轮次写的永远是自己的文件。
      */
     private inner class LiveChat(val state: ChatSessionState) {
+        /** M84-H：句柄一挂上就让插件会话投影开始收事件（含历史重放）。 */
         var handle: SessionSession? = null
+            set(value) {
+                field = value
+                if (value != null) pluginResidentRuntime.attach(value)
+            }
         val stop = TurnStopState()
         val plan = PlanModeState()
         var goalActivation = GoalActivationState()
         var job: Job? = null
+        val queueWorkspace = workspace.absolutePath
+        val queueStorageId = activeStorage?.storageId ?: BUILTIN_STORAGE_ID
+        var acceptingInputs = true
+        var runningAgentBuiltin = true
         /** 本会话待投递的提醒（并行轮次各投各的，不抢别的会话的提醒）。 */
         val pendingSchedules = ArrayDeque<String>()
         /** 本会话挂起的工具审批/提问（并行时后台轮次不能覆盖前台的那一份）。 */
@@ -1096,6 +1890,150 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
          */
         val toolContext: xin.dshaa.core.tools.ToolContext by lazy { buildToolContext(this) }
         val engine: TurnEngine by lazy { buildEngine(this) }
+    }
+
+    private val promptQueue by lazy {
+        xin.dshaa.core.session.PromptQueueStore(File(getApplication<Application>().filesDir, "prompt-queue"))
+    }
+
+    private fun queueOwner(live: LiveChat): xin.dshaa.core.session.PromptQueueOwner? = live.state.sessionId?.let {
+        xin.dshaa.core.session.PromptQueueOwner(live.queueStorageId, it, live.queueWorkspace)
+    }
+
+    private fun refreshPromptQueue(live: LiveChat) {
+        val owner = queueOwner(live) ?: return
+        live.state.queuedPrompts = promptQueue.list(owner)
+    }
+
+    private fun pausePromptQueue(live: LiveChat, reason: String) {
+        val owner = queueOwner(live) ?: return
+        try {
+            promptQueue.pause(owner, reason)
+            refreshPromptQueue(live)
+            if (live.state.queuedPrompts.isNotEmpty()) live.state.queueNotice = reason
+        } catch (e: Exception) {
+            live.state.queueNotice = "保存队列状态失败：${e.message}"
+            Log.e("DshQueue", "pause failed session=${owner.sessionId}", e)
+        }
+    }
+
+    private fun recoverPromptQueue(live: LiveChat) {
+        val owner = queueOwner(live) ?: return
+        val session = live.handle ?: return
+        promptQueue.recover(owner, session.events)
+        refreshPromptQueue(live)
+        if (live.state.queuedPrompts.isNotEmpty()) live.state.queueNotice = "已保留待发送消息，点击继续发送"
+    }
+
+    private fun xin.dshaa.core.session.QueuedPrompt.turnInput() = TurnInput(
+        text = payload.text, textBlocks = payload.textBlocks, images = payload.images,
+        promptId = id, delivery = delivery.name.lowercase(),
+    )
+
+    /** Current selected roles must be ready before consuming draft or queue data. */
+    private fun inputReadinessError(state: ChatSessionState): String? {
+        if (!runtimeReady) return runtimeInitError?.let { "运行时初始化失败：$it" } ?: "运行时正在准备，请稍后发送"
+        if (state.readOnly) return "当前会话为只读，不能发送"
+        roleSafetyError()?.let { return it }
+        refreshAgentResolution()
+        if (activeAgent == null) return agentSafetyNotice ?: "没有可用的回合插件"
+        (currentModelResolution() as? ModelResolution.Unavailable)?.let { return "模型安全提示：${it.reason}" }
+        pendingRoleRegistrations().firstOrNull()?.let {
+            return "当前角色插件尚未就绪：$it，请稍后发送"
+        }
+        return null
+    }
+
+    private fun pendingRoleRegistrations(): List<String> = buildList {
+        activeAgent?.let { agent -> agent.pluginId?.let { plugin ->
+            if (agent.agentId !in pluginResidentRuntime.agentsOf(plugin)) add("$plugin#${agent.agentId}")
+        } }
+        activePromptState?.let { prompt -> prompt.pluginId?.let { plugin ->
+            if (prompt.promptId !in pluginResidentRuntime.promptsOf(plugin)) add("$plugin#${prompt.promptId}")
+        } }
+        (currentModelResolution() as? ModelResolution.Active)?.model?.let { model -> model.pluginId?.let { plugin ->
+            if (pluginsUi.any { it.id == plugin && it.llmProviders.any { p -> p.id == model.providerId && p.hasStream } } &&
+                model.providerId !in pluginResidentRuntime.streamsOf(plugin)) add("$plugin#${model.providerId}")
+        } }
+    }.distinct()
+
+    private fun claimPrompt(live: LiveChat, steering: Boolean = false): TurnInput? {
+        if (!live.acceptingInputs || live.stop.requested) return null
+        val owner = queueOwner(live) ?: return null
+        val error = inputReadinessError(live.state)
+            ?: if (workspace.absolutePath != live.queueWorkspace || activeStorage?.storageId != live.queueStorageId) "会话工作区或存储已切换" else null
+        if (error != null) {
+            pausePromptQueue(live, error)
+            return null
+        }
+        val pending = promptQueue.list(owner).firstOrNull { it.status == xin.dshaa.core.session.PromptQueueStatus.PENDING &&
+            it.pausedReason == null && (!steering || it.delivery == xin.dshaa.core.session.PromptDelivery.STEER) } ?: return null
+        if ((!live.runningAgentBuiltin || activeAgent?.builtin == false) && (pending.payload.images.isNotEmpty() || pending.payload.textBlocks.isNotEmpty())) {
+            pausePromptQueue(live, "当前回合插件仅支持纯文本，切回内置回合后继续")
+            return null
+        }
+        if (pending.payload.images.isNotEmpty() && !imageInputAvailable) {
+            pausePromptQueue(live, "当前模型未开启识图，调整模型后继续")
+            return null
+        }
+        val claimed = promptQueue.claim(owner, if (steering) xin.dshaa.core.session.PromptDelivery.STEER else null)
+        refreshPromptQueue(live)
+        return claimed?.turnInput()
+    }
+
+    private suspend fun ackPrompt(live: LiveChat, id: String, seq: Long) {
+        val owner = queueOwner(live) ?: error("队列所属会话不存在")
+        withContext(Dispatchers.IO) {
+            requireNotNull(live.handle).flushDurable()
+            promptQueue.ack(owner, id, seq)
+        }
+        refreshPromptQueue(live)
+        if (live.state.queuedPrompts.isEmpty()) live.state.queueNotice = null
+    }
+
+    override fun cancelQueuedPrompt(id: String) {
+        val live = current ?: return
+        val owner = queueOwner(live) ?: return
+        try {
+            if (!promptQueue.cancel(owner, id)) live.state.queueNotice = "这条消息已进入交付，不能取消"
+            refreshPromptQueue(live)
+            if (live.state.queuedPrompts.isEmpty()) live.state.queueNotice = null
+        } catch (e: Exception) { live.state.queueNotice = "取消失败：${e.message}" }
+    }
+
+    override fun resumeQueuedPrompts() {
+        val live = current ?: return
+        val owner = queueOwner(live) ?: return
+        inputReadinessError(live.state)?.let { live.state.queueNotice = it; return }
+        if (live.job?.isCompleted == false || live.state.streaming) {
+            live.state.queueNotice = "当前轮结束后再继续发送"
+            return
+        }
+        try {
+            live.handle?.let { promptQueue.recover(owner, it.events) }
+            promptQueue.resume(owner)
+            live.stop.requested = false
+            live.state.queueNotice = null
+            refreshPromptQueue(live)
+            val next = claimPrompt(live) ?: return
+            if (!startTurn(live.state, next)) {
+                recoverPromptQueue(live)
+                pausePromptQueue(live, live.state.attachError ?: "当前不能发送")
+            }
+        } catch (e: Exception) { live.state.queueNotice = "继续发送失败：${e.message}" }
+    }
+
+    /** Only after the writer has finished may claims be recovered/cancelled for a deleted session. */
+    private suspend fun discardSessionQueue(id: String) {
+        val live = liveById(id)
+        live?.acceptingInputs = false
+        live?.stop?.requested = true
+        live?.job?.cancel()
+        live?.job?.join()
+        val owners = promptQueue.list().filter { it.owner.sessionId == id && it.owner.storageId == (live?.queueStorageId ?: activeStorage?.storageId) }
+            .map { it.owner }.distinct()
+        owners.forEach { owner -> promptQueue.discard(owner) }
+        live?.let { refreshPromptQueue(it) }
     }
 
     /**
@@ -1158,6 +2096,89 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return cjk + (other + 3) / 4
     }
 
+    /**
+     * M83 上下文明细三段：拿**本次真正发出去的请求体**现算系统 / 工具 / 对话三段的字符，
+     * 再折算成 token 估算。
+     *
+     * 旧实现只在 `apiTools` / `systemPrompt` 里估前两段，面板里「对话消息」= 真实
+     * `usage.prompt_tokens` − 两段估算；估算只要偏高一点，对话就恒为 0（用户反馈）。
+     * 现在三段同一口径、同一个请求快照，面板再按真实 prompt tokens 等比校准（见 ContextPanel）。
+     */
+    private fun recordPromptBreakdown(state: ChatSessionState, request: ApiRequest) {
+        val system = estimateTokens(request.system.orEmpty())
+        val tools = estimateTokens(
+            buildString {
+                request.tools.orEmpty().forEach { tool ->
+                    append(tool.name).append('\n')
+                    append(tool.description.orEmpty()).append('\n')
+                    append(tool.inputSchema.toString()).append('\n')
+                }
+            },
+        )
+        val messages = estimateTokens(apiMessagesText(request.messages))
+        fun imageCount(blocks: List<ApiBlock>): Int = blocks.sumOf { block ->
+            when (block) {
+                is ApiBlock.Image -> 1
+                is ApiBlock.ToolResult -> imageCount(block.content.orEmpty())
+                else -> 0
+            }
+        }
+        val previous = state.contextUsage ?: xin.dshaa.core.model.ContextUsage(0)
+        state.contextUsage = previous.copy(
+            model = request.model, protocol = settings.protocol, window = settings.contextWindow,
+            estimatedSystem = system, estimatedTools = tools, estimatedMessages = messages,
+            imageCount = request.messages.sumOf { imageCount(it.content) },
+        )
+        state.contextInvalidationReason = null
+        state.contextWindow = settings.contextWindow
+    }
+
+    /** 请求消息里「有 token 重量」的文本；图片按块算，不把 base64 字符数当 token 估。 */
+    private fun apiMessagesText(messages: List<ApiMessage>): String = buildString {
+        fun appendBlock(block: ApiBlock) {
+            when (block) {
+                is ApiBlock.Text -> append(block.text)
+                is ApiBlock.Thinking -> append(block.thinking)
+                is ApiBlock.ToolUse -> {
+                    append(block.name)
+                    append(block.input.toString())
+                }
+                is ApiBlock.ToolResult -> block.content?.forEach { appendBlock(it) }
+                is ApiBlock.Image -> append("[image]")
+            }
+            append('\n')
+        }
+        messages.forEach { message ->
+            append(message.role).append('\n')
+            message.content.forEach { appendBlock(it) }
+        }
+    }
+
+    /**
+     * M85-B2-2：引擎钩子 = debug 钩子 + 工具耗时记录。
+     *
+     * 只观察不改循环：起点/终点时间戳写进会话状态，工具卡按 toolCallId 取；
+     * 工具在后台/子代理里跑也照样记录，跟 UI 是否在前台无关。
+     */
+    private fun turnHooks(state: ChatSessionState): EngineHooks {
+        val base = DebugTurnHook.hooks
+        return EngineHooks(
+            onStepStart = base.onStepStart,
+            onStepEnd = base.onStepEnd,
+            onToolStart = { call ->
+                base.onToolStart(call)
+                state.noteToolStart(call.id)
+            },
+            onToolEnd = { call, result ->
+                base.onToolEnd(call, result)
+                state.noteToolEnd(call.id)
+            },
+            onStop = base.onStop,
+            onError = base.onError,
+            onRetry = base.onRetry,
+        )
+    }
+
     private fun buildEngine(live: LiveChat): TurnEngine = TurnEngine(
             EngineDeps(
                 workspacePath = workspace.absolutePath,
@@ -1168,29 +2189,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 toolContext = live.toolContext,
                 stop = live.stop,
                 apiTools = {
-                    val apiTools = promptPack.androidApiTools().filter { it.name in offeredToolNames() } + pluginApiTools
-                    // M76 上下文三段明细：工具 schema 的 token 是估算值（字符折算）
-                    live.state.estToolsTokens = apiTools.sumOf { tool ->
-                        estimateTokens(tool.name + tool.description.orEmpty() + tool.inputSchema.toString())
-                    }
-                    apiTools
+                    promptPack.androidApiTools().filter { it.name in offeredToolNames() } + pluginApiTools +
+                        pluginDevTools.apiTools().filter { it.name in offeredToolNames() }
                 },
                 systemPrompt = {
-                    val text = promptPack.systemFor(
-                        model = settings.model,
-                        provider = providerLabel(),
-                        tools = offeredToolNames(),
-                        // 计划模式：system 里动态带 plan:policy 段（上游 PLAN_POLICY，order 500）
-                        planMode = live.plan.selected(),
-                        // 角色卡（M71）：人设替换 deployment:persona-prefix，系统提示词追加到
-                        // deployment:persona-suffix（order 10200）；插件注册的段落按 order 一起排、
-                        // 同名段插件覆盖（插件的人设/上下文走同一条路，不往最后再糊一段）。
-                        personaPrefix = personaPrefixText(),
-                        personaSuffix = settings.assistantSystem,
-                        extraSections = pluginPromptSections(),
-                        variables = pluginPromptVariables(),
+                    val text = buildSystemPrompt(
+                        PromptRequest(
+                            model = settings.model,
+                            provider = providerLabel(),
+                            tools = offeredToolNames(),
+                            // 计划模式：system 里动态带 plan:policy 段（上游 PLAN_POLICY，order 500）
+                            planMode = live.plan.selected(),
+                            // 角色卡（M71）：人设替换 deployment:persona-prefix，系统提示词追加到
+                            // deployment:persona-suffix（order 10200）；插件注册的段落按 order 一起排、
+                            // 同名段插件覆盖（插件的人设/上下文走同一条路，不往最后再糊一段）。
+                            personaPrefix = personaPrefixText(),
+                            personaSuffix = settings.assistantSystem,
+                            extraSections = pluginPromptSections(),
+                            variables = pluginPromptVariables(),
+                        ),
                     )
-                    live.state.estSystemTokens = estimateTokens(text)
                     live.state.contextWindow = settings.contextWindow
                     text
                 },
@@ -1205,11 +2223,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             emit(LlmEvent.Failed(fakeOverflow, code = "invalid_request_error", status = 400))
                         }
                     } else {
-                        if (settings.protocol == "openai") {
-                            openAiClient.stream(request, config)
-                        } else {
-                            client.stream(request, config)
-                        }
+                        llmStream(request, config)
                     }
                 },
                 sessions = object : SessionGateway {
@@ -1245,6 +2259,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 onRequest = { n, request ->
                     dumpRequestIfRequested(request)
                     logRequest(n, request)
+                    recordPromptBreakdown(live.state, request)
                 },
                 onSummaryRequest = { request -> dumpSummaryRequestIfRequested(request) },
                 onLlmEvent = { n, event -> logLlmEvent(n, event) },
@@ -1273,6 +2288,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 log = { message -> Log.i("DshCompact", message) },
                 plan = live.plan,
                 onPlanChanged = { syncPlanUiFor(live) },
+                hooks = turnHooks(live.state),
+                claimSteeringInputs = { listOfNotNull(claimPrompt(live, steering = true)) },
+                nextQueuedInput = { claimPrompt(live) },
+                onInputDelivered = { id, seq -> ackPrompt(live, id, seq) },
             ),
     )
 
@@ -1285,29 +2304,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // 而 submit 要用 skillsUi 判断「/名字 是技能还是未知命令」。
 
     /** 设置页「技能」的数据：当前发现的技能（按名字序）。 */
-    var skillsUi by mutableStateOf<List<SkillSummary>>(emptyList())
+    override var skillsUi by mutableStateOf<List<SkillSummary>>(emptyList())
         private set
 
     /** 发现是否完整（某个根读失败 → 目录消息带「发现不完整」提示）。 */
-    var skillsComplete by mutableStateOf(true)
+    override var skillsComplete by mutableStateOf(true)
         private set
 
     /** 被忽略的 SKILL.md 及原因（frontmatter 坏了、同名低优先级……）。 */
-    var skillsWarnings by mutableStateOf<List<String>>(emptyList())
+    override var skillsWarnings by mutableStateOf<List<String>>(emptyList())
         private set
 
     /** 包管理页「导入技能」的一次性结果（Snackbar 用）。 */
-    var skillNotice by mutableStateOf<String?>(null)
+    override var skillNotice by mutableStateOf<String?>(null)
         private set
 
-    init {
+    private fun installRuntimeBindings() {
+        if (runtimeBindingsInstalled) return
+        runtimeBindingsInstalled = true
         // 悬浮窗的桥：服务里的 Compose 面板通过它读写同一个 ViewModel
         ChatMirror.host = this
-        BundledSkills.ensureInstalled(getApplication())
-        refreshSessions()
-        refreshSkills()
-        // 已装插件在冷启动时就接进工具表（不用等用户进插件页点一下）
-        syncPluginTools()
+        // M85-C3-3c：虚拟屏 Overlay 已搬进 native-shell，停止虚拟屏时仍要停当前聊天回合
+        xin.dshaa.nativeapp.device.shower.VirtualScreenRuntime.onStopChat = { ChatMirror.stop() }
+        // 随包文件与技能快照已由 initializeRuntime 准备，登记已完成。
+        Log.i("DshShell", "active=${shellActive?.pluginId}:${shellActive?.shellId} pref=${prefs.getString("dsh_shell", null)}")
+        // M85-D：冷启动按 `dsh_agent` 选回合插件（native/空 = builtin.agent.dsh）
+        refreshAgentResolution()
+        Log.i(
+            "DshAgent",
+            "active=${activeAgent?.pluginId ?: "builtin"}:${activeAgent?.agentId ?: "-"} " +
+                "pref=${prefs.getString("dsh_agent", null)} safety=${agentSafetyNotice ?: "-"}",
+        )
+        // 壳的 `ctx.surface.command` 落到本 ViewModel（桥是进程级的，ViewModel 只有一个）
+        xin.dshaa.nativeapp.data.SurfaceCommandRouter.handler = { command, args ->
+            shellCommand(command, args)
+        }
         // 后台任务/子代理结算 → 按 owner 唤醒对应代理（根会话走聊天，子代理走它自己的引擎）
         jobRegistry.settlementListener = { settlement -> wakeOwner(settlement.owner) }
         // 后台任务表变化（start / kill / settle）→ 任务面板立即翻状态，不靠轮询；
@@ -1329,6 +2360,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 kotlinx.coroutines.delay(5_000)
             }
         }
+    }
+
+    /** Serialize claimed debug inputs across Activity recreation and attachment/session IO. */
+    private val debugInputMutex = kotlinx.coroutines.sync.Mutex()
+
+    private fun consumeStartupDebug() {
         // 调试通道：`am start --es dsh_import_zip <绝对路径>` → 直接打开旧版导入页
         settings.debugImportPath?.let { path ->
             importRequest = if (File(path).isAbsolute) path else File(getApplication<Application>().filesDir, path).absolutePath
@@ -1535,7 +2572,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (keepSession) debugScreenRequest = "Terminal"
             viewModelScope.launch {
                 xin.dshaa.nativeapp.device.tools.TerminalSelfTest.run(
-                    app,
+                    getApplication(),
                     registry,
                     toolContext,
                     keepSession = keepSession,
@@ -1543,6 +2580,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         val auto = sp.getString("debug_send", null)
+        val debugGoal = sp.getString("debug_goal", null)
+        val debugGoalRounds = sp.getInt("debug_goal_max_rounds", 0).takeIf { it > 0 }
+        val debugAttach = sp.getString("debug_attach_image", null)
+        val debugAttachText = sp.getString("debug_attach_text", null)
+        val openSessionId = sp.getString("debug_open_session", null)
+        val debugPlanMode = sp.getBoolean("debug_plan_mode", false)
+        val hasDebugInput = !auto.isNullOrBlank() || !debugGoal.isNullOrBlank() ||
+            !debugAttach.isNullOrBlank() || !debugAttachText.isNullOrBlank() || !openSessionId.isNullOrBlank()
+        // Claim the complete input before launching/suspending. A recreated Activity can consume
+        // another request while this one waits for disk; late removals would erase or repeat it.
+        if (hasDebugInput) sp.edit().remove("debug_send").remove("debug_goal").remove("debug_goal_max_rounds")
+            .remove("debug_attach_image").remove("debug_attach_text").remove("debug_open_session")
+            .remove("debug_plan_mode").apply()
         runRecorder?.record("run.meta") {
             put("scenario", prefs.getString("debug_parity_scenario", "").orEmpty())
             put("model", settings.model)
@@ -1552,68 +2602,63 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             put("tools", registry.names.size)
             put("prompt", auto.orEmpty())
         }
-        val debugGoal = sp.getString("debug_goal", null)
-        // `--ei dsh_goal_max_rounds 2`：调试目标自带的轮次上限（验 goal-round-driver 的 round-limit 收尾）
-        val debugGoalRounds = sp.getInt("debug_goal_max_rounds", 0).takeIf { it > 0 }
-        // 附件验收：`--es dsh_attach_image <绝对路径>` 先把图片放进待发列表（可与 dsh_send 连用）
-        val debugAttach = sp.getString("debug_attach_image", null)
-        if (!debugAttach.isNullOrBlank()) sp.edit().remove("debug_attach_image").apply()
-        // M74：`--es dsh_attach_text <绝对路径>` 把文本文件放进待发附件（验聊天页引用 chip）
-        val debugAttachText = sp.getString("debug_attach_text", null)
-        if (!debugAttachText.isNullOrBlank()) sp.edit().remove("debug_attach_text").apply()
-        val openSessionId = sp.getString("debug_open_session", null)
-        if (!openSessionId.isNullOrBlank()) {
-            // 调试通道：`--es dsh_open_session <id>` 打开已有会话；可与 `dsh_send` 连用验历史重放
-            sp.edit().remove("debug_open_session").apply()
-            viewModelScope.launch {
-                openSessionById(openSessionId)
+        if (hasDebugInput) viewModelScope.launch {
+            debugInputMutex.lock()
+            try {
+                val target = when {
+                    !openSessionId.isNullOrBlank() -> {
+                        // Opening and all subsequent attachment/send work belong to this request.
+                        openSessionById(openSessionId)
+                        chat
+                    }
+                    !debugGoal.isNullOrBlank() -> {
+                        val session = withContext(Dispatchers.IO) { repo.create(cwd = workspace.absolutePath, model = settings.model) }
+                        val view = withContext(Dispatchers.IO) {
+                            runCatching { goalStore(session).create(debugGoal.trim(), debugGoalRounds) }.getOrNull()
+                        }
+                        val state = ChatSessionState(settings.model)
+                        state.sessionId = session.header.id
+                        state.title = "目标：${debugGoal.trim().take(16)}"
+                        state.goal = view
+                        val live = LiveChat(state).apply {
+                            handle = session
+                            goalActivation = GoalActivationState()
+                        }
+                        lives[state] = live
+                        attach(live)
+                        refreshSessions()
+                        state
+                    }
+                    else -> {
+                        newChat()
+                        if (!auto.isNullOrBlank() && debugPlanMode) {
+                            planState.active = true
+                            planState.entered = true
+                            syncPlanUi()
+                        }
+                        chat
+                    }
+                } ?: return@launch
+                attachDebugImage(debugAttach, target)
+                attachDebugText(debugAttachText, target)
                 if (!auto.isNullOrBlank()) {
-                    sp.edit().remove("debug_send").apply()
-                    attachDebugImage(debugAttach)
-                    attachDebugText(debugAttachText)
-                    submit(auto)
+                    if (chat !== target) {
+                        // The user may switch during IO; retain this input on its original state.
+                        val previous = target.draft.text
+                        target.draft = androidx.compose.ui.text.input.TextFieldValue(
+                            if (previous.isBlank()) auto else previous + "\n\n" + auto,
+                        )
+                        target.commandNotice = "调试发送时会话已切换，消息已保留为原会话草稿"
+                    } else if (!submit(auto)) {
+                        val previous = target.draft.text
+                        target.draft = androidx.compose.ui.text.input.TextFieldValue(
+                            if (previous.isBlank()) auto else previous + "\n\n" + auto,
+                        )
+                        target.commandNotice = "调试消息未被接受，已保留草稿"
+                    }
                 }
-            }
-        } else if (!debugGoal.isNullOrBlank()) {
-            // 调试通道：`--es dsh_goal "<目标>"` → 新建会话并写一个 active goal（UI/工具验收用）；
-            // 若同时带 `--es dsh_send`，就在**同一个** goal 会话里发送，方便验证 get_goal/update_goal。
-            sp.edit().remove("debug_goal").apply()
-            viewModelScope.launch {
-                val session = withContext(Dispatchers.IO) { repo.create(cwd = workspace.absolutePath, model = settings.model) }
-                val view = withContext(Dispatchers.IO) {
-                    runCatching { goalStore(session).create(debugGoal.trim(), debugGoalRounds) }.getOrNull()
-                }
-                val state = ChatSessionState(settings.model)
-                state.sessionId = session.header.id
-                state.title = "目标：${debugGoal.trim().take(16)}"
-                state.goal = view
-                val live = LiveChat(state).apply {
-                    handle = session
-                    goalActivation = GoalActivationState()
-                }
-                lives[state] = live
-                attach(live)
-                refreshSessions()
-                if (!auto.isNullOrBlank()) {
-                    sp.edit().remove("debug_send").apply()
-                    attachDebugImage(debugAttach)
-                    submit(auto)
-                }
-            }
-        } else if (!auto.isNullOrBlank()) {
-            sp.edit().remove("debug_send").apply()
-            newChat()
-            // 调试通道：`--ez dsh_plan_mode true` → 新会话一开始就在计划模式（真机验收 plan/mode 事件）
-            if (sp.getBoolean("debug_plan_mode", false)) {
-                sp.edit().remove("debug_plan_mode").apply()
-                planState.active = true
-                planState.entered = true
-                syncPlanUi()
-            }
-            viewModelScope.launch {
-                attachDebugImage(debugAttach)
-                attachDebugText(debugAttachText)
-                submit(auto)
+            } finally {
+                debugInputMutex.unlock()
             }
         }
     }
@@ -1622,11 +2667,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 调试通道：把一张本地图片读进待发附件（与用户从相册选图走同一个 [savePendingImage]，
      * 覆盖归一化/落盘/能力门前的全部路径）。文件读不到就静默跳过（自动验收要能继续发文字）。
      */
-    private suspend fun attachDebugImage(path: String?) {
+    private suspend fun attachDebugImage(path: String?, target: ChatSessionState? = chat) {
         if (path.isNullOrBlank()) return
+        val state = target ?: return
         val file = File(path)
         val bytes = withContext(Dispatchers.IO) { runCatching { file.readBytes() }.getOrNull() } ?: return
-        val state = chat ?: return
         state.attachError = savePendingImage(state, bytes, null, file.name)
     }
 
@@ -1634,14 +2679,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 调试通道：`--es dsh_attach_text <绝对路径>` 把设备上一个文本文件读进待发附件，
      * 走的是和「附件 → 文件」同一条 [attachTextFile]（M74 引用 chip 验收用）。
      */
-    private suspend fun attachDebugText(path: String?) {
+    private suspend fun attachDebugText(path: String?, target: ChatSessionState? = chat) {
         if (path.isNullOrBlank()) return
+        val state = target ?: return
         val file = File(path)
         val text = withContext(Dispatchers.IO) { runCatching { file.readText(Charsets.UTF_8) }.getOrNull() } ?: return
-        attachTextFile(file.name, text)
+        attachTextFile(file.name, text, state)
     }
 
-    fun refreshSessions() {
+    override fun refreshSessions() {
         viewModelScope.launch {
             val all = withContext(Dispatchers.IO) { repo.list() }
             // 子代理会话（header.parentSession != null）不混进用户会话列表，进子代理面板
@@ -1658,7 +2704,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 从原生备份恢复后刷新内存状态（M35）：会话列表 + 插件清单/工具注入。
      * 设置项写到 SharedPreferences 后要重启 App 才生效，UI 会提示。
      */
-    fun onRestoredFromBackup() {
+    override fun onRestoredFromBackup() {
         refreshSessions()
         pluginsUi = pluginStore.list()
         syncPluginTools()
@@ -1720,9 +2766,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 再按新 cwd 过滤会话。后台任务与子代理不受影响（它们持有自己的 cwd 快照）。
      * 返回 null = 成功，否则是给用户看的错误文案。
      */
-    fun switchWorkspace(path: String): String? {
+    override fun switchWorkspace(path: String): String? {
         if (path.isBlank()) return "工作区路径为空"
         if (path == workspace.absolutePath) return null
+        // Retain all old-workspace inputs before invalidating their runtimes.
+        lives.values.toList().forEach { live ->
+            pausePromptQueue(live, "工作区已切换，待发送消息已保留")
+            // 取消 ≠ 写完：引擎的 NonCancellable 收尾还要写 tool/result、step/end、turn/end。
+            // 把 job 记进屏障，删除工作区时靠 join 等它真正结束再移动目录（见 deleteWorkspace）。
+            live.job?.let { job -> writerBarrier.track(live.queueWorkspace, job) }
+            live.acceptingInputs = false
+            live.stop.requested = true
+            live.job?.cancel()
+        }
         // 换工作区要换工具可写根：正在跑的轮次必须停（它不是能迁走的东西）
         stop()
         // 旧工作区的会话运行时全部作废（句柄/引擎绑的是旧根）
@@ -1757,13 +2813,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * [path] 为空 = 建在 App 私有目录；非空 = 用户选的任意目录（/sdcard/... 也行，
      * 需要「所有文件访问」权限，权限页有入口）。返回 null = 成功，否则是错误文案。
      */
-    fun createWorkspace(name: String, path: String? = null): String? {
+    override fun createWorkspace(name: String, path: String?): String? {
         val result = workspaceStore.create(name, path)
         val entry = result.getOrElse { return it.message ?: "新建工作区失败" }
         return switchWorkspace(entry.path)
     }
 
-    fun renameWorkspace(id: String, name: String) {
+    override fun renameWorkspace(id: String, name: String) {
         if (workspaceStore.rename(id, name)) applyWorkspaceFilter()
     }
 
@@ -1771,15 +2827,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 删除工作区：目录与会话都移到回收站（`files/workspaces/.trash`、`files/sessions/.trash`），
      * 不真删。默认工作区与历史位置不可删。返回 null = 成功。
      */
-    fun deleteWorkspace(id: String): String? {
+    override fun deleteWorkspace(id: String): String? {
         val entry = workspaceStore.find(id) ?: return "工作区不存在"
         if (id == WorkspaceStore.DEFAULT_ID) return "默认工作区不能删除"
+        val target = entry.path
         if (entry.path == workspace.absolutePath) {
-            // 先切回默认工作区，避免把当前会话的根删掉
+            // 先切回默认工作区，避免把当前会话的根删掉。
+            // switchWorkspace 会把被取消的 writer 记进 writerBarrier（取消 ≠ 写完）。
             switchWorkspace(workspaceStore.defaultPath)
         }
         val removed = workspaceStore.remove(id) ?: return "工作区不存在"
         viewModelScope.launch {
+            // 目录移动必须是最后一步：旧 writer 的收尾（NonCancellable 里补 tool/result、
+            // step/end、turn/end）都还写在原路径上，先移动就会把回收站历史写缺/写坏。
+            awaitWorkspaceWriters(removed.path)
             withContext(Dispatchers.IO) {
                 repo.trashWorkspace(removed.path)
                 val dir = File(removed.path)
@@ -1795,10 +2856,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * 等工作区 [path] 名下所有 writer **真正**结束（含 NonCancellable 收尾）再返回。
+     *
+     * 两类来源都要等：还挂在 [lives] 里的（正常不会有了，防御性处理）和切工作区时
+     * 被摘掉、记进 [writerBarrier] 的。不用固定延迟：join 是唯一可靠的完成信号。
+     */
+    private suspend fun awaitWorkspaceWriters(path: String) {
+        val bound = lives.values.filter { it.queueWorkspace == path }
+        bound.forEach { live ->
+            pausePromptQueue(live, "工作区已切换，待发送消息已保留")
+            live.acceptingInputs = false
+            live.stop.requested = true
+            live.job?.cancel()
+        }
+        bound.forEach { live -> live.job?.join() }
+        writerBarrier.cancelAndJoinAll(path)
+    }
+
+    /**
      * 刷新子代理面板：先按内存里的代理表立即翻状态（不等解压会话文件），
      * 再读一遍仓库拿子会话的标题/预览。注册表 start/settle 会调它。
      */
-    fun refreshSubagents() {
+    override fun refreshSubagents() {
         viewModelScope.launch {
             rebuildSubagents()
             val all = withContext(Dispatchers.IO) { repo.list() }
@@ -1813,7 +2892,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 刷新任务面板（`JobRegistry.onChange` / 面板下拉 / 运行中 1 秒轮询共用）。
      * owner 标题来自会话列表：根会话 + 子代理会话（子会话 id 就是 owner）。
      */
-    fun refreshJobs() {
+    override fun refreshJobs() {
         viewModelScope.launch {
             val entries = jobRegistry.listAll()
             jobs = buildJobRows(entries, allRootSessions + childSessions)
@@ -1821,7 +2900,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 详情弹层的大预览（默认 20K 字符；仍是只读，不推进模型游标）。 */
-    fun peekJob(id: String): JobUi? {
+    override fun peekJob(id: String): JobUi? {
         val row = jobs.firstOrNull { it.id == id } ?: return null
         return runCatching {
             buildJobRows(listOf(jobRegistry.peek(id, row.owner)), sessions + childSessions).single()
@@ -1829,7 +2908,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 面板停止一个后台任务（二次确认在 UI）；返回错误文案，成功为 null。 */
-    fun stopJob(id: String): String? {
+    override fun stopJob(id: String): String? {
         val row = jobs.firstOrNull { it.id == id } ?: return "unknown job $id"
         val error = runCatching {
             val result = jobRegistry.kill(id, row.owner, "stopped from task panel")
@@ -1847,7 +2926,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * （不写 handle、不投提醒、不唤醒通知——子会话的续轮只能由主代理 send_message 触发）。
      *
      * M22：从聊天里的工具卡点进来时，把父会话压栈，返回键回到父会话而不是直接退出。 */
-    fun openSubagentSession(id: String) {
+    override fun openSubagentSession(id: String) {
         // 不取消主会话的轮次：子会话只是只读回放
         val previous = chat
         viewModelScope.launch {
@@ -1874,57 +2953,83 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 停止一个子代理：注册表取消启动协程，宿主再取消它当前的续轮。成功返回 null。 */
-    fun stopSubagent(id: String): String? {
+    override fun stopSubagent(id: String): String? {
         val error = runCatching { interruptAgent(id) }.exceptionOrNull()?.message
         refreshSubagents()
         return error
     }
 
     /** 删除会话：移到 .trash（不真删），列表立即刷新。 */
-    fun deleteSession(id: String) {
+    override fun deleteSession(id: String) {
         viewModelScope.launch {
+            try { discardSessionQueue(id) } catch (e: Exception) {
+                commandNotice("删除失败：无法清理待发送消息：${e.message}")
+                return@launch
+            }
             withContext(Dispatchers.IO) {
                 repo.trash(id)
                 // 会话没了，它的提醒也一起失效（提醒不跨会话复用）
                 runCatching { schedules.removeForSession(id) }
             }
-            if (chat?.sessionId == id) {
-                // 删的是当前会话：如果它还在跑，先停掉；运行时一并作废
-                liveById(id)?.let { live ->
-                    if (live in activeTurns) {
-                        live.stop.requested = true
-                        live.job?.cancel()
-                        markStopped(live)
-                    }
-                    lives.remove(live.state)
-                }
-                attach(null)
-                chatBackStack.clear()
-            }
+            // 存储里已经没有这条会话：运行时无论前台后台都必须作废（见 invalidateLivesForDeletedSession）
+            invalidateLivesForDeletedSession(id)
             if (id in unreadDone) unreadDone = unreadDone - id
             refreshSessions()
         }
     }
 
+    /**
+     * 会话已经从存储里消失后收口它的运行时（删除 / 彻底删除 / 清空回收站共用）。
+     *
+     * 以前只在「删的是当前会话」时移除 live：后台会话 A 被 [discardSessionQueue] 置
+     * `acceptingInputs=false` 后仍留在表里，从回收站恢复并打开 A 会复用这条失效运行时，
+     * 发送/附件一直被拒，直到重建 ViewModel。现在前后台一律作废，前台额外脱离聊天页；
+     * 其它会话的草稿、待发附件和返回栈一概不动。
+     */
+    private fun invalidateLivesForDeletedSession(id: String) {
+        val states = SessionLifecyclePolicy.runtimesForDeletedSession(
+            lives.entries.associate { entry -> entry.key to entry.key.sessionId },
+            id,
+        )
+        states.forEach { state ->
+            val live = lives.remove(state) ?: return@forEach
+            // discardSessionQueue 正常路径已经取消并 join 过；这里兜底以防调用方漏掉。
+            if (live in activeTurns) {
+                live.stop.requested = true
+                live.job?.cancel()
+            }
+            markStopped(live)
+            BigFish.forget(state)
+        }
+        // 返回栈里指向已删会话的项也清掉（否则返回键会把它重新 attach 成一条空壳）。
+        // 只删这一条会话的项，别的会话草稿仍然留在栈里。
+        chatBackStack.removeAll { it.sessionId == id }
+        if (chat?.sessionId == id) attach(null)
+    }
+
     // ---------------- 回收站 / 彻底删除（M79，用户 2026-11-12） ----------------
 
     /** 回收站列表（会话列表页「回收站」弹层用）。 */
-    var trashUi by mutableStateOf<List<SessionRepository.TrashedSession>>(emptyList())
+    override var trashUi by mutableStateOf<List<TrashedSession>>(emptyList())
         private set
 
-    var trashBusy by mutableStateOf(false)
+    override var trashBusy by mutableStateOf(false)
         private set
 
     /** 用户要看回收站时刷一次（不做常驻监听，回收站变化都由本进程的动作触发）。 */
-    fun refreshTrash() {
+    override fun refreshTrash() {
         viewModelScope.launch {
             trashUi = withContext(Dispatchers.IO) { runCatching { repo.listTrash() }.getOrDefault(emptyList()) }
         }
     }
 
     /** **彻底删除**一条会话：不经过回收站，目录直接删掉；删的是当前会话时同时停轮次并回草稿。 */
-    fun deleteSessionPermanently(id: String) {
+    override fun deleteSessionPermanently(id: String) {
         viewModelScope.launch {
+            try { discardSessionQueue(id) } catch (e: Exception) {
+                commandNotice("删除失败：无法清理待发送消息：${e.message}")
+                return@launch
+            }
             trashBusy = true
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
@@ -1937,7 +3042,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 refreshSessions()
                 return@launch
             }
-            detachIfCurrent(id)
+            invalidateLivesForDeletedSession(id)
             commandNotice("已彻底删除会话（不可恢复）")
             refreshSessions()
             refreshTrash()
@@ -1945,14 +3050,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 回收站里的一条：彻底删除。 */
-    fun purgeTrashed(dirName: String) {
+    override fun purgeTrashed(dirName: String) {
         viewModelScope.launch {
+            val target = withContext(Dispatchers.IO) { repo.listTrash().firstOrNull { it.dirName == dirName } }
+            if (target == null) { commandNotice("找不到这条回收站会话"); return@launch }
+            try { discardSessionQueue(target.id) } catch (e: Exception) {
+                commandNotice("删除失败：无法清理待发送消息：${e.message}")
+                return@launch
+            }
             trashBusy = true
             val ok = withContext(Dispatchers.IO) { runCatching { repo.purgeTrashed(dirName) }.getOrDefault(false) }
             trashBusy = false
             if (ok) {
-                // 如果删的正好是当前打开的那条（刚被移进回收站又打开过），一并脱离
-                trashUi.firstOrNull { it.dirName == dirName }?.let { detachIfCurrent(it.id) }
+                // 这条会话已经彻底没了：如果它正好是当前打开的那条（刚被移进回收站又打开过），
+                // 或者后台还留着运行时，一并作废
+                invalidateLivesForDeletedSession(target.id)
                 commandNotice("已彻底删除（不可恢复）")
             } else {
                 commandNotice("彻底删除失败：文件被占用？")
@@ -1963,7 +3075,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 回收站里的一条：恢复回原工作区。 */
-    fun restoreTrashed(dirName: String) {
+    override fun restoreTrashed(dirName: String) {
         viewModelScope.launch {
             trashBusy = true
             val ok = withContext(Dispatchers.IO) { runCatching { repo.restoreTrashed(dirName) }.getOrDefault(false) }
@@ -1975,34 +3087,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 清空回收站。 */
-    fun purgeAllTrashed() {
+    override fun purgeAllTrashed() {
         viewModelScope.launch {
+            val targets = withContext(Dispatchers.IO) { repo.listTrash() }
+            try { targets.forEach { discardSessionQueue(it.id) } } catch (e: Exception) {
+                commandNotice("清空失败：无法清理待发送消息：${e.message}")
+                return@launch
+            }
             trashBusy = true
             val count = withContext(Dispatchers.IO) { runCatching { repo.purgeAllTrash() }.getOrDefault(0) }
             trashBusy = false
+            targets.forEach { invalidateLivesForDeletedSession(it.id) }
             commandNotice("回收站已清空：彻底删除 $count 条")
             refreshTrash()
             refreshSessions()
         }
     }
 
-    /** 删掉/移走的是当前会话时：停轮次、脱离前台、回空草稿。 */
-    private fun detachIfCurrent(id: String) {
-        if (chat?.sessionId != id) return
-        liveById(id)?.let { live ->
-            if (live in activeTurns) {
-                live.stop.requested = true
-                live.job?.cancel()
-                markStopped(live)
-            }
-            lives.remove(live.state)
-        }
-        attach(null)
-        chatBackStack.clear()
-        if (id in unreadDone) unreadDone = unreadDone - id
-    }
-
-    /** 重命名会话：追加 session/title，刷新列表。 */    fun renameSession(id: String, title: String) {
+    /** 重命名会话：追加 session/title，刷新列表。 */
+    override fun renameSession(id: String, title: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repo.rename(id, title) }
             if (chat?.sessionId == id) chat?.title = title
@@ -2014,7 +3117,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * Operit 的「创建分支」：以当前会话到该消息为止的前缀建一个新会话并打开。
      * 返回 null = 成功；否则是给用户看的错误文案。
      */
-    fun branchFromMessage(message: ChatMessage): String? {
+    override fun branchFromMessage(message: ChatMessage): String? {
         val sessionId = chat?.sessionId ?: return "没有打开的会话"
         val seq = message.seq ?: return "这条消息还没有落库（流式中不能分支）"
         val sourceTitle = chat?.title.orEmpty().ifBlank { "会话" }
@@ -2039,7 +3142,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 以「这条 AI 消息之前那一轮用户消息之前」为前缀建分支，在新会话里把同一句话重发一遍。
      * 返回 null = 已接受（异步执行），否则是错误文案。
      */
-    fun regenerateFromMessage(message: ChatMessage): String? {
+    override fun regenerateFromMessage(message: ChatMessage): String? {
         val state = chat ?: return "没有打开的会话"
         val sessionId = state.sessionId ?: return "没有打开的会话"
         if (state.streaming) return "正在生成中，先停止再重新生成"
@@ -2075,10 +3178,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         chat?.commandNotice = text
     }
 
-    fun openSession(summary: SessionSummary) {
+    override fun openSession(summary: SessionSummary) {
         // 切会话**不取消**正在跑的轮次（2026-11-08 夜间）：这条会话如果本来就活在后台
         // （有 job 在跑或刚跑完），直接把前台指回它——流式光标、工具卡、待办都还在。
-        liveById(summary.id)?.let { live ->
+        // 但已经关掉输入的运行时（删除过/切过工作区）不能复用：它会让发送/附件永久被拒。
+        liveById(summary.id)?.takeIf { it.acceptingInputs }?.let { live ->
             attach(live)
             syncPlanUi()
             return
@@ -2089,10 +3193,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** 打开一个已有会话（列表点击与调试通道 `--es dsh_open_session` 共用）。 */
     private suspend fun openSessionById(id: String) {
         // 后台已有这条会话的运行时：复用，不要重读文件把流式状态冲掉
-        liveById(id)?.let { live ->
-            attach(live)
-            syncPlanUi()
-            return
+        val existing = liveById(id)
+        if (existing != null) {
+            if (existing.acceptingInputs) {
+                attach(existing)
+                syncPlanUi()
+                return
+            }
+            // 失效运行时（待发消息已清理/会话删过又恢复）：丢掉按磁盘重读，
+            // 否则会带着 acceptingInputs=false 一直拒绝发送和附件。
+            lives.remove(existing.state)
+            BigFish.forget(existing.state)
         }
         val loaded = withContext(Dispatchers.IO) { repo.load(id) }
         if (loaded == null) {
@@ -2104,7 +3215,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         val state = projectSession(
             loaded,
-            readOnlyReason = if (loaded.readOnly) READ_ONLY_IMPORT else null,
+            readOnlyReason = if (loaded.readOnly) readOnlyReasonOf(loaded) else null,
             withGoal = true,
         )
         val live = LiveChat(state).apply {
@@ -2114,6 +3225,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // 计划模式也是会话级状态：打开会话时从 plan/mode 事件折叠（pending 不跨会话恢复）
             val planView = SessionCodec.planModeOf(loaded.events)
             plan.reset(planView.active, planView.entered)
+        }
+        try { recoverPromptQueue(live) } catch (e: Exception) {
+            state.queueNotice = "恢复待发送消息失败：${e.message}"
         }
         lives[state] = live
         attach(live)
@@ -2128,6 +3242,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 会话文件 → Compose 状态（打开根会话 / 只读查看子会话共用）。
      * [readOnlyReason] 非空 = 只读（`import` 旧版副本 / `subagent` 子代理回放）。
      */
+    /**
+     * M85-E：只读会话的来源文案（旧版导入副本 / 子代理回放 / 只读存储插件）。
+     * 只读存储插件打开的任何会话都按 storage 文案（不是「旧版导入」）。
+     */
+    private fun readOnlyReasonOf(loaded: SessionSession): String =
+        if (repo.readOnly && loaded.readOnly) READ_ONLY_STORAGE else READ_ONLY_IMPORT
+
     private fun projectSession(
         loaded: SessionSession,
         readOnlyReason: String?,
@@ -2138,7 +3259,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 标题语义是「最后一条生效」（docs/port/01 §7）：重命名/LLM 起名后打开要显示新标题
         state.title = loaded.events.mapNotNull { SessionCodec.titleOf(it) }.lastOrNull()?.ifBlank { "会话" } ?: "会话"
         state.readOnly = loaded.readOnly || readOnlyReason != null
-        state.readOnlyReason = readOnlyReason ?: if (loaded.readOnly) READ_ONLY_IMPORT else null
+        state.readOnlyReason = readOnlyReason ?: if (loaded.readOnly) readOnlyReasonOf(loaded) else null
         if (withGoal) state.goal = runCatching { goalStore(loaded).current() }.getOrNull()
         // 压缩摘要的账本（M43）：checkpoint 消息的 source 只带 compactionId，条数/令牌在
         // compaction/summary 里；先折成「已压缩 N 条历史记录（约 T tokens）」给弹层当副标题。
@@ -2186,11 +3307,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return state
     }
 
-    fun newChat() {
+    override fun newChat() {
         // 旧草稿（没会话、没消息、没在跑）直接回收，避免 lives 越堆越多；
         // 正在跑的会话原样留在后台继续写它自己的文件。
+        // 但回收前必须看 draft / pendingImages / pendingFiles：这些内容还没有任何会话文件，
+        // 跟着运行时一起丢就是用户数据丢失（M86 收尾修复）。有内容就搬到新会话输入框。
+        var carried: ChatSessionState? = null
         current?.let { old ->
-            if (old.state.sessionId == null && old.state.messages.isEmpty() && old.job == null) {
+            val disposition = SessionLifecyclePolicy.disposeOfUnpersistedChat(
+                sessionId = old.state.sessionId,
+                messageCount = old.state.messages.size,
+                hasJob = old.job != null,
+                draftText = old.state.draft.text,
+                pendingImages = old.state.pendingImages.size,
+                pendingFiles = old.state.pendingFiles.size,
+            )
+            if (disposition != SessionLifecyclePolicy.EmptyChatDisposition.KEEP) {
+                if (disposition == SessionLifecyclePolicy.EmptyChatDisposition.CARRY_DRAFT) carried = old.state
                 lives.remove(old.state)
                 // 大肥鱼那份快照也一起清（M78：按会话记状态）
                 BigFish.forget(old.state)
@@ -2198,13 +3331,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         chatBackStack.clear()
         val state = ChatSessionState(settings.model)
+        carried?.let { old ->
+            // 光标放到末尾：草稿是「接着写」的，不是重新选中全部
+            val text = old.draft.text
+            if (text.isNotEmpty()) {
+                state.draft = androidx.compose.ui.text.input.TextFieldValue(
+                    text = text,
+                    selection = androidx.compose.ui.text.TextRange(text.length),
+                )
+            }
+            state.pendingImages.addAll(old.pendingImages)
+            state.pendingFiles.addAll(old.pendingFiles)
+        }
         val live = LiveChat(state)
         lives[state] = live
         attach(live)
         syncPlanUi()
     }
 
-    fun closeChat() {
+    override fun closeChat() {
         // 只把前台切回栈里的父会话（或空），后台轮次不动
         val previous = chatBackStack.removeLastOrNull()
         attach(if (previous != null) liveFor(previous) else null)
@@ -2214,7 +3359,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 输入条模型下拉直接切模型：settings 决定下一次请求，state.model 决定顶栏/输入条显示。
      * 以前只能去模型配置页改：settings 变了但当前会话顶栏还顶着旧名字（用户反馈的「header 不一致」）。
      */
-    fun switchModel(model: String) {
+    override fun switchModel(model: String) {
         val state = chat ?: return
         if (state.readOnly) return
         val m = model.trim()
@@ -2229,7 +3374,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * - idle：立即落库；如果上一次请求描述的是另一态，补一条 `source.kind:"plan-mode"` 的 user 通知；
      * - 还没建会话文件（新会话第一条消息之前）：先记内存，建会话时补写（SessionGateway.create）。
      */
-    fun setPlanMode(active: Boolean) {
+    override fun setPlanMode(active: Boolean) {
         val state = chat ?: return
         if (state.readOnly) return
         if (active == planState.selected()) return
@@ -2343,9 +3488,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      *
      * @return true = 已接受（调用方可以清空输入框）；false = 保留草稿（未知命令/只读/运行中）。
      */
-    fun submit(text: String): Boolean {
+    override fun submit(text: String): Boolean {
         val state = chat ?: return false
         if (state.readOnly) return false
+        roleSafetyError()?.let { reason ->
+            state.attachError = reason
+            return false
+        }
         val hasImages = state.pendingImages.isNotEmpty()
         val hasFiles = state.pendingFiles.isNotEmpty()
         val command = parseCommandLine(text)
@@ -2356,14 +3505,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 showCommandNotice(state, "未知命令 ${text.takeWhile { !it.isWhitespace() }}")
                 return false
             }
-            if (state.streaming) return false
             if (text.isBlank() && !hasImages && !hasFiles) return false
             if (hasImages && !imageInputAvailable) {
                 state.attachError = "当前模型未开启识图：设置 → 模型与参数配置 → 「模型支持识图」打开后再发"
                 return false
             }
-            send(text)
-            return true
+            return send(text)
         }
         if (hasImages || hasFiles) {
             // 命令走的是另一条执行路径（不产生模型消息），附件没有落点：保留草稿让用户删附件或换普通消息
@@ -2420,11 +3567,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     it.name == command.name && it.userInvocable && it.enabled
                 }
             }.getOrNull()
-        if (skill != null) {
-            if (state.streaming) return false
-            send(text)
-            return true
-        }
+        if (skill != null) return send(text)
         showCommandNotice(state, "未知命令 /${command.name}")
         return false
     }
@@ -2748,12 +3891,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun dismissCommandNotice() {
+    override fun dismissCommandNotice() {
         chat?.commandNotice = null
     }
 
     /** `@file` 候选（IO；查询在光标处每次变化时调用）。 */
-    suspend fun fileCandidates(query: String): List<FileCandidate> = withContext(Dispatchers.IO) {
+    override suspend fun fileCandidates(query: String): List<FileCandidate> = withContext(Dispatchers.IO) {
         runCatching { fileReferenceSearch.candidates(query) }.getOrElse { emptyList() }
     }
 
@@ -2773,18 +3916,52 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         state.planEntered = live.plan.entered
     }
 
-    fun send(text: String) {
+    /**
+     * M85-E：发送前的角色安全检查。
+     *
+     * - 没有可用存储（内置被停用且无插件）：存储安全提示，拦下发送；
+     * - 只读存储插件：只能浏览，拦下发送；
+     * - 没有可用提示词（内置被停用且无插件）：提示词安全提示，拦下发送。
+     *
+     * 模型通道不可用不在这里拦：它照常进一轮，由 [llmStream] 用 `LlmEvent.Failed` 如实报错。
+     */
+    private fun roleSafetyError(): String? {
+        if (activeStorage == null) {
+            return "存储安全提示：" + (storageSafetyNotice ?: "没有可用的会话存储。")
+        }
+        if (repo.readOnly) {
+            return "存储安全提示：只读存储插件只能浏览导出的会话，不能新建或发送。"
+        }
+        if (activePromptState == null) {
+            return "提示词安全提示：" + (promptSafetyNotice ?: "没有可用的系统提示词。")
+        }
+        return null
+    }
+
+    fun send(text: String): Boolean {
         val trimmed = text.trim()
-        val state = chat ?: return
-        // 旧版备份导入的会话是只读副本：不允许续写（源数据契约：导入只读）
-        if (state.readOnly || state.streaming) return
+        val state = chat ?: return false
+        val live = current ?: return false
+        if (state.readOnly || state.stopping || !live.acceptingInputs) return false
+        if (live.queueWorkspace != workspace.absolutePath || live.queueStorageId != activeStorage?.storageId) {
+            state.attachError = "工作区或存储已切换，请重新打开会话后发送"
+            return false
+        }
+        inputReadinessError(state)?.let { reason ->
+            state.attachError = reason
+            return false
+        }
         state.attachError = null
         val images = state.pendingImages.map { it.ref }
         val files = state.pendingFiles.toList()
-        if (trimmed.isEmpty() && images.isEmpty() && files.isEmpty()) return
+        if (trimmed.isEmpty() && images.isEmpty() && files.isEmpty()) return false
         if (images.isNotEmpty() && !imageInputAvailable) {
             state.attachError = "当前模型未开启识图：设置 → 模型与参数配置 → 「模型支持识图」打开后再发"
-            return
+            return false
+        }
+        if (activeAgent?.builtin == false && (images.isNotEmpty() || files.isNotEmpty())) {
+            state.attachError = "当前回合插件只支持纯文本，请切回内置回合后发送附件"
+            return false
         }
         // 文件：文本内联；非文本/超大文件按 Operit 形状放 <attachment>，模型用 read/read_image 读。
         val blocks = buildList {
@@ -2804,17 +3981,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 add(ATTACHMENT_REFERENCE_HINT)
             }
         }
-        // 待发附件一次性交给这一轮（失败时 send 提前返回，草稿与图片都还在）
-        if (images.isNotEmpty()) state.pendingImages.clear()
-        if (files.isNotEmpty()) state.pendingFiles.clear()
-        startTurn(
-            state,
-            TurnInput(
-                text = trimmed,
-                textBlocks = if (files.isEmpty()) emptyList() else blocks,
-                images = images,
-            ),
-        )
+        val input = TurnInput(trimmed, textBlocks = if (files.isEmpty()) emptyList() else blocks, images = images)
+        val accepted = if (live.job?.isCompleted == false || state.streaming) {
+            val owner = queueOwner(live)
+            if (owner == null || live.handle == null) {
+                state.queueNotice = "会话正在创建，请稍后再次发送；草稿已保留"
+                false
+            } else if (live.stop.requested) {
+                state.queueNotice = "上一轮正在收尾，草稿已保留"
+                false
+            } else try {
+                val jsQueue = !live.runningAgentBuiltin
+                val delivery = if (!jsQueue && settings.sendWhileRunningMode == "steer")
+                    xin.dshaa.core.session.PromptDelivery.STEER else xin.dshaa.core.session.PromptDelivery.QUEUE
+                promptQueue.enqueue(owner, xin.dshaa.core.session.PromptPayload(input.text, input.textBlocks, input.images), delivery)
+                refreshPromptQueue(live)
+                state.queueNotice = if (jsQueue && settings.sendWhileRunningMode == "steer")
+                    "当前回合插件只支持排队，已保存为排队消息" else "已保存，等待${if (delivery == xin.dshaa.core.session.PromptDelivery.STEER) "安全边界交付" else "当前任务完成"}"
+                true
+            } catch (e: Exception) {
+                state.queueNotice = "消息未保存：${e.message}；草稿已保留"
+                false
+            }
+        } else startTurn(state, input)
+        if (accepted) {
+            state.pendingImages.removeAll { it.ref in images }
+            state.pendingFiles.removeAll(files.toSet())
+        }
+        return accepted
     }
 
     /**
@@ -2850,24 +4044,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val anchor = if (task.timing.kind == "every_seconds") task.updatedAt else task.createdAt
             val next = runCatching { ScheduleTime.nextOccurrence(task.timing, now, anchor) }.getOrNull()
             runCatching { schedules.markDelivered(task.id, now, next) }
+            bumpSchedulesRevision()
             live.pendingSchedules.addLast(task.prompt)
         }
         return live.pendingSchedules.removeFirst()
     }
 
     /** 当前会话的提醒（聊天页「提醒」面板打开时重新读）。 */
-    fun currentSchedules(): List<ScheduledTask> =
-        chat?.sessionId?.let { schedules.listForSession(it) } ?: emptyList()
+    override fun currentSchedules(): List<ScheduledTask> {
+        // 读一次版本号：Compose 的壳绑定靠这个快照状态在提醒增删后重组（见 schedulesRevision）。
+        if (schedulesRevision < 0) return emptyList()
+        return chat?.sessionId?.let { schedules.listForSession(it) } ?: emptyList()
+    }
 
     /** 用户手动删除一条提醒。 */
-    fun deleteSchedule(id: String) {
+    override fun deleteSchedule(id: String) {
         val sessionId = chat?.sessionId ?: return
-        viewModelScope.launch { withContext(Dispatchers.IO) { runCatching { schedules.delete(id, sessionId) } } }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { schedules.delete(id, sessionId) } }
+            bumpSchedulesRevision()
+        }
     }
 
     // ---------------- /goal 面板：用户侧的暂停/恢复/编辑/清空 ----------------
 
-    suspend fun pauseGoal(): String? {
+    override suspend fun pauseGoal(): String? {
         val error = mutateGoal { store, view -> store.pauseAsUser(view.goal.id, view.goal.revision) }
         // 暂停的是当前会话的目标：只中止当前会话自己的轮次，不能误停后台别的会话
         val live = current
@@ -2878,20 +4079,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return error
     }
 
-    suspend fun resumeGoal(): String? {
+    override suspend fun resumeGoal(): String? {
         val error = mutateGoal { store, view -> store.resumeAsUser(view.goal.id, view.goal.revision) }
         // 上游 goal/changed 会触发 driver：idle 点 resume 应当立刻起下一轮
         if (error == null) kickGoalIfIdle()
         return error
     }
 
-    suspend fun editGoal(objective: String?, maxGoalRounds: Int?): String? {
+    override suspend fun editGoal(objective: String?, maxGoalRounds: Int?): String? {
         val error = mutateGoal { store, view -> store.editAsUser(view.goal.id, view.goal.revision, objective, maxGoalRounds) }
         if (error == null) kickGoalIfIdle()
         return error
     }
 
-    suspend fun clearGoal(): String? = mutateGoal { store, view ->
+    override suspend fun clearGoal(): String? = mutateGoal { store, view ->
         store.clearAsUser(view.goal.id, view.goal.revision)
         store.current()
     }
@@ -2916,7 +4117,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         startTurn(state, next)
     }
 
-    fun stop() {
+    override fun stop() {
         // 2026-11-12（用户：长任务干一半自己停）：先把「谁按了停止」记下来。以前 stop() 没有任何日志，
         // 只能看到 turn/end aborted，分不清是用户点了停止、悬浮窗关了，还是 Activity 被销毁。
         Log.i(
@@ -2930,12 +4131,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 2026-11-12（用户 23:00：轮次早就「已完成」，左下角还挂着「正在停止…」）：
         // 没有在跑的轮次时按「停止」只是在清状态，不能写「正在停止」——引擎的收尾不会再跑，
         // 1.5 秒兜底又只在「还占着运行集合」时才清，这行字就会永久留在界面上。
-        if (live.job?.isActive != true && !live.state.streaming) {
+        pausePromptQueue(live, "已停止，待发送消息已保留")
+        if (live.job?.isCompleted != false && !live.state.streaming) {
             live.state.stopping = false
             live.state.statusText = null
             return
         }
         // 用户主动 interrupt：取消后由引擎的收尾逻辑决定 pause（goal 轮）还是 disarm。
+        // M85-D：JS 回合插件通过 ctx.abort() 读这个位；dispatch 阻塞时也能尽快让插件自己收尾。
+        pluginAgentAbort = true
         // streaming 由取消收尾统一置 false：先写完 turn/end 再允许下一次发送，
         // 否则用户立刻再发一条会与取消收尾并发写同一个会话文件。
         live.stop.requested = true
@@ -2988,14 +4192,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun forceStopUi(live: LiveChat, reason: String) {
         Log.w("DshTurn", "force stop turn: $reason")
-        live.job = null
-        markStopped(live)
+        // UI timeout is not writer completion: retain the job and active-turn fence.
+        if (live.job?.isCompleted != false) markStopped(live)
         live.state.streaming = false
-        live.state.stopping = false
+        live.state.stopping = live.job?.isCompleted == false
         live.state.statusText = null
         val lastIndex = live.state.messages.indexOfLast { it.role == MessageRole.ASSISTANT }
         if (lastIndex >= 0) live.state.messages[lastIndex] = live.state.messages[lastIndex].copy(streaming = false)
-        live.state.commandNotice = "上一轮收尾超时，已强制停止；可以直接发消息。"
+        live.state.commandNotice = "上一轮仍在收尾，待发送消息已保留；收尾完成后可继续。"
         syncKeepAlive()
     }
 
@@ -3004,8 +4208,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val live = current ?: return
         live.stop.requested = false
         live.job?.cancel()
-        live.job = null
-        live.state.streaming = false
+        pausePromptQueue(live, "会话已中断，待发送消息已保留")
+        live.state.stopping = live.job?.isCompleted == false
     }
 
 
@@ -3027,8 +4231,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         override fun setStreaming(streaming: Boolean) {
             state.streaming = streaming
-            // M76：运行状态条按本轮开始时间计时；结束不清零，行内文案会切回「已完成」。
-            if (streaming) state.turnStartedAt = System.currentTimeMillis()
+            // M76/M85-B2-2：起点在 startTurn 已经写好（含首包前的等待），这里不再重置。
             // 大肥鱼（M59）：一轮开始 → THINKING；收口在 startTurn 的 finally 里（那里才是
             // 真正「turn end」的时刻，引擎有些取消路径不会经过 setStreaming(false)）。
             if (streaming) BigFish.onTurnStart(state, settings.reasoningEffort, workspace.name)
@@ -3050,12 +4253,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             state.usageText = text
         }
 
-        /** M72：数字版用量 → BigFish 按会话/轮累加，turn/end 随快照喂给客户端插件。 */
+        override fun onRequestUsage(update: xin.dshaa.core.engine.RequestUsage) {
+            val now = System.currentTimeMillis()
+            val status = update.status.name.lowercase()
+            if (update.status == xin.dshaa.core.engine.RequestUsageStatus.STARTED) {
+                state.contextUsage?.let { previous ->
+                    state.contextHistory.add(previous)
+                    while (state.contextHistory.size > 30) state.contextHistory.removeAt(0)
+                }
+                state.contextUsage = xin.dshaa.core.model.ContextUsage(
+                    requestNo = update.requestNo, status = status, startedAt = now, updatedAt = now,
+                )
+            } else {
+                val previous = state.contextUsage?.takeIf { it.requestNo == update.requestNo } ?: return
+                state.contextUsage = previous.copy(
+                    status = status, inputTokens = update.usage.inputTokens, outputTokens = update.usage.outputTokens,
+                    cacheReadTokens = update.usage.cacheReadInputTokens,
+                    cacheCreationTokens = update.usage.cacheCreationInputTokens, updatedAt = now,
+                )
+            }
+            if (update.status != xin.dshaa.core.engine.RequestUsageStatus.STREAMING) {
+                Log.i("DshContext", "request=${update.requestNo} status=$status input=${update.usage.inputTokens} " +
+                    "output=${update.usage.outputTokens} cacheRead=${update.usage.cacheReadInputTokens} " +
+                    "cacheCreation=${update.usage.cacheCreationInputTokens}")
+            }
+        }
+
+        /** 奖励统计仍按成功 step 结算；上下文显示走同请求的 nullable 快照。 */
         override fun setTokenUsage(inputTokens: Int, outputTokens: Int) {
-            // M76：上下文圆环/明细用最近一次请求的真实 prompt tokens
-            if (inputTokens > 0) state.lastPromptTokens = inputTokens
-            if (outputTokens > 0) state.lastCompletionTokens = outputTokens
             BigFish.onTokenUsage(state, inputTokens, outputTokens)
+        }
+
+        private fun invalidateContext(reason: String) {
+            state.contextInvalidationReason = reason
+            state.contextChanges.add("${System.currentTimeMillis()}: $reason")
+            while (state.contextChanges.size > 30) state.contextChanges.removeAt(0)
         }
 
         override fun setGoal(view: GoalView?) {
@@ -3080,6 +4312,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (first < 0) return
             state.messages.removeAll { it.seq != null && it.seq in shadowedSeqs }
             state.messages.add(first, checkpoint)
+            invalidateContext("历史已压缩，等待下一请求用量")
         }
 
         /**
@@ -3088,7 +4321,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
          */
         override fun applyToolResultPrune(originalSeq: Long, replacement: ChatMessage) {
             val index = state.messages.indexOfFirst { it.seq == originalSeq }
-            if (index >= 0) state.messages[index] = replacement
+            if (index >= 0) {
+                state.messages[index] = replacement
+                invalidateContext("工具结果已修剪，等待下一请求用量")
+            }
         }
 
         /**
@@ -3096,6 +4332,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
          * 下一次请求组装会把这几张图换成占位文本。
          */
         override fun applyImageOffload(targets: List<ImageOffloadTarget>) {
+            if (targets.isNotEmpty()) invalidateContext("图片已卸载，等待下一请求用量")
             targets.forEach { target ->
                 val index = state.messages.indexOfFirst { it.seq == target.seq }
                 if (index >= 0) {
@@ -3109,12 +4346,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 跑一轮，然后按 goal activation 决定要不要在 idle 点自动续轮（上游 goal-round-driver）。
      * 循环本身在 core:engine；这里只挂协程并收尾 UI 状态。
      */
-    private fun startTurn(state: ChatSessionState, input: TurnInput) {
+    private fun startTurn(state: ChatSessionState, input: TurnInput): Boolean {
         // 并行（M77）：每条会话都可以有自己的在跑轮次；这里按 state 找它自己的 LiveChat，
         // 不再要求「必须是当前前台会话」（提醒/通知可以在后台会话上起一轮）。
-        val live = lives[state] ?: current?.takeIf { it.state === state } ?: return
-        // 同一会话仍只允许一条轮次（工具调用/会话文件写入不能并发）
-        if (live.job?.isActive == true || live.state.streaming) return
+        val live = lives[state] ?: current?.takeIf { it.state === state } ?: return false
+        val otherWriter = activeTurns.any { it !== live && it.state.sessionId != null &&
+            it.state.sessionId == state.sessionId && it.job?.isCompleted == false }
+        if (!live.acceptingInputs || live.job?.isCompleted == false || live.state.streaming || otherWriter) {
+            state.attachError = "上一轮仍在运行或收尾，请稍后发送"
+            return false
+        }
+        inputReadinessError(state)?.let { state.attachError = it; return false }
+        // M85-D：每次发消息前重新解析回合插件（`dsh_agent` 改了就立刻生效）。
+        // 选不中 = 安全提示（插件停用/缺授权/选了不存在的），不崩溃、也不悄悄退回内置引擎。
+        refreshAgentResolution()
+        val turnAgent = activeAgent
+        if (turnAgent == null) {
+            val reason = agentSafetyNotice ?: "没有可用的回合插件"
+            state.attachError = "回合安全提示：$reason 可在插件页重新打开 builtin.agent.dsh，或点顶部「恢复内置回合」。"
+            Log.w("DshAgent", "turn blocked session=${state.sessionId ?: "-"}: $reason")
+            return false
+        }
+        // agent/v1 v1 的第三方实现只处理纯文本：图片/附件/后台通知轮仍由内置 dsH 引擎处理。
+        if (!turnAgent.builtin && (input.images.isNotEmpty() || input.textBlocks.isNotEmpty() || input.wake)) {
+            state.attachError =
+                "回合插件 ${turnAgent.label} 只支持纯文本输入：附件/图片/后台通知轮请切回内置 dsH 引擎"
+            Log.w("DshAgent", "turn blocked (rich input) agent=${turnAgent.agentId}")
+            return false
+        }
+        pluginAgentAbort = false
         // fork 的 seed 边界：本轮开始前的消息 = 已完成的轮次（当前轮不算）
         state.turnStartIndex = state.messages.size
         // 模型可能刚被改过：工具上下文里的图片能力门按当前设置重新绑定（read_image 的准入）
@@ -3124,13 +4384,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         startKeepAlive("对话进行中 · 切后台也会继续跑")
         Log.i(
             "DshTurn",
-            "turn start session=${state.sessionId ?: "-"} foreground=${state === chat} model=${settings.model}",
+            "turn start session=${state.sessionId ?: "-"} foreground=${state === chat} model=${settings.model} " +
+                "agent=${turnAgent.pluginId ?: "builtin"}:${turnAgent.agentId}",
         )
         val startedAt = System.currentTimeMillis()
+        // M85-B2-2：耗时从真正的 turn 起点算（不是等第一次流式回调），与 DshTurn 日志一致
+        state.turnStartedAt = startedAt
+        state.lastTurnDurationMs = 0L
         markRunning(live)
-        live.job = viewModelScope.launch {
+        state.streaming = true
+        live.stop.requested = false
+        live.runningAgentBuiltin = turnAgent.builtin
+        var completedNormally = false
+        val turnJob = viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
             try {
-                live.engine.startTurn(ComposeTurnUi(state), input)
+                if (turnAgent.builtin) {
+                    val outcome = live.engine.startTurn(ComposeTurnUi(state), input)
+                    completedNormally = outcome == TurnOutcome.COMPLETED
+                    if (!completedNormally) pausePromptQueue(live, state.error ?: "本轮未正常完成，待发送消息已保留")
+                } else {
+                    var next: TurnInput? = input
+                    while (next != null) {
+                        runPluginAgentTurn(live, state, turnAgent, next)
+                        if (state.error != null || live.stop.requested) {
+                            pausePromptQueue(live, state.error ?: "已停止，待发送消息已保留")
+                            break
+                        }
+                        next = claimPrompt(live)
+                    }
+                    completedNormally = state.error == null && !live.stop.requested
+                }
+            } catch (e: CancellationException) {
+                pausePromptQueue(live, "已停止，待发送消息已保留")
+                throw e
+            } catch (e: Exception) {
+                state.error = e.message ?: "对话执行失败"
+                pausePromptQueue(live, state.error ?: "对话执行失败")
+                Log.e("DshTurn", "turn failed", e)
             } finally {
                 state.streaming = false
                 state.stopping = false
@@ -3146,18 +4436,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     ?.takeIf { it.isNotEmpty() }
                 // 先把「这一轮占着运行集合」的标志清掉，再跑收尾副作用：收尾里任何一步抛异常
                 // 都不能让轮次永久占位（用户 2026-11-11：停止后仍显示运行、发不出消息）。
-                live.job = null
-                markStopped(live)
-                Log.i("DshTurn", "turn end after ${System.currentTimeMillis() - startedAt}ms")
-                // M79（用户 2026-11-12「长任务会突然停下来，原因未知」）：给「空收口」一个可见原因。
-                // 模型只回了思考/什么都不回时，以前界面上就是突然不动了；现在明确告诉用户可以续。
+                // Keep the actual writer job until invokeOnCompletion, including cancelled cleanup.
+                val durationMs = System.currentTimeMillis() - startedAt
+                state.lastTurnDurationMs = durationMs.coerceAtLeast(0)
+                Log.i("DshTurn", "turn end after ${durationMs}ms")
+                // 空正文轮次保留日志，便于排查模型只回思考/空内容的情况。
                 if (!state.stopping && state.error == null) {
                     val lastAssistant = state.messages.lastOrNull { it.role == MessageRole.ASSISTANT }
                     val hasText = lastAssistant?.content
                         ?.any { it.type == BlockType.TEXT && it.text.isNotBlank() } == true
                     val hasToolCall = lastAssistant?.content?.any { it.type == BlockType.TOOL_CALL } == true
                     if (lastAssistant != null && !hasText && !hasToolCall) {
-                        state.commandNotice = "本轮结束但没有正文（模型只回了空内容），发「继续」可以接着做"
                         Log.w("DshTurn", "turn ended without assistant text session=${state.sessionId}")
                     }
                 }
@@ -3172,11 +4461,202 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     refreshSessions()
                 }
-                // 轮次收口瞬间才结算的通知不会被引擎的 step 边界看到：这里补一次唤醒（只唤醒这条会话）
-                runCatching { maybeDeliverNoticesFor(state) }
                 syncKeepAlive()
             }
         }
+        live.job = turnJob
+        turnJob.invokeOnCompletion {
+            viewModelScope.launch {
+                if (live.job !== turnJob) return@launch
+                live.job = null
+                markStopped(live)
+                if (lives[state] === live && live.acceptingInputs && completedNormally && !live.stop.requested) {
+                    try {
+                        val queued = claimPrompt(live)
+                        if (queued != null) {
+                            if (!startTurn(state, queued)) {
+                                recoverPromptQueue(live)
+                                pausePromptQueue(live, state.attachError ?: "当前不能发送")
+                            }
+                        } else maybeDeliverNoticesFor(state)
+                    } catch (e: Exception) { pausePromptQueue(live, "队列交付失败：${e.message}") }
+                }
+                syncKeepAlive()
+            }
+        }
+        turnJob.start()
+        return true
+    }
+
+    /**
+     * M85-D：跑一轮**第三方 JS 回合插件**（agent/v1）。
+     *
+     * 边界（v1，写清避免夸大）：
+     * - 只支持纯文本轮：宿主负责落 `turn/start → step/start → user/message → assistant/message →
+     *   step/end → turn/end` 与会话文件（和内置引擎同一种事件格式，所以切回内置引擎不丢数据）；
+     * - 插件只拿到 `{turnId, sessionId, input, state}`，通过 `ctx.notify/status/abort/tools.names`
+     *   回调宿主；`tools.invoke` / `llm.stream` / `storage.append` 在 v1 明确返回 UNSUPPORTED；
+     * - 没有流式：插件的返回值 `{stopReason, text}` 就是这一轮的结果（echo agent 用它演示「回合可换」）。
+     */
+    private suspend fun runPluginAgentTurn(
+        live: LiveChat,
+        state: ChatSessionState,
+        agent: ResolvedAgent,
+        input: TurnInput,
+    ) {
+        val pluginId = agent.pluginId ?: run {
+            state.error = "回合插件缺少插件 id"
+            return
+        }
+        val session = ensureTurnSession(live) ?: run {
+            state.error = "无法创建会话"
+            return
+        }
+        state.sessionId = session.header.id
+        if (state.title == "新会话" && input.text.isNotBlank()) state.title = input.text.take(18)
+        state.streaming = true
+        state.statusText = "回合插件：${agent.label}"
+        pluginAgentState = state
+        state.error = null
+        var pluginTurnOpen = false
+        try {
+            val (turnNo, userSeq) = withContext(Dispatchers.IO) {
+                session.appendRequestHeader(
+                    provider = providerLabel(),
+                    model = settings.model,
+                    reasoningEffort = settings.reasoningEffort,
+                    maxTokens = settings.maxTokens,
+                )
+                val turn = session.startTurn()
+                session.startStep()
+                pluginTurnOpen = true
+                val source = input.promptId?.let { id -> buildJsonObject {
+                    put("kind", "user"); put("promptId", id); put("delivery", input.delivery)
+                } }
+                val seq = session.appendUserMessage(input.text, source)
+                turn to seq
+            }
+            state.messages += ChatMessage(
+                id = java.util.UUID.randomUUID().toString(),
+                role = MessageRole.USER,
+                content = listOf(ContentBlock(BlockType.TEXT, text = input.text)),
+                sourceKind = "user",
+                seq = userSeq,
+            )
+            input.promptId?.let { ackPrompt(live, it, userSeq) }
+            check(pluginResidentRuntime.isResident(pluginId)) { "当前回合插件尚未就绪：$pluginId" }
+            val payload = buildJsonObject {
+                put("id", agent.agentId)
+                put(
+                    "turn",
+                    buildJsonObject {
+                        put("turnId", "$pluginId#${session.header.id}#$turnNo")
+                        put("sessionId", session.header.id)
+                        put("input", input.text)
+                        put("state", buildJsonObject {
+                            put("sessionId", session.header.id)
+                            put("title", state.title)
+                            put("streaming", state.streaming)
+                            put("messageCount", state.messages.size)
+                        })
+                    },
+                )
+            }.toString()
+            val outcome = withContext(Dispatchers.IO) {
+                pluginResidentRuntime.dispatch(pluginId, AGENT_RUN_METHOD, payload, AGENT_TURN_TIMEOUT_MS)
+            }
+            val reply = parseAgentReply(outcome)
+            val text = reply?.text.orEmpty()
+            val error = when {
+                reply == null -> describeAgentFailure(outcome)
+                reply.stopReason == "max_tokens" -> "达到 max_tokens 上限，待发送消息已保留"
+                text.isBlank() -> "回合插件 ${agent.label} 没有返回正文"
+                else -> null
+            }
+            val assistantSeq = withContext(Dispatchers.IO) {
+                session.appendAssistantMessage(
+                    text,
+                    provider = providerLabel(),
+                    model = settings.model,
+                )
+            }
+            state.messages += ChatMessage(
+                id = java.util.UUID.randomUUID().toString(),
+                role = MessageRole.ASSISTANT,
+                content = if (text.isBlank()) emptyList() else listOf(ContentBlock(BlockType.TEXT, text = text)),
+                error = error,
+                seq = assistantSeq,
+            )
+            if (error != null) state.error = error
+            withContext(Dispatchers.IO) {
+                session.endStep()
+                session.endTurn(
+                    when {
+                        reply == null -> "error"
+                        pluginAgentAbort -> "aborted"
+                        else -> "completed"
+                    },
+                )
+            }
+            pluginTurnOpen = false
+            Log.i(
+                "DshAgent",
+                "plugin turn done agent=${agent.agentId} plugin=$pluginId session=${session.header.id} " +
+                    "turn=$turnNo chars=${text.length} stop=${reply?.stopReason ?: "error"} error=${error ?: "-"}",
+            )
+        } finally {
+            if (pluginTurnOpen) withContext(NonCancellable + Dispatchers.IO) {
+                session.endStep()
+                session.endTurn(if (live.stop.requested) "aborted" else "error")
+            }
+            pluginAgentState = null
+            state.streaming = false
+            if (state.statusText?.startsWith("回合插件") == true) state.statusText = null
+        }
+    }
+
+    /** 本轮没有会话文件时建一个（与内置引擎 `SessionGateway.create` 的落库形状一致）。 */
+    private suspend fun ensureTurnSession(live: LiveChat): SessionSession? {
+        live.handle?.let { return it }
+        val created = withContext(Dispatchers.IO) {
+            repo.create(cwd = workspace.absolutePath, model = settings.model)
+        }
+        runCatching {
+            created.appendRequestHeader(
+                provider = providerLabel(),
+                model = settings.model,
+                reasoningEffort = settings.reasoningEffort,
+                maxTokens = settings.maxTokens,
+            )
+        }.onFailure { Log.w("DshAgent", "append request header failed: ${it.message}") }
+        live.handle = created
+        refreshSessions()
+        Log.i("DshAgent", "created session ${created.header.id} for plugin agent turn")
+        return created
+    }
+
+    private data class PluginAgentReply(val stopReason: String, val text: String?)
+
+    /** 解析 `agent.run` 的 dispatch 结果；失败返回 null（原因见 [describeAgentFailure]）。 */
+    private fun parseAgentReply(outcome: JsOutcome?): PluginAgentReply? {
+        if (outcome == null || outcome.status != JsStatus.COMPLETED) return null
+        val obj = runCatching { Json.parseToJsonElement(outcome.valueJson ?: "null").jsonObject }.getOrNull()
+            ?: return null
+        val ok = runCatching { obj["ok"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() }.getOrNull()
+        if (ok != true) return null
+        val stopReason = obj["stopReason"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: "completed"
+        val text = obj["text"]?.jsonPrimitive?.contentOrNull
+        return PluginAgentReply(stopReason, text)
+    }
+
+    private fun describeAgentFailure(outcome: JsOutcome?): String {
+        if (outcome == null) return "回合插件常驻运行时没有就绪（插件已停用或启动失败）"
+        if (outcome.status != JsStatus.COMPLETED) {
+            return "回合插件运行超时/中断：${outcome.error ?: outcome.status}"
+        }
+        val obj = runCatching { Json.parseToJsonElement(outcome.valueJson ?: "null").jsonObject }.getOrNull()
+        return obj?.get("error")?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+            ?: "回合插件没有返回 {stopReason,text}"
     }
 
     /**
@@ -3195,6 +4675,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             agentRegistry.all().any { it.status == xin.dshaa.core.agents.AgentStatus.RUNNING }
         }.getOrDefault(false)
         if (turnRunning || jobsRunning || agentsRunning) {
+            TurnKeepAliveService.setLocalBusy(getApplication(), true)
             startKeepAlive(
                 when {
                     turnRunning -> "对话进行中 · 切后台也会继续跑"
@@ -3203,7 +4684,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 },
             )
         } else {
-            TurnKeepAliveService.stop(getApplication())
+            // M83：本地空闲时不能直接 stop——远程 DSH 的 turn 可能还在跑（同一个前台服务）
+            TurnKeepAliveService.setLocalBusy(getApplication(), false)
         }
     }
 
@@ -3228,16 +4710,1928 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 注册进 `ToolRegistry`，下一次请求就能看到；停用/删除时先注销旧名字。
      */
 
-    fun refreshPlugins() {
+    override fun refreshPlugins() {
         pluginsUi = pluginStore.list()
         syncPluginTools()
+    }
+
+    /**
+     * M84-K/M85-C3-4：插件注册的**整页路由**（启用中 + 有 `dsh.client` + `page:true`）。
+     *
+     * C3-4 起不再排除与内置页同名的 route：`page/v1` 注册表
+     * （[xin.dshaa.ui.shellapi.ShellPageRegistry]）把同 id 项标记为「覆盖内置页」，
+     * 抽屉只列独立插件页（M84-K 语义不变）；[PluginPageEntry.target] 带上 record+route，
+     * 壳的 dispatch 直接交给宿主页面槽渲染。
+     */
+    override fun pluginPageEntries(): List<PluginPageEntry> = pluginsUi.asSequence()
+        .filter { it.enabled && it.clientUi }
+        .flatMap { record ->
+            record.routes.asSequence()
+                .filter { it.page }
+                .map { route ->
+                    PluginPageEntry(
+                        pluginId = record.id,
+                        pluginName = record.name,
+                        routeId = route.id,
+                        title = route.title,
+                        target = PluginPageTarget(record, route),
+                    )
+                }
+        }
+        .distinctBy { it.routeId }
+        .toList()
+
+    /** M84-K：从抽屉打开插件的整页（插件自己的 dsh.client）。 */
+    override fun openPluginPageEntry(entry: PluginPageEntry) {
+        val record = pluginsUi.firstOrNull { it.id == entry.pluginId } ?: return
+        xin.dshaa.nativeapp.pluginui.PluginPageActivity.open(getApplication(), record, entry.routeId)
+    }
+
+    fun runPluginDevSelfTest(path: String) {
+        if (!xin.dshaa.nativeapp.BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            val dir = File(workspace, "m86-plugin-dev-${System.currentTimeMillis()}")
+            xin.dshaa.nativeapp.data.PluginDevSelfTest.run(dir, toolContext,
+                invoke = { name, args -> registry.execute(name, args, toolContext) },
+                writeReport = { text -> File(path).apply { parentFile?.mkdirs() }.writeText(text, Charsets.UTF_8) },
+            )
+        }
+    }
+
+    private var deviceProbeJob: Job? = null
+
+    fun runPromptQueueDeviceProbe(path: String) {
+        if (!xin.dshaa.nativeapp.BuildConfig.DEBUG || deviceProbeJob?.isCompleted == false) return
+        deviceProbeJob = viewModelScope.launch {
+            if (activeTurns.isNotEmpty() || current?.job?.isCompleted == false ||
+                activeAgent?.builtin != true || activeStorage?.storageId != BUILTIN_STORAGE_ID || activePromptState?.builtin != true) {
+                File(path).writeText("""{"running":false,"passed":false,"reason":"需要空闲的内置可写回合、存储和提示词"}""")
+                return@launch
+            }
+            val previous = current
+            val previousStates = lives.keys.toSet()
+            val previousBackStack = chatBackStack.toList()
+            val providerPref = prefs.getString("debug_llm_provider", null)
+            val previousProvider = LlmProviders.activeId
+            LlmProviders.register(DebugM86QueueProvider())
+            applyDebugProviders(DebugM86QueueProvider.ID, null)
+            try {
+                File(path).apply { parentFile?.mkdirs() }.writeText("""{"running":true}""")
+                PromptQueueDeviceProbe.run(this@AppViewModel, session = { current?.handle }, queueStore = promptQueue,
+                    context = getApplication(), fixtureDir = File(getApplication<Application>().filesDir, "m86g-fixtures"),
+                    activeTurnCount = { activeTurns.size },
+                    awaitIdle = { kotlinx.coroutines.withTimeout(20_000) {
+                        while (activeTurns.isNotEmpty() || lives.values.any { it.job?.isCompleted == false }) delay(20)
+                    } },
+                    dropAndReopen = { id ->
+                        check(activeTurns.isEmpty())
+                        val old = current ?: error("fixture live missing")
+                        check(old.state.sessionId == id && old.job?.isCompleted != false)
+                        lives.remove(old.state)
+                        attach(null)
+                        openSessionById(id)
+                    },
+                    writeReport = { report -> withContext(Dispatchers.IO) { File(path).writeText(report.toString(), Charsets.UTF_8) } },
+                )
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    val created = lives.filterKeys { it !in previousStates }.values.toList()
+                    created.forEach { live -> live.stop.requested = true; live.job?.cancel() }
+                    created.forEach { live -> live.job?.join(); lives.remove(live.state) }
+                    prefs.edit().apply {
+                        if (providerPref == null) remove("debug_llm_provider") else putString("debug_llm_provider", providerPref)
+                    }.apply()
+                    LlmProviders.activeId = previousProvider
+                    LlmProviders.unregister(DebugM86QueueProvider.ID)
+                    previous?.let { lives[it.state] = it }
+                    attach(previous)
+                    chatBackStack.clear(); previousBackStack.forEach { chatBackStack.addLast(it) }
+                    refreshSessions()
+                }
+            }
+        }
+    }
+
+    fun runRemoteConversationDeviceProbe(path: String) {
+        if (!xin.dshaa.nativeapp.BuildConfig.DEBUG || deviceProbeJob?.isCompleted == false) return
+        deviceProbeJob = viewModelScope.launch {
+            if (activeTurns.isNotEmpty()) {
+                File(path).writeText("""{"running":false,"passed":false,"reason":"需要所有本机回合空闲"}""")
+                return@launch
+            }
+            val previous = current
+            val previousRemote = conversation.remoteProfileId
+            try {
+                File(path).apply { parentFile?.mkdirs() }.writeText("""{"running":true}""")
+                RemoteConversationDeviceProbe.run(this@AppViewModel,
+                    File(getApplication<Application>().filesDir, "m86h-fixtures"),
+                    writeReport = { text -> File(path).writeText(text, Charsets.UTF_8) },
+                )
+            } finally {
+                conversation.selectTarget(previousRemote)
+                previous?.let { lives[it.state] = it }; attach(previous)
+            }
+        }
+    }
+
+    fun runLoadingDevSelfTest(path: String) {
+        if (!xin.dshaa.nativeapp.BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            val directory = File(workspace, "m86-loading-dev-${System.currentTimeMillis()}")
+            xin.dshaa.nativeapp.data.PluginLoadingDevSelfTest.run(directory, pluginStore,
+                invoke = { name, args -> registry.execute(name, args, toolContext) },
+                writeReport = { text -> File(path).apply { parentFile?.mkdirs() }.writeText(text, Charsets.UTF_8) },
+            )
+        }
+    }
+
+    /** Debug observations omit tokens, configuration and existing message content. */
+    fun dumpLoading(path: String) {
+        if (!xin.dshaa.nativeapp.BuildConfig.DEBUG) return
+        val snapshot = loadingSnapshotStore.read()
+        File(path).apply { parentFile?.mkdirs() }.writeText(buildJsonObject {
+            put("selected", prefs.getString("dsh_loading", null) ?: xin.dshaa.nativeapp.data.BuiltinLoadingPlugin.ID)
+            put("snapshotOwner", snapshot?.ownerPlugin ?: "")
+            put("snapshotSelection", snapshot?.selection ?: "")
+            put("revision", snapshot?.revision ?: "")
+            put("notice", loadingSafetyNotice ?: "")
+            put("targets", buildJsonArray { loadingTargetsUi.forEach { target -> add(buildJsonObject {
+                put("value", target.selectionValue ?: ""); put("label", target.label); put("active", target.active)
+                put("reason", target.unavailableReason ?: "")
+            }) } })
+        }.toString(), Charsets.UTF_8)
+    }
+
+    /** Debug UI acceptance observes global writers; message text is limited to M86 fixture tags. */
+    fun dumpUiProbeState(path: String) {
+        if (!xin.dshaa.nativeapp.BuildConfig.DEBUG) return
+        val state = chat
+        val live = current
+        fun fixtureText(message: ChatMessage): String? = message.content
+            .filter { it.type == xin.dshaa.core.model.BlockType.TEXT }.joinToString("") { it.text.orEmpty() }
+            .takeIf { Regex("M86GUI_[A-Za-z0-9_]+(?: done)?").matches(it) }
+        val fixture = state?.messages?.any { it.role == MessageRole.USER && fixtureText(it) != null } == true
+        val payload = buildJsonObject {
+            put("observedAt", System.currentTimeMillis())
+            put("activeTurnCount", activeTurns.size)
+            put("writerCount", lives.values.count { it.job?.isCompleted == false })
+            put("streamingCount", lives.values.count { it.state.streaming || it.state.stopping })
+            put("sessionId", state?.sessionId ?: "")
+            put("streaming", state?.streaming == true); put("stopping", state?.stopping == true)
+            put("shell", shellActive?.let { "${it.pluginId}#${it.shellId}" } ?: "native")
+            put("sendMode", settings.sendWhileRunningMode)
+            put("errorPresent", state?.error != null)
+            put("hasDraft", state?.draft?.text?.isNotBlank() == true)
+            put("pendingImageCount", state?.pendingImages?.size ?: 0)
+            put("pendingFileCount", state?.pendingFiles?.size ?: 0)
+            put("fixtureSession", fixture)
+            put("turnEnds", buildJsonArray {
+                if (fixture) live?.handle?.events?.filter { it.type == "turn/end" }?.forEach { event ->
+                    val data = event.data as? JsonObject
+                    val reason = data?.get("reason") as? JsonObject
+                    add(reason?.get("kind")?.jsonPrimitive?.contentOrNull ?: "")
+                }
+            })
+            if (fixture && state != null) {
+                put("messages", buildJsonArray { state.messages.forEach { message ->
+                    fixtureText(message)?.let { text -> add(buildJsonObject {
+                        put("role", message.role.name.lowercase()); put("text", text)
+                    }) }
+                } })
+                put("queued", buildJsonArray { state.queuedPrompts.forEach { entry -> add(buildJsonObject {
+                    put("id", entry.id); put("delivery", entry.delivery.name.lowercase())
+                    put("status", entry.status.name.lowercase()); put("paused", entry.pausedReason != null)
+                    if (Regex("M86GUI_[A-Za-z0-9_]+").matches(entry.payload.text)) put("text", entry.payload.text)
+                }) } })
+                put("delivered", buildJsonArray {
+                    live?.handle?.events?.filter { it.type == "user/message" }?.forEach { event ->
+                        val data = event.data as? JsonObject
+                        val source = ((data?.get("message") as? JsonObject) ?: data)?.get("source") as? JsonObject
+                        source?.get("promptId")?.jsonPrimitive?.contentOrNull?.let { id -> add(id) }
+                    }
+                })
+            }
+        }
+        File(path).apply { parentFile?.mkdirs() }.writeText(payload.toString(), Charsets.UTF_8)
+    }
+
+    /** 只记录用量和请求身份；不包含正文、请求头或凭据。 */
+    fun dumpContextUsage(path: String) {
+        val state = chat
+        fun json(value: xin.dshaa.core.model.ContextUsage): org.json.JSONObject = org.json.JSONObject()
+            .put("requestNo", value.requestNo).put("model", value.model).put("protocol", value.protocol)
+            .put("window", value.window).put("status", value.status)
+            .put("inputTokens", value.inputTokens ?: org.json.JSONObject.NULL)
+            .put("outputTokens", value.outputTokens ?: org.json.JSONObject.NULL)
+            .put("cacheReadTokens", value.cacheReadTokens ?: org.json.JSONObject.NULL)
+            .put("cacheCreationTokens", value.cacheCreationTokens ?: org.json.JSONObject.NULL)
+            .put("estimatedSystem", value.estimatedSystem).put("estimatedTools", value.estimatedTools)
+            .put("estimatedMessages", value.estimatedMessages).put("imageCount", value.imageCount)
+            .put("startedAt", value.startedAt).put("updatedAt", value.updatedAt)
+        runCatching {
+            val payload = org.json.JSONObject().put("sessionId", state?.sessionId ?: org.json.JSONObject.NULL)
+                .put("current", state?.contextUsage?.let(::json) ?: org.json.JSONObject.NULL)
+                .put("invalidationReason", state?.contextInvalidationReason ?: org.json.JSONObject.NULL)
+                .put("history", org.json.JSONArray(state?.contextHistory?.map(::json).orEmpty()))
+                .put("changes", org.json.JSONArray(state?.contextChanges?.toList().orEmpty()))
+            File(path).apply { parentFile?.mkdirs() }.writeText(payload.toString(), Charsets.UTF_8)
+        }.onFailure { Log.w("DshContext", "dump failed: ${it.message}") }
+    }
+
+    /**
+     * M84-G：当前路由是否由插件提供整页。
+     * 只看启用中 + 有 dsh.client + `page:true` 的 route；id 与宿主页/二级页同名 = 替换该页。
+     */
+    override fun pluginPageFor(pageId: String?, subId: String?): PluginPageTarget? {
+        val ids = listOfNotNull(pageId, subId).filter { it.isNotBlank() }
+        if (ids.isEmpty()) return null
+        return pluginsUi.asSequence()
+            .filter { it.enabled && it.clientUi }
+            .firstNotNullOfOrNull { record ->
+                record.routes.firstOrNull { it.page && it.id in ids }?.let { PluginPageTarget(record, it) }
+            }
+    }
+
+    /**
+     * M85-A 验收通道（仅 debug）：把所有插件壳 + 当前选择落盘。
+     */
+    fun dumpShells(dumpPath: String?) {
+        if (dumpPath.isNullOrBlank()) return
+        runCatching {
+            val pref = prefs.getString("dsh_shell", null).orEmpty()
+            val shells = org.json.JSONArray()
+            pluginsUi.forEach { record ->
+                record.shells.forEach { shell ->
+                    shells.put(
+                        org.json.JSONObject()
+                            .put("plugin", record.id)
+                            .put("pluginName", record.name)
+                            .put("enabled", record.enabled)
+                            .put("uiGranted", record.grantedPermissions.any { it.equals("ui", true) })
+                            .put("id", shell.id)
+                            .put("label", shell.label)
+                            .put("backend", shell.backend)
+                            .put("hasState", shell.hasState)
+                            .put("hasAction", shell.hasAction)
+                            .put("hasEvent", shell.hasEvent)
+                            .put(
+                                "active",
+                                shellActive?.pluginId == record.id && shellActive?.shellId == shell.id,
+                            ),
+                    )
+                }
+            }
+            val payload = org.json.JSONObject()
+                .put("pref", pref)
+                .put("active", shellActive?.let { "${it.pluginId}#${it.shellId}" } ?: "")
+                // M85-C2：内置界面插件也是一个「壳」，有 id/pages/启用状态；`dsh_shell` 里
+                // `native` 和它的插件 id（builtin.shell.native）等价。
+                .put(
+                    "native",
+                    org.json.JSONObject()
+                        .put("id", xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_UI_SHELL)
+                        .put("label", xin.dshaa.ui.shellapi.NativeShells.builtin()?.label ?: "")
+                        .put("enabled", nativeUiEnabled())
+                        .put("pages", xin.dshaa.ui.shellapi.NativeShells.pages().size)
+                        .put("selected", shellActive == null)
+                        .put("safeMode", shellActive == null && !nativeUiEnabled()),
+                )
+                .put("resident", org.json.JSONArray(pluginResidentRuntime.residencyIds()))
+                .put("treeMounted", shellHost.tree != null)
+                .put("treeError", shellHost.error ?: "")
+                .put("shells", shells)
+            val file = File(dumpPath)
+            file.parentFile?.mkdirs()
+            file.writeText(payload.toString())
+            Log.i("DshShell", "dump shells active=${shellActive?.shellId} count=${shells.length()} -> $dumpPath")
+        }.onFailure { Log.w("DshShell", "dump shells failed: ${it.message}") }
+    }
+
+    override val shellTargetsUi: List<xin.dshaa.ui.shellapi.RoleTargetUi>
+        get() = buildList {
+            val nativeEnabled = nativeUiEnabled()
+            add(xin.dshaa.ui.shellapi.RoleTargetUi(
+                role = "shell", implementationId = xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_UI_SHELL,
+                label = xin.dshaa.ui.shellapi.NativeShells.builtin()?.label ?: "原生界面",
+                builtin = true, enabled = nativeEnabled, active = shellActive == null && nativeEnabled,
+                selectionValue = "native", unavailableReason = if (nativeEnabled) null else "内置界面插件已停用",
+            ))
+            pluginsUi.forEach { record ->
+                record.shells.forEach { shell ->
+                    val permitted = record.grantedPermissions.any { it.equals("ui", true) }
+                    add(xin.dshaa.ui.shellapi.RoleTargetUi(
+                        role = "shell", implementationId = shell.id,
+                        label = "${shell.label} · ${shell.backend}", pluginId = record.id,
+                        provider = record.name, builtin = record.id == "builtin.shell.whale",
+                        enabled = record.enabled, permitted = permitted,
+                        active = shellActive?.pluginId == record.id && shellActive?.shellId == shell.id,
+                        selectionValue = "${record.id}#${shell.id}",
+                        unavailableReason = when {
+                            !record.enabled -> "提供方插件已停用"
+                            !permitted -> "缺少 ui 授权"
+                            else -> null
+                        },
+                    ))
+                }
+            }
+        }
+
+    override fun selectShell(value: String): Boolean {
+        val candidate = shellTargetsUi.firstOrNull { it.selectionValue == value }
+        if (candidate == null || candidate.unavailableReason != null) {
+            pluginNotice = candidate?.unavailableReason ?: "界面壳不存在"
+            return false
+        }
+        setActiveShell(if (value == "native") null else resolveShellTarget(value) ?: return false)
+        return true
+    }
+
+    override fun restoreBuiltinShell() {
+        setBuiltinPluginEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_UI_SHELL, true)
+        setActiveShell(null)
+    }
+
+    /** 全部可选的插件壳（启用 + ui 授权 + 声明了壳）。 */
+    fun shellTargets(): List<PluginShellHost.Target> = pluginsUi.asSequence()
+        .filter { record ->
+            record.enabled && record.shells.isNotEmpty() &&
+                record.grantedPermissions.any { it.equals("ui", true) }
+        }
+        .flatMap { record ->
+            record.shells.asSequence().map { shell ->
+                PluginShellHost.Target(record.id, shell.id, shell.label, record.name, shell.backend)
+            }
+        }
+        .toList()
+
+    /**
+     * `dsh_shell` 调试项 → 具体壳。`native`/空/失效都返回 null（原生壳）。
+     *
+     * M85-C2：内置界面插件的 id（[xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_UI_SHELL]）也是
+     * **合法壳 id**，和 `native` 指向同一个后端——这样「壳 id」语义统一，插件停用时同样落到安全模式。
+     *
+     * M85-C5（同 id 接管）：如果某个启用中 + 有 `ui` 授权的第三方插件声明了**同一个壳 id**
+     * （`builtin.shell.native`），`dsh_shell=builtin.shell.native` 就选中它（Surface/WebView 壳接管）；
+     * 插件停用/失效后解析回 null，宿主自动回到内置 native 界面。`native` 仍然永远指向内置后端。
+     */
+    fun resolveShellTarget(value: String?): PluginShellHost.Target? {
+        val raw = value?.trim().orEmpty()
+        if (raw.isEmpty() || raw.equals("native", true)) return null
+        if (raw.equals(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_UI_SHELL, true)) {
+            return pluginShellByShellId(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_UI_SHELL)
+        }
+        val pluginId = raw.substringBefore('#').trim()
+        val wantedShellId = raw.substringAfter('#', "").trim()
+        val record = pluginsUi.firstOrNull { it.id == pluginId && it.enabled } ?: return null
+        if (record.grantedPermissions.none { it.equals("ui", true) }) return null
+        val shell = if (wantedShellId.isNotEmpty()) {
+            record.shells.firstOrNull { it.id == wantedShellId }
+        } else {
+            record.shells.firstOrNull()
+        } ?: return null
+        return PluginShellHost.Target(record.id, shell.id, shell.label, record.name, shell.backend)
+    }
+
+    /** 同 id 接管：在启用 + 有 ui 授权的插件里找声明了 [shellId] 的壳（先到先得）。 */
+    private fun pluginShellByShellId(shellId: String): PluginShellHost.Target? = pluginsUi.asSequence()
+        .filter { record ->
+            record.enabled && record.shells.isNotEmpty() &&
+                record.grantedPermissions.any { it.equals("ui", true) }
+        }
+        .firstNotNullOfOrNull { record ->
+            record.shells.firstOrNull { it.id.equals(shellId, true) }
+                ?.let { shell -> PluginShellHost.Target(record.id, shell.id, shell.label, record.name, shell.backend) }
+        }
+
+    /** 选插件壳 / 回原生壳（持久化到 `dsh_shell`；原生 = `native`）。 */
+    fun setActiveShell(target: PluginShellHost.Target?) {
+        // 同一个壳重复下发（热启 intent 重投/Activity 重建）不能把已 mount 的壳重置成空白：
+        // reset 会让 WebView 保留旧画面、Compose 又回到 loading 层，看起来像壳没起来。
+        if (target == shellActive) return
+        shellHost.reset()
+        shellActive = target
+        val value = target?.let { "${it.pluginId}#${it.shellId}" } ?: "native"
+        prefs.edit().putString("dsh_shell", value).apply()
+        Log.i("DshShell", "set active=$value targets=${shellTargets().map { "${it.pluginId}#${it.shellId}" }}")
+    }
+
+    private fun fallbackFromShell(reason: String) {
+        shellActive = null
+        prefs.edit().putString("dsh_shell", "native").apply()
+        Log.w("DshShell", "fallback to native: $reason")
+        runCatching {
+            android.widget.Toast.makeText(getApplication(), reason + "；已回到原生界面", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** 输入框草稿：Surface 的 textfield 直接写这里（不跨 JS）。 */
+    fun setShellDraft(text: String) {
+        val state = chat ?: return
+        state.draft = androidx.compose.ui.text.input.TextFieldValue(text)
+    }
+
+    // ---- M85-D：回合插件（agent/v1） ----
+
+    /** 正在跑的 JS 回合对应的会话状态（`ctx.status` 回调只改它，不误改前台别的会话）。 */
+    @Volatile
+    private var pluginAgentState: ChatSessionState? = null
+
+    /** 全部候选（内置 + 导入插件声明；含停用/缺授权项，用于解释为什么选不中）。 */
+    private fun agentCandidates(): List<AgentCandidate> {
+        val out = ArrayList<AgentCandidate>()
+        out += AgentCandidate(
+            agentId = xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_AGENT,
+            label = "dsH 引擎（内置）",
+            pluginId = null,
+            builtin = true,
+            enabled = builtinStore.isEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_AGENT),
+            permitted = true,
+        )
+        pluginsUi.forEach { record ->
+            record.agents.forEach { agent ->
+                out += AgentCandidate(
+                    agentId = agent.id,
+                    label = agent.label,
+                    pluginId = record.id,
+                    builtin = false,
+                    enabled = record.enabled,
+                    permitted = record.grantedPermissions.any { it.equals("agent", true) },
+                )
+            }
+        }
+        return out
+    }
+
+    override val agentTargetsUi: List<AgentTargetUi>
+        get() {
+            val active = activeAgent
+            return agentCandidates().map { candidate ->
+                val reason = when {
+                    !candidate.enabled -> "插件已停用"
+                    !candidate.permitted -> "缺少 agent 授权"
+                    else -> null
+                }
+                AgentTargetUi(
+                    agentId = candidate.agentId,
+                    label = candidate.label,
+                    pluginId = candidate.pluginId,
+                    provider = candidate.pluginId?.let { id ->
+                        pluginsUi.firstOrNull { it.id == id }?.name ?: id
+                    } ?: "内置",
+                    builtin = candidate.builtin,
+                    enabled = candidate.enabled,
+                    permitted = candidate.permitted,
+                    active = active != null &&
+                        active.agentId == candidate.agentId &&
+                        active.pluginId == candidate.pluginId,
+                    unavailableReason = reason,
+                )
+            }
+        }
+
+    override val activeAgentUi: AgentTargetUi?
+        get() {
+            val agent = activeAgent ?: return null
+            return agentTargetsUi.firstOrNull {
+                it.agentId == agent.agentId && it.pluginId == agent.pluginId
+            } ?: AgentTargetUi(
+                agentId = agent.agentId,
+                label = agent.label,
+                pluginId = agent.pluginId,
+                provider = agent.pluginId ?: "内置",
+                builtin = agent.builtin,
+                active = true,
+            )
+        }
+
+    /**
+     * 重新解析 `dsh_agent`：发消息前、插件开关变化、冷启动都会调。
+     * 解析失败 = 安全提示（不悄悄退回内置实现），并记下具体原因。
+     */
+    private fun refreshAgentResolution() {
+        val pref = prefs.getString("dsh_agent", null)
+        val previous = activeAgent
+        when (val resolution = AgentRouting.resolve(pref, agentCandidates())) {
+            is AgentResolution.Active -> {
+                activeAgent = resolution.agent
+                agentSafetyNotice = null
+                clearAgentErrorNotice()
+                if (previous?.agentId != resolution.agent.agentId ||
+                    previous?.pluginId != resolution.agent.pluginId
+                ) {
+                    Log.i(
+                        "DshAgent",
+                        "resolved active=${resolution.agent.pluginId ?: "builtin"}:${resolution.agent.agentId} pref=${pref ?: "-"}",
+                    )
+                }
+            }
+
+            is AgentResolution.Unavailable -> {
+                activeAgent = null
+                agentSafetyNotice = resolution.reason
+                if (previous != null) {
+                    Log.w("DshAgent", "agent unavailable: ${resolution.reason} pref=${pref ?: "-"}")
+                }
+            }
+        }
+    }
+
+    override fun setActiveAgent(id: String): Boolean {
+        return when (val resolution = AgentRouting.resolve(id, agentCandidates())) {
+            is AgentResolution.Active -> {
+                val pref = AgentRouting.prefOf(resolution.agent)
+                prefs.edit().putString("dsh_agent", pref).apply()
+                activeAgent = resolution.agent
+                agentSafetyNotice = null
+                clearAgentErrorNotice()
+                pluginNotice = "回合插件：${resolution.agent.label}"
+                Log.i("DshAgent", "set active=$pref label=${resolution.agent.label}")
+                true
+            }
+
+            is AgentResolution.Unavailable -> {
+                agentSafetyNotice = resolution.reason
+                pluginNotice = resolution.reason
+                Log.w("DshAgent", "set agent failed id=$id: ${resolution.reason}")
+                false
+            }
+        }
+    }
+
+    override fun restoreBuiltinAgent() {
+        // 安全提示的「一键恢复」：先把内置回合插件打开，再选中 native（明确内置实现，
+        // 不给同 id 插件接管——与 dsh_shell=native 的语义一致）。
+        builtinStore.setEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_AGENT, true)
+        builtinPluginsUi = builtinStore.ui()
+        prefs.edit().putString("dsh_agent", "native").apply()
+        refreshAgentResolution()
+        pluginNotice = activeAgent?.let { "已恢复内置回合：${it.label}" } ?: (agentSafetyNotice ?: "恢复失败")
+        Log.i(
+            "DshAgent",
+            "restore builtin active=${activeAgent?.agentId ?: "-"} safety=${agentSafetyNotice ?: "-"}",
+        )
+    }
+
+    /** `ctx.status(text)`：JS 回合插件改状态条（主线程，且只改它自己那条会话）。 */
+    private fun setPluginAgentStatus(text: String?) {
+        val target = pluginAgentState ?: return
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            if (target.streaming) target.statusText = text
+        }
+    }
+
+    /** 恢复/切换回合后清掉「回合安全提示」那条 composer 错误（附件类错误不动）。 */
+    private fun clearAgentErrorNotice() {
+        val state = chat ?: return
+        if (state.attachError?.startsWith("回合安全提示") == true) state.attachError = null
+    }
+
+    /** 调试通道 `--es dsh_agent_list <绝对路径>`：回合清单 + 当前解析 + 常驻登记落盘。 */
+    override fun dumpAgents(dumpPath: String?) {
+        if (dumpPath.isNullOrBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val pref = prefs.getString("dsh_agent", null).orEmpty()
+                val active = activeAgent
+                val candidates = org.json.JSONArray()
+                agentTargetsUi.forEach { item ->
+                    candidates.put(
+                        org.json.JSONObject()
+                            .put("agent", item.agentId)
+                            .put("plugin", item.pluginId ?: "")
+                            .put("label", item.label)
+                            .put("provider", item.provider)
+                            .put("builtin", item.builtin)
+                            .put("enabled", item.enabled)
+                            .put("permitted", item.permitted)
+                            .put("active", item.active)
+                            .put("unavailable", item.unavailableReason ?: ""),
+                    )
+                }
+                val resident = org.json.JSONArray()
+                pluginsUi.forEach { record ->
+                    val ids = pluginResidentRuntime.agentsOf(record.id)
+                    if (ids.isNotEmpty()) {
+                        resident.put(
+                            org.json.JSONObject()
+                                .put("plugin", record.id)
+                                .put("agents", org.json.JSONArray(ids)),
+                        )
+                    }
+                }
+                val payload = org.json.JSONObject()
+                    .put("version", 1)
+                    .put("contract", xin.dshaa.core.agent.AGENT_CONTRACT)
+                    .put("pref", pref)
+                    .put(
+                        "active",
+                        if (active == null) org.json.JSONObject() else org.json.JSONObject()
+                            .put("agent", active.agentId)
+                            .put("plugin", active.pluginId ?: "")
+                            .put("label", active.label)
+                            .put("builtin", active.builtin),
+                    )
+                    .put("safety", agentSafetyNotice ?: "")
+                    .put(
+                        "builtin",
+                        org.json.JSONObject()
+                            .put("id", xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_AGENT)
+                            .put("enabled", builtinStore.isEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_AGENT))
+                            .put("label", "dsH 引擎（内置）"),
+                    )
+                    .put("candidates", candidates)
+                    .put("resident", resident)
+                val file = File(dumpPath)
+                file.parentFile?.mkdirs()
+                file.writeText(payload.toString())
+                Log.i("DshAgent", "dump agents pref=$pref active=${active?.agentId} -> $dumpPath")
+            }.onFailure { Log.w("DshAgent", "dump agents failed: ${it.message}") }
+        }
+    }
+
+    // ---- M85-E：storage/v1 ----
+
+    /** 全部存储候选：内置 JSONL + 启用/停用的插件 `ctx.storage.register`（含原因）。 */
+    private fun storageCandidates(): List<StorageCandidate> {
+        val out = ArrayList<StorageCandidate>()
+        out += StorageCandidate(
+            storageId = BUILTIN_STORAGE_ID,
+            label = "内置 JSONL 会话",
+            pluginId = null,
+            builtin = true,
+            enabled = builtinStore.isEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_STORAGE),
+            readOnly = false,
+        )
+        pluginsUi.forEach { record ->
+            record.storages.forEach { storage ->
+                out += StorageCandidate(
+                    storageId = storage.id,
+                    label = storage.label,
+                    pluginId = record.id,
+                    builtin = false,
+                    enabled = record.enabled,
+                    permitted = record.grantedPermissions.any { it.equals("storage", true) },
+                    readOnly = true,
+                )
+            }
+        }
+        return out
+    }
+
+    override val storageTargetsUi: List<RoleTargetUi>
+        get() {
+            val active = activeStorage
+            return storageCandidates().map { candidate ->
+                RoleTargetUi(
+                    role = "storage",
+                    implementationId = candidate.storageId,
+                    label = candidate.label,
+                    pluginId = candidate.pluginId,
+                    provider = candidate.pluginId?.let { id -> pluginsUi.firstOrNull { it.id == id }?.name ?: id } ?: "内置",
+                    builtin = candidate.builtin,
+                    enabled = candidate.enabled,
+                    permitted = candidate.permitted,
+                    active = active != null && active.storageId == candidate.storageId &&
+                        active.pluginId == candidate.pluginId,
+                    readOnly = candidate.readOnly,
+                    selectionValue = if (candidate.builtin) "native" else "${candidate.pluginId}#${candidate.storageId}",
+                    unavailableReason = when {
+                        !candidate.enabled -> "插件已停用"
+                        !candidate.permitted -> "缺少 storage 授权"
+                        else -> null
+                    },
+                )
+            }
+        }
+
+    override val activeStorageUi: RoleTargetUi?
+        get() = storageTargetsUi.firstOrNull { it.active }
+
+    /**
+     * 重新解析 `dsh_storage` 并把路由壳换绑到新存储。
+     *
+     * - debug 包 `debug_session_store`（M84-C2 调试通道）优先；
+     * - 内置 / 第三方只读导出器按 [StorageRouting] 选择（同 id 第三方优先）；
+     * - 选不中 ⇒ 路由壳置空 + 存储安全提示（聊天页横幅，发送被拦）。
+     */
+    private fun refreshStorageResolution() {
+        val debugId = if (xin.dshaa.nativeapp.BuildConfig.DEBUG) {
+            prefs.getString("debug_session_store", null)?.takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
+        if (debugId != null) {
+            val store = SessionStores.create(sessionsRootDir, debugId)
+            storageRouter.bind(store, null)
+            activeStorage = ResolvedStorage(
+                storageId = "debug:$debugId",
+                label = "调试存储 $debugId",
+                pluginId = null,
+                builtin = true,
+            )
+            storageSafetyNotice = null
+            Log.i("DshStorage", "debug store=$debugId active=${store.id}")
+            return
+        }
+        val pref = prefs.getString("dsh_storage", null)
+        when (val resolution = StorageRouting.resolve(pref, storageCandidates())) {
+            is StorageResolution.Active -> {
+                val storage = resolution.storage
+                val pluginId = storage.pluginId
+                val store: SessionStore = if (storage.builtin || pluginId.isNullOrBlank()) {
+                    builtinSessionStore
+                } else {
+                    PluginSessionStore(
+                        pluginId = pluginId,
+                        storeId = storage.storageId,
+                        label = storage.label,
+                        dispatch = { id, method, payload, timeout ->
+                            pluginResidentRuntime.dispatch(id, method, payload, timeout)
+                        },
+                        awaitReady = { pluginResidentRuntime.awaitSettled(3_000) },
+                    )
+                }
+                storageRouter.bind(store, null)
+                activeStorage = storage
+                storageSafetyNotice = if (storage.readOnly) {
+                    "只读存储插件：${storage.label}——只能打开/浏览导出的会话，不能新建或发送。"
+                } else {
+                    null
+                }
+                Log.i(
+                    "DshStorage",
+                    "resolved active=${storage.pluginId ?: "builtin"}:${storage.storageId} " +
+                        "readOnly=${storage.readOnly} pref=${pref ?: "-"}",
+                )
+            }
+
+            is StorageResolution.Unavailable -> {
+                storageRouter.bind(null, resolution.reason)
+                activeStorage = null
+                storageSafetyNotice = resolution.reason
+                Log.w("DshStorage", "storage unavailable: ${resolution.reason} pref=${pref ?: "-"}")
+            }
+        }
+    }
+
+    override fun setActiveStorage(id: String): Boolean {
+        return when (val resolution = StorageRouting.resolve(id, storageCandidates())) {
+            is StorageResolution.Active -> {
+                prefs.edit().putString("dsh_storage", StorageRouting.prefOf(resolution.storage)).apply()
+                refreshStorageResolution()
+                pluginNotice = "存储插件：${resolution.storage.label}" +
+                    if (resolution.storage.readOnly) "（只读，打开会话后只能浏览）" else ""
+                Log.i("DshStorage", "set active=${StorageRouting.prefOf(resolution.storage)}")
+                true
+            }
+
+            is StorageResolution.Unavailable -> {
+                storageSafetyNotice = resolution.reason
+                pluginNotice = resolution.reason
+                Log.w("DshStorage", "set storage failed id=$id: ${resolution.reason}")
+                false
+            }
+        }
+    }
+
+    override fun restoreBuiltinStorage() {
+        builtinStore.setEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_STORAGE, true)
+        builtinPluginsUi = builtinStore.ui()
+        prefs.edit().putString("dsh_storage", "native").apply()
+        refreshStorageResolution()
+        refreshSessions()
+        pluginNotice = "已恢复内置存储：builtin.storage.jsonl"
+        Log.i("DshStorage", "restore builtin active=${activeStorage?.storageId}")
+    }
+
+    /**
+     * M85-E：只读导出器的宿主导出原语（`ctx.storage.exportList/exportLoad`）。
+     *
+     * 只读 **内置** `builtin.storage.jsonl`（不读活动存储，避免递归）；列表返回摘要，
+     * 单个会话返回原始 JSONL 文档（逐帧解压后的原文，交给插件原样转回）。
+     */
+    private fun exportBuiltinSessions(method: String, payloadJson: String): String {
+        return try {
+            if (method == "storage.exportList") {
+                val sessions = buildJsonArray {
+                    builtinSessionStore.list().forEach { summary ->
+                        add(
+                            buildJsonObject {
+                                put("id", summary.id)
+                                put("title", summary.title)
+                                put("preview", summary.preview)
+                                put("createdAt", summary.createdAt)
+                                put("updatedAt", summary.updatedAt)
+                                put("messageCount", summary.messageCount)
+                                put("cwd", summary.cwd)
+                                put("path", summary.path)
+                                put("parentSession", summary.parentSession ?: "")
+                                put("delegationDepth", summary.delegationDepth)
+                                put("origin", summary.origin ?: "")
+                                put("isSeeded", summary.isSeeded)
+                            },
+                        )
+                    }
+                }
+                buildJsonObject {
+                    put("ok", true)
+                    put("sessions", sessions)
+                }.toString()
+            } else {
+                val payload = runCatching { Json.parseToJsonElement(payloadJson).jsonObject }.getOrNull()
+                val id = payload?.get("sessionId")?.jsonPrimitive?.contentOrNull.orEmpty()
+                val file = builtinSessionStore.findFile(id)
+                if (file == null || !file.isFile) {
+                    buildJsonObject {
+                        put("ok", false)
+                        put("error", "内置存储里没有会话 $id")
+                    }.toString()
+                } else {
+                    val doc = ZstdFrames.decompressAll(file.readBytes()).toString(Charsets.UTF_8)
+                    if (doc.isBlank()) {
+                        buildJsonObject { put("ok", false); put("error", "会话文件解压为空：$id") }.toString()
+                    } else {
+                        buildJsonObject { put("ok", true); put("doc", doc) }.toString()
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w("DshStorage", "export $method failed: ${t.message}")
+            buildJsonObject {
+                put("ok", false)
+                put("error", "导出失败：${t.message ?: t.javaClass.simpleName}")
+            }.toString()
+        }
+    }
+
+    // ---- M85-E：prompt/v1 ----
+
+    private fun promptCandidates(): List<PromptCandidate> {
+        val out = ArrayList<PromptCandidate>()
+        out += PromptCandidate(
+            promptId = BUILTIN_PROMPT_ID,
+            label = "dsH 系统提示词",
+            pluginId = null,
+            builtin = true,
+            enabled = builtinStore.isEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_PROMPT),
+        )
+        pluginsUi.forEach { record ->
+            record.prompts.forEach { prompt ->
+                out += PromptCandidate(
+                    promptId = prompt.id,
+                    label = prompt.label,
+                    pluginId = record.id,
+                    builtin = false,
+                    enabled = record.enabled,
+                    permitted = record.grantedPermissions.any { it.equals("prompt", true) },
+                )
+            }
+        }
+        return out
+    }
+
+    override val promptTargetsUi: List<RoleTargetUi>
+        get() {
+            val active = activePromptState
+            return promptCandidates().map { candidate ->
+                RoleTargetUi(
+                    role = "prompt",
+                    implementationId = candidate.promptId,
+                    label = candidate.label,
+                    pluginId = candidate.pluginId,
+                    provider = candidate.pluginId?.let { id -> pluginsUi.firstOrNull { it.id == id }?.name ?: id } ?: "内置",
+                    builtin = candidate.builtin,
+                    enabled = candidate.enabled,
+                    permitted = candidate.permitted,
+                    active = active != null && active.promptId == candidate.promptId &&
+                        active.pluginId == candidate.pluginId,
+                    selectionValue = if (candidate.builtin) "native" else "${candidate.pluginId}#${candidate.promptId}",
+                    unavailableReason = when {
+                        !candidate.enabled -> "插件已停用"
+                        !candidate.permitted -> "缺少 prompt 授权"
+                        else -> null
+                    },
+                )
+            }
+        }
+
+    override val activePromptUi: RoleTargetUi?
+        get() = promptTargetsUi.firstOrNull { it.active }
+
+    private fun refreshPromptResolution() {
+        val pref = prefs.getString("dsh_prompt", null)
+        when (val resolution = PromptRouting.resolve(pref, promptCandidates())) {
+            is PromptResolution.Active -> {
+                activePromptState = resolution.prompt
+                promptSafetyNotice = null
+                Log.i(
+                    "DshPrompt",
+                    "resolved active=${resolution.prompt.pluginId ?: "builtin"}:${resolution.prompt.promptId} pref=${pref ?: "-"}",
+                )
+            }
+
+            is PromptResolution.Unavailable -> {
+                activePromptState = null
+                promptSafetyNotice = resolution.reason
+                Log.w("DshPrompt", "prompt unavailable: ${resolution.reason} pref=${pref ?: "-"}")
+            }
+        }
+    }
+
+    override fun setActivePrompt(id: String): Boolean {
+        return when (val resolution = PromptRouting.resolve(id, promptCandidates())) {
+            is PromptResolution.Active -> {
+                prefs.edit().putString("dsh_prompt", PromptRouting.prefOf(resolution.prompt)).apply()
+                activePromptState = resolution.prompt
+                promptSafetyNotice = null
+                pluginNotice = "提示词插件：${resolution.prompt.label}"
+                Log.i("DshPrompt", "set active=${PromptRouting.prefOf(resolution.prompt)}")
+                true
+            }
+
+            is PromptResolution.Unavailable -> {
+                promptSafetyNotice = resolution.reason
+                pluginNotice = resolution.reason
+                Log.w("DshPrompt", "set prompt failed id=$id: ${resolution.reason}")
+                false
+            }
+        }
+    }
+
+    override fun restoreBuiltinPrompt() {
+        builtinStore.setEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_PROMPT, true)
+        builtinPluginsUi = builtinStore.ui()
+        prefs.edit().putString("dsh_prompt", "native").apply()
+        refreshPromptResolution()
+        pluginNotice = "已恢复内置提示词：builtin.prompt.dsh"
+        Log.i("DshPrompt", "restore builtin active=${activePromptState?.promptId}")
+    }
+
+    /**
+     * 每轮 system 拼装入口（M85-E）：内置实现 = 现有 `PromptProviders.build`（含 M84-C 调试实现）；
+     * 第三方实现 = 把内置结果作为 base dispatch 给 `prompt.assemble`。插件失败时回到 base 并亮提示，
+     * 不让插件 bug 把整轮打挂（停用/选不中仍然在发送前被拦）。
+     */
+    private fun buildSystemPrompt(request: PromptRequest): String {
+        val resolved = activePromptState ?: return ""
+        // 内置/调试实现：原路径（M84-E1 插件段/变量/抑制运行时上下文都在 PromptProviders 里）。
+        val base = PromptProviders.build(promptPack, request)
+        val promptPluginId = resolved.pluginId
+        if (resolved.builtin || promptPluginId.isNullOrBlank()) return base
+        val payload = buildJsonObject {
+            put("id", resolved.promptId)
+            put("base", base)
+            put("model", request.model)
+            put("provider", request.provider)
+            put(
+                "tools",
+                buildJsonArray { request.tools.sorted().forEach { add(it) } },
+            )
+            put("planMode", request.planMode)
+            put("personaPrefix", request.personaPrefix)
+            put("personaSuffix", request.personaSuffix)
+            put("variables", buildJsonObject { request.variables.forEach { (key, value) -> put(key, value) } })
+        }.toString()
+        val outcome = pluginResidentRuntime.dispatch(
+            promptPluginId,
+            PROMPT_ASSEMBLE_METHOD,
+            payload,
+            PROMPT_ASSEMBLE_TIMEOUT_MS,
+        )
+        val text = parsePromptText(outcome)
+        if (text == null) {
+            val reason = "提示词插件 ${resolved.label} 运行失败（已回退内置拼装）：" +
+                describePromptFailure(outcome)
+            Log.w("DshPrompt", reason)
+            android.os.Handler(android.os.Looper.getMainLooper()).post { promptSafetyNotice = reason }
+            return base
+        }
+        Log.i("DshPrompt", "assembled by plugin=${resolved.pluginId} chars=${text.length} base=${base.length}")
+        return text
+    }
+
+    private fun parsePromptText(outcome: JsOutcome?): String? {
+        if (outcome == null || outcome.status != JsStatus.COMPLETED) return null
+        val obj = runCatching { Json.parseToJsonElement(outcome.valueJson ?: "null").jsonObject }.getOrNull()
+            ?: return null
+        val ok = obj["ok"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() == true
+        if (!ok) return null
+        return obj["text"]?.jsonPrimitive?.contentOrNull
+    }
+
+    private fun describePromptFailure(outcome: JsOutcome?): String {
+        if (outcome == null) return "常驻运行时没有就绪（插件已停用或启动失败）"
+        if (outcome.status != JsStatus.COMPLETED) return "运行超时/中断：${outcome.error ?: outcome.status}"
+        val obj = runCatching { Json.parseToJsonElement(outcome.valueJson ?: "null").jsonObject }.getOrNull()
+        return obj?.get("error")?.let { runCatching { it.jsonPrimitive.content }.getOrNull() } ?: "返回内容不可用"
+    }
+
+    // ---- M85-E：model/v1 ----
+
+    private fun modelCandidates(): List<ModelCandidate> {
+        val out = ArrayList<ModelCandidate>()
+        out += ModelCandidate(
+            providerId = MODEL_PROVIDER_DEEPSEEK,
+            label = "DeepSeek · Anthropic Messages",
+            builtinPluginId = BUILTIN_MODEL_DEEPSEEK,
+            builtin = true,
+            enabled = builtinStore.isEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_MODEL_DEEPSEEK),
+        )
+        out += ModelCandidate(
+            providerId = MODEL_PROVIDER_OPENAI,
+            label = "OpenAI 兼容",
+            builtinPluginId = BUILTIN_MODEL_OPENAI,
+            builtin = true,
+            enabled = builtinStore.isEnabled(xin.dshaa.nativeapp.data.BuiltinPlugins.NATIVE_MODEL_OPENAI),
+        )
+        pluginsUi.forEach { record ->
+            record.llmProviders.forEach { provider ->
+                out += ModelCandidate(
+                    providerId = provider.id,
+                    label = provider.label,
+                    pluginId = record.id,
+                    builtin = false,
+                    enabled = record.enabled,
+                )
+            }
+        }
+        return out
+    }
+
+    private fun currentModelResolution(): ModelResolution =
+        ModelRouting.resolve(settings.llmProviderId, settings.protocol, modelCandidates())
+
+    /** 插件开关/内置模型开关变化后记一次解析结果（模型选择本身是现算的，无需缓存）。 */
+    private fun refreshModelResolution() {
+        when (val resolution = currentModelResolution()) {
+            is ModelResolution.Active ->
+                Log.i(
+                    "DshModel",
+                    "resolved active=${resolution.model.providerId} plugin=${resolution.model.pluginId ?: "builtin"} " +
+                        "pref=${settings.llmProviderId.ifBlank { "-" }} protocol=${settings.protocol}",
+                )
+
+            is ModelResolution.Unavailable ->
+                Log.w("DshModel", "model unavailable: ${resolution.reason}")
+        }
+    }
+
+    override val modelTargetsUi: List<RoleTargetUi>
+        get() {
+            val active = currentModelResolution().let { (it as? ModelResolution.Active)?.model }
+            return modelCandidates().map { candidate ->
+                RoleTargetUi(
+                    role = "model",
+                    implementationId = candidate.providerId,
+                    label = candidate.label,
+                    pluginId = candidate.pluginId,
+                    provider = candidate.pluginId?.let { id -> pluginsUi.firstOrNull { it.id == id }?.name ?: id } ?: "内置",
+                    builtin = candidate.builtin,
+                    enabled = candidate.enabled,
+                    permitted = candidate.permitted,
+                    active = active != null && active.providerId == candidate.providerId &&
+                        active.pluginId == candidate.pluginId,
+                    selectionValue = candidate.providerId,
+                    unavailableReason = when {
+                        !candidate.enabled -> "插件已停用"
+                        !candidate.permitted -> "缺少 model 授权"
+                        else -> null
+                    },
+                )
+            }
+        }
+
+    override val activeModelUi: RoleTargetUi?
+        get() = modelTargetsUi.firstOrNull { it.active }
+
+    override fun setActiveModel(id: String): Boolean {
+        return when (val resolution = ModelRouting.resolve(id, settings.protocol, modelCandidates())) {
+            is ModelResolution.Active -> {
+                settings.setLlmProviderId(resolution.model.providerId)
+                prefs.edit().remove("debug_llm_provider").apply()
+                pluginNotice = "模型通道：${resolution.model.label}"
+                Log.i("DshModel", "set active=${resolution.model.providerId} plugin=${resolution.model.pluginId ?: "-"}")
+                true
+            }
+
+            is ModelResolution.Unavailable -> {
+                pluginNotice = resolution.reason
+                Log.w("DshModel", "set model failed id=$id: ${resolution.reason}")
+                false
+            }
+        }
+    }
+
+    override fun restoreBuiltinModel() {
+        settings.setLlmProviderId("")
+        prefs.edit().remove("debug_llm_provider").apply()
+        pluginNotice = "模型通道：跟随协议（内置 deepseek/openai）"
+        Log.i("DshModel", "restore follow-protocol")
+    }
+
+    /** 调试通道 `dsh_roles_list <路径>`：存储/提示词/模型三角色解析 + 注册表落盘。 */
+    override fun dumpRoles(dumpPath: String?) {
+        if (dumpPath.isNullOrBlank()) return
+        runCatching {
+            val roleRows = org.json.JSONArray()
+            (storageTargetsUi + promptTargetsUi + modelTargetsUi).forEach { item ->
+                roleRows.put(
+                    org.json.JSONObject()
+                        .put("role", item.role)
+                        .put("id", item.implementationId)
+                        .put("plugin", item.pluginId ?: "")
+                        .put("label", item.label)
+                        .put("builtin", item.builtin)
+                        .put("enabled", item.enabled)
+                        .put("permitted", item.permitted)
+                        .put("active", item.active)
+                        .put("readOnly", item.readOnly)
+                        .put("selection", item.selectionValue)
+                        .put("unavailable", item.unavailableReason ?: ""),
+                )
+            }
+            val payload = org.json.JSONObject()
+                .put("version", 1)
+                .put("storageContract", STORAGE_CONTRACT)
+                .put("promptContract", PROMPT_CONTRACT)
+                .put("modelContract", MODEL_CONTRACT)
+                .put("storagePref", prefs.getString("dsh_storage", "").orEmpty())
+                .put("promptPref", prefs.getString("dsh_prompt", "").orEmpty())
+                .put("modelPref", settings.llmProviderId)
+                .put(
+                    "active",
+                    org.json.JSONObject()
+                        .put("storage", activeStorage?.storageId ?: "")
+                        .put("storagePlugin", activeStorage?.pluginId ?: "")
+                        .put("storageReadOnly", activeStorage?.readOnly == true)
+                        .put("storageSafety", storageSafetyNotice ?: "")
+                        .put("prompt", activePromptState?.promptId ?: "")
+                        .put("promptPlugin", activePromptState?.pluginId ?: "")
+                        .put("promptSafety", promptSafetyNotice ?: "")
+                        .put("model", activeModelUi?.implementationId ?: "")
+                        .put("modelPlugin", activeModelUi?.pluginId ?: "")
+                        .put("modelReason", (currentModelResolution() as? ModelResolution.Unavailable)?.reason ?: ""),
+                )
+                .put("store", repo.id)
+                .put("storeReadOnly", repo.readOnly)
+                .put("registeredProviders", org.json.JSONArray(LlmProviders.ids()))
+                .put("roles", roleRows)
+            val file = File(dumpPath)
+            file.parentFile?.mkdirs()
+            file.writeText(payload.toString())
+            Log.i("DshRoles", "dump roles -> $dumpPath")
+        }.onFailure { Log.w("DshRoles", "dump roles failed: ${it.message}") }
+    }
+
+    // ---- M85-F：能力插件（capability/v1，root/NFC/Shizuku/adb-shell 等由插件提供） ----
+
+    override val capabilityUi: List<xin.dshaa.ui.shellapi.CapabilityUi>
+        get() = capabilityHost.ui()
+
+    override fun invokeCapability(id: String) {
+        val clean = id.trim()
+        if (clean.isEmpty()) return
+        capabilityNotice = "正在调用能力 $clean…"
+        viewModelScope.launch {
+            val result = capabilityHost.invoke(clean, "{}")
+            capabilityNotice = if (result.ok) {
+                "${result.summary}：${result.valueJson.take(240)}"
+            } else {
+                result.error ?: "能力 $clean 调用失败"
+            }
+        }
+    }
+
+    /** 调试通道 `dsh_capability_list <路径>`：能力清单 + 每个 id 的提供方解析 + 全部插件提供方。 */
+    override fun dumpCapabilities(dumpPath: String?) {
+        if (dumpPath.isNullOrBlank()) return
+        runCatching {
+            val all = capabilityHost.candidates()
+            val rows = org.json.JSONArray()
+            capabilityHost.ui().forEach { item ->
+                rows.put(
+                    org.json.JSONObject()
+                        .put("id", item.id)
+                        .put("label", item.label)
+                        .put("kind", item.kind)
+                        .put("description", item.description)
+                        .put("provider", item.provider)
+                        .put("plugin", item.pluginId ?: "")
+                        .put("builtin", item.builtin)
+                        .put("available", item.available)
+                        .put("enabled", item.enabled)
+                        .put("permitted", item.permitted)
+                        .put("reason", item.unavailableReason ?: ""),
+                )
+            }
+            val providers = org.json.JSONArray()
+            all.filter { !it.builtin }.forEach { candidate ->
+                providers.put(
+                    org.json.JSONObject()
+                        .put("plugin", candidate.pluginId ?: "")
+                        .put("id", candidate.id)
+                        .put("label", candidate.label)
+                        .put("kind", candidate.kind)
+                        .put("enabled", candidate.enabled)
+                        .put("permitted", candidate.permitted),
+                )
+            }
+            val payload = org.json.JSONObject()
+                .put("version", 1)
+                .put("contract", xin.dshaa.core.capability.CAPABILITY_CONTRACT)
+                .put("capabilities", rows)
+                .put("pluginProviders", providers)
+                .put("builtin", org.json.JSONArray(capabilityHost.ui().filter { it.builtin }.map { it.id }))
+                .put("notice", capabilityNotice ?: "")
+            val file = File(dumpPath)
+            file.parentFile?.mkdirs()
+            file.writeText(payload.toString())
+            Log.i("DshCapability", "dump capabilities -> $dumpPath count=${rows.length()}")
+        }.onFailure { Log.w("DshCapability", "dump capabilities failed: ${it.message}") }
+    }
+
+    /**
+     * 调试通道 `dsh_capability_test <路径>`：等常驻运行时后依次调用
+     * 内置能力（notify / clipboard.write / clipboard.read）、插件能力（nfc / adb-shell）
+     * 和一条故意不存在的能力，结果落盘。`share` 会弹系统面板，不放进自动验收。
+     */
+    override fun runCapabilityTest(dumpPath: String?) {
+        if (dumpPath.isNullOrBlank()) return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { pluginResidentRuntime.awaitSettled(6_000) }
+            val cases = listOf(
+                Triple("notify", """{"title":"M85-F 能力验收","body":"builtin notify"}""", "内置通知"),
+                Triple("clipboard.write", """{"text":"M85F-CLIP"}""", "内置写剪贴板"),
+                Triple("clipboard.read", "{}", "内置读剪贴板"),
+                Triple("nfc", """{"action":"read"}""", "插件 NFC（演示）"),
+                Triple("adb-shell", """{"cmd":"id"}""", "插件 adb-shell（演示）"),
+                Triple("m85f.missing", "{}", "不存在的能力"),
+            )
+            val results = org.json.JSONArray()
+            cases.forEach { (id, args, title) ->
+                val result = capabilityHost.invoke(id, args)
+                results.put(
+                    org.json.JSONObject()
+                        .put("case", title)
+                        .put("id", id)
+                        .put("args", args)
+                        .put("ok", result.ok)
+                        .put("plugin", result.pluginId ?: "")
+                        .put("value", result.valueJson)
+                        .put("error", result.error ?: ""),
+                )
+            }
+            val payload = org.json.JSONObject()
+                .put("version", 1)
+                .put("contract", xin.dshaa.core.capability.CAPABILITY_CONTRACT)
+                .put("results", results)
+                .put("capabilities", org.json.JSONArray(capabilityHost.ui().map { it.id }))
+            val file = File(dumpPath)
+            file.parentFile?.mkdirs()
+            file.writeText(payload.toString())
+            Log.i("DshCapability", "capability test -> $dumpPath cases=${cases.size}")
+        }
+    }
+
+    /** M85-B2：壳命令登记的「打开系统选择器」请求。
+     *
+     * 壳（JS）只发通用 `pickFile`/`screenshot` 命令；真正的 SAF/相机由壳宿主屏的
+     * `rememberLauncherForActivityResult` 启动，消费后序号对得上才清空，避免慢启动的选择器
+     * 把后来的请求吃掉。
+     */
+    var shellPickRequest by mutableStateOf<ShellPickRequest?>(null)
+        private set
+    private var shellPickSerial = 0L
+
+    private fun requestShellPick(kind: ShellPickKind) {
+        shellPickRequest = ShellPickRequest(++shellPickSerial, kind, chat)
+        Log.i("DshShell", "pick kind=$kind serial=$shellPickSerial")
+    }
+
+    fun consumeShellPick(serial: Long) {
+        val current = shellPickRequest ?: return
+        if (current.serial == serial) shellPickRequest = null
+    }
+
+    /**
+     * M85-B2-2：壳的展开/收起状态（通用 key-value，按会话隔离、不落盘）。
+     *
+     * 宿主不认识 key 的语义；只做长度/条数上限，避免插件把状态当无限存储。
+     */
+    fun setShellView(key: String, value: Boolean?, toggle: Boolean, clearPrefix: String? = null) {
+        val state = chat ?: return
+        val safe = key.trim().take(160)
+        if (safe.isEmpty()) return
+        val current = state.shellView[safe] ?: false
+        val next = if (toggle) !current else (value ?: false)
+        // 单选组：先清掉同前缀的兄弟项，再写自己（壳不解释前缀语义）
+        if (next && !clearPrefix.isNullOrBlank() && clearPrefix.length <= 120) {
+            state.shellView.keys.filter { it.startsWith(clearPrefix) && it != safe }.forEach { keyToDrop ->
+                state.shellView.remove(keyToDrop)
+            }
+        }
+        state.shellView[safe] = next
+        if (state.shellView.size > 400) {
+            // 只保留最近 400 条（没有顺序可依，直接清空最省事：壳下轮会重新展开）
+            state.shellView.clear()
+        }
+    }
+
+    /**
+     * 壳返回的 state（协议 §5）。只在结构变化时由壳宿主取一次；token 走 bind 直读 Compose 状态。
+     */
+    fun shellStateJson(): String {
+        val state = chat
+        val toolResults = state?.toolResults.orEmpty()
+        val messages = state?.messages.orEmpty().map { message ->
+            buildJsonObject {
+                put("id", message.id)
+                put("role", roleName(message.role))
+                // M85-F：WebView/Surface 壳都可能要过滤内部注入消息（goal/技能目录/时间上下文）。
+                put("sourceKind", message.sourceKind ?: "")
+                put("text", messageText(message))
+                put("thinking", message.content.filter { it.type == BlockType.REASONING }.joinToString("") { it.text })
+                put("streaming", message.streaming)
+                put("seq", message.seq ?: -1L)
+                message.error?.let { put("error", it) }
+                // M85-B2：历史消息里的图片（会话只存 attachmentId，路径由宿主附件存储寻址）
+                put(
+                    "attachments",
+                    buildJsonArray {
+                        message.content.filter { it.type == BlockType.IMAGE }.forEach { block ->
+                            val image = block.toImageRef() ?: return@forEach
+                            add(
+                                buildJsonObject {
+                                    put("id", image.attachmentId)
+                                    put("name", image.name ?: "图片")
+                                    put("path", imagePathFor(image.attachmentId).orEmpty())
+                                    put("mediaType", image.mediaType)
+                                },
+                            )
+                        }
+                    },
+                )
+                put(
+                    "toolCalls",
+                    buildJsonArray {
+                        message.content.filter { it.type == BlockType.TOOL_CALL }.forEach { block ->
+                            val result = block.toolCallId?.let { toolResults[it] }
+                            add(
+                                buildJsonObject {
+                                    put("id", block.toolCallId ?: "")
+                                    put("name", block.name ?: "")
+                                    put("arguments", block.arguments)
+                                    put(
+                                        "result",
+                                        result?.content?.filter { it.type == BlockType.TEXT }
+                                            ?.joinToString("") { it.text }.orEmpty(),
+                                    )
+                                    put("isError", result?.error != null)
+                                    put("running", message.streaming && result == null)
+                                    put(
+                                        "durationMs",
+                                        block.toolCallId?.let { id -> state?.toolDurations?.get(id) } ?: 0L,
+                                    )
+                                    put(
+                                        "status",
+                                        when {
+                                            result?.error != null -> "error"
+                                            message.streaming && result == null -> "running"
+                                            result != null -> "done"
+                                            else -> "pending"
+                                        },
+                                    )
+                                },
+                            )
+                        }
+                    },
+                )
+                put(
+                    "blocks",
+                    buildJsonArray {
+                        message.content.forEach { block ->
+                            add(
+                                buildJsonObject {
+                                    put("type", blockName(block.type))
+                                    put("text", block.text)
+                                    block.name?.let { put("name", it) }
+                                    block.toolCallId?.let { put("toolCallId", it) }
+                                    if (block.arguments.isNotBlank()) put("arguments", block.arguments)
+                                },
+                            )
+                        }
+                    },
+                )
+            }
+        }
+        val status = when {
+            state == null -> ""
+            state.stopping -> "停止中…"
+            state.streaming -> state.statusText?.takeIf { it.isNotBlank() } ?: "正在回复…"
+            else -> state.statusText.orEmpty()
+        }
+        val sessions = sessions.map { summary ->
+            buildJsonObject {
+                put("id", summary.id)
+                put("title", summary.title.ifBlank { "未命名会话" })
+                put("updatedAt", summary.updatedAt)
+                put("current", summary.id == state?.sessionId)
+            }
+        }
+        return buildJsonObject {
+            put(
+                "chat",
+                buildJsonObject {
+                    put("sessionId", state?.sessionId ?: "")
+                    put("title", state?.title ?: "新会话")
+                    put("status", status)
+                    put("draft", state?.draft?.text.orEmpty())
+                    put("streaming", state?.streaming == true)
+                    put("error", state?.error ?: "")
+                    put("readOnly", state?.readOnly == true)
+                    put("usage", state?.usageText ?: "")
+                    put("queueNotice", state?.queueNotice ?: "")
+                    put("hasQueuedPrompts", !state?.queuedPrompts.isNullOrEmpty())
+                    put("queuePaused", state?.queuedPrompts?.any { it.pausedReason != null } == true)
+                    put("queuedPrompts", buildJsonArray {
+                        state?.queuedPrompts.orEmpty().forEach { queued -> add(buildJsonObject {
+                            put("id", queued.id); put("text", queued.payload.text)
+                            put("delivery", queued.delivery.name.lowercase())
+                            put("status", queued.status.name.lowercase())
+                            put("pausedReason", queued.pausedReason ?: "")
+                            put("createdAt", queued.createdAt)
+                            put("imageCount", queued.payload.images.size)
+                            put("fileCount", queued.payload.textBlocks.count { it.startsWith("[附件: ") || it.startsWith("<attachment ") })
+                            put("canCancel", queued.status == xin.dshaa.core.session.PromptQueueStatus.PENDING)
+                        }) }
+                    })
+                    // M85-B2 待发附件：壳只拿 name/path/大小，不解释附件存储格式
+                    put(
+                        "pendingImages",
+                        buildJsonArray {
+                            state?.pendingImages.orEmpty().forEach { pending ->
+                                add(
+                                    buildJsonObject {
+                                        put("id", pending.ref.attachmentId)
+                                        put("name", pending.ref.name ?: "图片")
+                                        put("path", pending.path)
+                                        put("mediaType", pending.ref.mediaType)
+                                    },
+                                )
+                            }
+                        },
+                    )
+                    put(
+                        "pendingFiles",
+                        buildJsonArray {
+                            state?.pendingFiles.orEmpty().forEach { file ->
+                                add(
+                                    buildJsonObject {
+                                        put("name", file.name)
+                                        put("path", file.path.orEmpty())
+                                        put("chars", file.chars)
+                                        put("size", file.size)
+                                        put("reference", file.isReference)
+                                    },
+                                )
+                            }
+                        },
+                    )
+                    put("attachError", state?.attachError ?: "")
+                    put(
+                        "hasAttachments",
+                        state != null && (state.pendingImages.isNotEmpty() || state.pendingFiles.isNotEmpty()),
+                    )
+                    put(
+                        "context",
+                        buildJsonObject {
+                            val window = state?.contextWindow ?: 0
+                            val prompt = state?.lastPromptTokens ?: 0
+                            val ratio = if (window > 0) (prompt.toFloat() / window).coerceIn(0f, 1f) else 0f
+                            put("promptTokens", prompt)
+                            put("completionTokens", state?.lastCompletionTokens ?: 0)
+                            put("window", window)
+                            put("ratio", ratio)
+                            put("label", if (window > 0) "${(ratio * 100).toInt()}% · $prompt/$window" else "")
+                        },
+                    )
+                    put(
+                        "pendingApproval",
+                        buildJsonObject {
+                            val approval = state?.pendingApproval
+                            put("active", approval != null)
+                            put("toolName", approval?.toolName ?: "")
+                            put("summary", approval?.summary ?: "")
+                            put("arguments", approval?.arguments ?: "")
+                        },
+                    )
+                    put(
+                        "pendingQuestions",
+                        buildJsonObject {
+                            val questions = state?.pendingQuestions.orEmpty()
+                            put("active", questions.isNotEmpty())
+                            put("count", questions.size)
+                            put(
+                                "header",
+                                questions.firstOrNull()?.header?.takeIf { it.isNotBlank() }
+                                    ?: questions.firstOrNull()?.question
+                                    ?: "需要你确认",
+                            )
+                            put(
+                                "items",
+                                buildJsonArray {
+                                    questions.forEach { question ->
+                                        add(
+                                            buildJsonObject {
+                                                put("id", question.id)
+                                                put("header", question.header ?: "")
+                                                put("question", question.question)
+                                                put("multiSelect", question.multiSelect)
+                                                put("detail", question.detail ?: "")
+                                                put(
+                                                    "options",
+                                                    buildJsonArray {
+                                                        question.options.forEach { option ->
+                                                            add(
+                                                                buildJsonObject {
+                                                                    put("label", option.label)
+                                                                    put("description", option.description ?: "")
+                                                                },
+                                                            )
+                                                        }
+                                                    },
+                                                )
+                                            },
+                                        )
+                                    }
+                                },
+                            )
+                        },
+                    )
+                    // 壳自己的展开/多选状态：只读回传，壳用 Object.keys 自己算答案
+                    put(
+                        "view",
+                        buildJsonObject {
+                            state?.shellView?.forEach { (key, value) -> put(key, value) }
+                        },
+                    )
+                    put(
+                        "goal",
+                        buildJsonObject {
+                            val goal = state?.goal
+                            put("active", goal != null)
+                            put("objective", goal?.goal?.objective ?: "")
+                            put("phase", goal?.goal?.phase ?: "")
+                            put("rounds", goal?.roundsStarted ?: 0)
+                            put("maxRounds", goal?.goal?.maxGoalRounds ?: 0)
+                            put("activation", goal?.activation ?: "")
+                            put("blockedReason", goal?.goal?.blockedReason?.message ?: "")
+                            put("label", goalLabel(goal))
+                        },
+                    )
+                    put(
+                        "turn",
+                        buildJsonObject {
+                            put("active", state?.streaming == true || state?.stopping == true)
+                            put("step", state?.statusText ?: "")
+                        },
+                    )
+                    put("messages", buildJsonArray { messages.forEach { add(it) } })
+                },
+            )
+            put("sessions", buildJsonArray { sessions.forEach { add(it) } })
+            put(
+                "settings",
+                buildJsonObject {
+                    put("model", settings.model)
+                    put("assistantName", settings.assistantName)
+                    put("themeMode", settings.themeMode)
+                    put("accent", settings.accentId)
+                    put("planActive", state?.planActive == true)
+                    put("sendWhileRunningMode", settings.sendWhileRunningMode)
+                },
+            )
+            put(
+                "theme",
+                buildJsonObject {
+                    put("mode", settings.themeMode)
+                    put("accent", settings.accentId)
+                },
+            )
+            put(
+                "capabilities",
+                buildJsonObject {
+                    put("surface", xin.dshaa.core.plugins.SurfaceSpec.VERSION)
+                    put(
+                        "commands",
+                        buildJsonArray {
+                            xin.dshaa.core.plugins.SurfaceSpec.COMMANDS.forEach { add(it) }
+                        },
+                    )
+                    put(
+                        "bindRoots",
+                        buildJsonArray {
+                            xin.dshaa.core.plugins.SurfaceSpec.BIND_ROOTS.forEach { add(it) }
+                        },
+                    )
+                },
+            )
+        }.toString()
+    }
+
+    /** 目标条文案（与 legacy GoalStrip 同一套阶段语义，壳只显示）。 */
+    private fun goalLabel(view: GoalView?): String {
+        if (view == null) return ""
+        val phase = when (view.goal.phase) {
+            GoalPhase.ACTIVE -> if (view.activation == GoalActivation.ARMED) "进行中" else "已停续轮"
+            GoalPhase.PAUSED -> "已暂停"
+            GoalPhase.BLOCKED -> "受阻"
+            GoalPhase.COMPLETE -> "已完成"
+            else -> view.goal.phase
+        }
+        return "$phase · 第 ${view.roundsStarted}/${view.goal.maxGoalRounds} 轮"
+    }
+
+    private fun roleName(role: MessageRole): String = when (role) {
+        MessageRole.USER -> "user"
+        MessageRole.ASSISTANT -> "assistant"
+        MessageRole.TOOL -> "tool"
+        MessageRole.SYSTEM -> "system"
+        MessageRole.DEVELOPER -> "developer"
+        MessageRole.UNKNOWN -> "unknown"
+    }
+
+    private fun blockName(type: BlockType): String = when (type) {
+        BlockType.TEXT -> "text"
+        BlockType.REASONING -> "thinking"
+        BlockType.TOOL_CALL -> "tool_use"
+        BlockType.IMAGE -> "image"
+        BlockType.TOOL_ADDITION -> "tool_addition"
+        BlockType.UNKNOWN -> "unknown"
+    }
+
+    private fun messageText(message: ChatMessage): String = message.content
+        .filter { it.type == BlockType.TEXT || it.type == BlockType.REASONING }
+        .joinToString("") { it.text }
+
+    /**
+     * 壳 → 宿主的命令（M85-A 白名单）。JS 线程同步调用，宿主切主线程执行后返回 JSON。
+     */
+    fun shellCommand(command: String, argsJson: String?): String {
+        val name = command.trim()
+        if (name !in xin.dshaa.core.plugins.SurfaceSpec.COMMANDS) {
+            return """{"ok":false,"error":"未知命令：${escapeJson(name)}"}"""
+        }
+        val args = runCatching {
+            kotlinx.serialization.json.Json.parseToJsonElement(argsJson ?: "{}").jsonObject
+        }.getOrDefault(JsonObject(emptyMap()))
+        return onMainBlocking(4_000) {
+            runCatching {
+                when (name) {
+                    "send" -> {
+                        val text = args["text"]?.jsonPrimitive?.contentOrNull
+                            ?: args["value"]?.jsonPrimitive?.contentOrNull
+                            ?: chat?.draft?.text.orEmpty()
+                        val ok = submit(text)
+                        if (ok) setShellDraft("")
+                        """{"ok":$ok}"""
+                    }
+
+                    "stop" -> {
+                        stop()
+                        """{"ok":true}"""
+                    }
+
+                    "cancelQueuedPrompt" -> {
+                        val id = args["id"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        val before = chat?.queuedPrompts?.any { it.id == id } == true
+                        if (before) cancelQueuedPrompt(id)
+                        val ok = before && chat?.queuedPrompts?.none { it.id == id } == true
+                        buildJsonObject { put("ok", ok); if (!ok) put("error", chat?.queueNotice ?: "没有可取消的队列消息") }.toString()
+                    }
+
+                    "resumeQueuedPrompts" -> {
+                        resumeQueuedPrompts()
+                        val ok = chat?.queuedPrompts?.none { it.pausedReason != null } == true
+                        buildJsonObject { put("ok", ok); put("notice", chat?.queueNotice ?: "") }.toString()
+                    }
+
+                    "setSendWhileRunningMode" -> {
+                        val mode = args["mode"]?.jsonPrimitive?.contentOrNull
+                        require(mode == "queue" || mode == "steer") { "发送模式只能是 queue 或 steer" }
+                        settings.setSendWhileRunningMode(mode)
+                        """{"ok":true}"""
+                    }
+
+                    "newSession" -> {
+                        newChat()
+                        """{"ok":true}"""
+                    }
+
+                    "setDraft" -> {
+                        setShellDraft(
+                            args["text"]?.jsonPrimitive?.contentOrNull
+                                ?: args["value"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        )
+                        """{"ok":true}"""
+                    }
+
+                    "approval" -> {
+                        val allow = args["allow"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
+                        val always = args["always"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
+                        resolveApproval(allow, always)
+                        """{"ok":true}"""
+                    }
+
+                    // M85-B2 附件：选择器请求交给壳宿主屏启动（SAF/相机不能在 ViewModel 里直接 launch）
+                    "pickFile" -> {
+                        when (args["kind"]?.jsonPrimitive?.contentOrNull?.lowercase()) {
+                            "image" -> requestShellPick(ShellPickKind.IMAGE)
+                            "camera" -> requestShellPick(ShellPickKind.CAMERA)
+                            else -> requestShellPick(ShellPickKind.FILE)
+                        }
+                        """{"ok":true}"""
+                    }
+
+                    "screenshot" -> {
+                        attachScreenshot()
+                        """{"ok":true}"""
+                    }
+
+                    "removeAttachment" -> {
+                        val kind = args["kind"]?.jsonPrimitive?.contentOrNull?.lowercase()
+                        if (kind == "image") {
+                            val id = args["id"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                            if (id.isNotBlank()) removePendingImage(id)
+                        } else {
+                            val name = args["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                            if (name.isNotBlank()) removePendingFile(name)
+                        }
+                        """{"ok":true}"""
+                    }
+
+                    "setShellView" -> {
+                        val key = args["key"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        val toggle = args["toggle"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
+                        val value = args["value"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull()
+                        val clearPrefix = args["clearPrefix"]?.jsonPrimitive?.contentOrNull
+                        setShellView(key, value, toggle, clearPrefix)
+                        """{"ok":true}"""
+                    }
+
+                    "answer" -> {
+                        val pending = chat?.pendingQuestions.orEmpty()
+                        val items = runCatching { args["answers"]?.jsonArray }.getOrNull()
+                        val answers = if (items.isNullOrEmpty()) {
+                            // 空/缺省 = 跳过全部（与 legacy「跳过」一致）
+                            pending.map { question -> xin.dshaa.core.tools.AskAnswer(question.id) }
+                        } else {
+                            items.mapNotNull { element ->
+                                val obj = element as? JsonObject ?: return@mapNotNull null
+                                val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                                val selected = runCatching {
+                                    obj["selected"]?.jsonArray.orEmpty().mapNotNull { option ->
+                                        option.jsonPrimitive.contentOrNull
+                                    }
+                                }.getOrDefault(emptyList())
+                                val custom = obj["custom"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                                xin.dshaa.core.tools.AskAnswer(id, selected, custom)
+                            }
+                        }
+                        resolveQuestions(answers)
+                        // 答题输入框复用了通用 draft：提交/跳过后清空，别让下一条消息继承
+                        setShellDraft("")
+                        """{"ok":true,"answered":${answers.size}}"""
+                    }
+
+                    // M85-B3：goal 面板的暂停/继续/编辑/清空（与 legacy GoalDialog 同一套 VM 入口）
+                    "goal" -> {
+                        val goalAction = args["action"]?.jsonPrimitive?.contentOrNull?.lowercase().orEmpty()
+                        val objective = args["objective"]?.jsonPrimitive?.contentOrNull
+                        val maxRounds = args["maxRounds"]?.jsonPrimitive?.intOrNull
+                        val error = runBlocking {
+                            when (goalAction) {
+                                "pause" -> pauseGoal()
+                                "resume" -> resumeGoal()
+                                "edit" -> editGoal(objective, maxRounds)
+                                "clear" -> clearGoal()
+                                else -> "未知 goal 动作：$goalAction"
+                            }
+                        }
+                        if (error == null) """{"ok":true}""" else """{"ok":false,"error":"${escapeJson(error)}"}"""
+                    }
+
+                    // M85-B3：会话提醒的查看（rows `chat.schedules`）与删除
+                    "deleteSchedule" -> {
+                        val id = args["id"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        if (id.isNotBlank()) deleteSchedule(id)
+                        """{"ok":true}"""
+                    }
+
+                    // M85-B3：其它会话在等你的横幅 → 切到那条会话（不带 id = 第一条等待项）
+                    "focusSession" -> {
+                        val id = args["id"]?.jsonPrimitive?.contentOrNull
+                            ?: args["sessionId"]?.jsonPrimitive?.contentOrNull
+                            ?: waitingElsewhere().firstOrNull()?.sessionId.orEmpty()
+                        if (id.isNotBlank()) focusSession(id)
+                        """{"ok":true}"""
+                    }
+
+                    "openSession", "selectSession" -> {
+                        val id = args["id"]?.jsonPrimitive?.contentOrNull
+                            ?: args["sessionId"]?.jsonPrimitive?.contentOrNull
+                        val index = args["index"]?.jsonPrimitive?.intOrNull ?: -1
+                        val target = if (!id.isNullOrBlank()) {
+                            sessions.firstOrNull { it.id == id }
+                        } else {
+                            sessions.getOrNull(index)
+                        }
+                        if (target == null) {
+                            """{"ok":false,"error":"没有这个会话"}"""
+                        } else {
+                            openSession(target)
+                            """{"ok":true}"""
+                        }
+                    }
+
+                    "openSettings" -> {
+                        // M85-A 设置页仍由宿主提供：先回原生壳，再落到设置页（M85-C 迁完后改为壳内页面）
+                        setActiveShell(null)
+                        requestDebugScreen("Settings")
+                        """{"ok":true,"note":"已切回原生设置页"}"""
+                    }
+
+                    "closeShell" -> {
+                        setActiveShell(null)
+                        """{"ok":true}"""
+                    }
+
+                    else -> """{"ok":false,"error":"未知命令：${escapeJson(name)}"}"""
+                }
+            }.getOrElse { """{"ok":false,"error":"${escapeJson(it.message ?: "宿主命令失败")}"}""" }
+        }
+    }
+
+    /** 主线程执行并阻塞等待（JS 的 surface.command 是同步协议）；不在主线程时用。 */
+    private fun onMainBlocking(timeoutMs: Long, block: () -> String): String {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) return block()
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result = java.util.concurrent.atomic.AtomicReference("""{"ok":false,"error":"宿主命令超时"}""")
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            try {
+                result.set(block())
+            } finally {
+                latch.countDown()
+            }
+        }
+        return if (latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+            result.get()
+        } else {
+            """{"ok":false,"error":"宿主命令超时（${timeoutMs}ms）"}"""
+        }
+    }
+
+    private fun escapeJson(text: String): String = text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
+
+    /**
+     * M84-F 验收通道（仅 debug）：把所有导入插件一起开/关，并落盘当前名单。
+     * 空壳 = 内置 `all` off + 这里 off；全装配 = 内置 reset + 这里 on。
+     */
+    fun applyDebugUserPlugins(offAll: Boolean, onAll: Boolean, dumpPath: String?) {
+        val changed = when {
+            offAll -> pluginStore.setAllEnabled(false)
+            onAll -> pluginStore.setAllEnabled(true)
+            else -> 0
+        }
+        pluginsUi = pluginStore.list()
+        syncPluginTools()
+        val enabled = pluginsUi.filter { it.enabled }
+        Log.i(
+            "DshPlugin",
+            "debug user plugins changed=$changed enabled=${enabled.size}/${pluginsUi.size} tools=${pluginToolNames.size}",
+        )
+        if (dumpPath.isNullOrBlank()) return
+        runCatching {
+            val payload = org.json.JSONObject()
+                .put("changed", changed)
+                .put("total", pluginsUi.size)
+                .put("enabledCount", enabled.size)
+                .put("enabled", org.json.JSONArray(enabled.map { it.id }))
+                .put("disabled", org.json.JSONArray(pluginsUi.filter { !it.enabled }.map { it.id }))
+                .put("pluginTools", org.json.JSONArray(pluginToolNames.sorted()))
+                .put("llmProviders", org.json.JSONArray(pluginProviderIds.sorted()))
+            val file = File(dumpPath)
+            file.parentFile?.mkdirs()
+            file.writeText(payload.toString())
+            Log.i("DshPlugin", "dump plugins -> $dumpPath")
+        }.onFailure { Log.w("DshPlugin", "dump plugins failed: ${it.message}") }
     }
 
     /**
      * M70：打开插件**自己的**浏览器半侧（`dsh.client` 的 client.js），走通用客户端插件宿主，
      * 不再按插件写死原生窗口。结果（成功/为什么不能跑）回写到插件页顶部的 notice。
      */
-    fun openClientPluginWindow(record: PluginRecord) {
+    override fun openClientPluginWindow(record: PluginRecord) {
         val message = xin.dshaa.nativeapp.pluginui.ClientPluginWindows.open(getApplication(), record)
         pluginNotice = message
     }
@@ -3249,6 +6643,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 工具名和内置工具冲突时 [ToolRegistry.register] 拒绝，这里只打日志、不覆盖内置工具。
      */
     private fun syncPluginTools() {
+        runCatching { loadingSnapshotStore.refresh(pluginsUi, prefs.getString("dsh_loading", null)) }
+            .onSuccess { loadingSafetyNotice = it.unavailableReason }
+            .onFailure {
+                // A failed invalidation must not let a stale selected tree return on next boot.
+                val reset = prefs.edit().remove("dsh_loading").commit()
+                loadingSafetyNotice = "启动页快照更新失败，已恢复默认选择：${it.message}" + if (reset) "" else "（选择保存失败）"
+            }
         pluginToolNames.toList().forEach { registry.unregister(it) }
         pluginToolNames.clear()
 
@@ -3263,13 +6664,90 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         pluginApiTools = pluginToolRuntime.apiTools().filter { it.name in pluginToolNames }
         pluginInjected = injected
+        // M84-E2：插件声明的模型供应商跟插件开关一起进出注册表
+        syncPluginLlmProviders()
+        // M84-H：注册了会话投影的插件跟插件开关一起起/停常驻运行时
+        pluginResidentRuntime.sync(
+            pluginsUi,
+            workspace,
+            xin.dshaa.core.plugins.PluginServices.snapshot(pluginsUi),
+        )
+        // M85-A：插件启用/停用/重载后重新解析当前壳；失效就回原生，重新启用按 `dsh_shell` 恢复。
+        val resolvedShell = resolveShellTarget(prefs.getString("dsh_shell", null))
+        if (resolvedShell != shellActive) {
+            shellHost.reset()
+            shellActive = resolvedShell
+            Log.i("DshShell", "shell resolved=${resolvedShell?.pluginId}:${resolvedShell?.shellId} pref=${prefs.getString("dsh_shell", null)}")
+        }
+        // M85-D：插件启用/停用/重载后重新解析回合插件（停用选中项 → 安全提示，不偷偷回退）。
+        refreshAgentResolution()
+        // M85-E：存储/提示词/模型三个角色一起重解析（存储插件换了要换绑路由壳）。
+        refreshStorageResolution()
+        refreshPromptResolution()
+        refreshModelResolution()
     }
 
-    fun dismissPluginNotice() {
+    /**
+     * M84-E2 / M85-E：按「启用中的插件」重建插件供应商。
+     *
+     * 先收回上一批插件 provider，再收回内置两条通道（内置模型插件停用后必须真的消失），
+     * 然后按开关重注册内置通道，最后按 plugins.json 顺序注册启用插件声明的供应商。
+     * 同 id 后注册覆盖先注册 = docs/115 §C 的「同 id 覆盖即替换」。
+     */
+    private fun syncPluginLlmProviders() {
+        pluginProviderIds.forEach { LlmProviders.unregister(it) }
+        pluginProviderIds.clear()
+        LlmProviders.unregister(MODEL_PROVIDER_DEEPSEEK)
+        LlmProviders.unregister(MODEL_PROVIDER_OPENAI)
+        registerBuiltinProviders()
+        pluginsUi.asSequence().filter { it.enabled }.forEach { record ->
+            record.llmProviders.forEach { provider ->
+                if (provider.hasStream) {
+                    // M84-J：插件自己产出模型回合 —— 请求 dispatch 进它的常驻 runtime。
+                    LlmProviders.register(
+                        xin.dshaa.core.llm.JsCallbackLlmProvider(
+                            id = provider.id,
+                            label = provider.label,
+                            modelHint = provider.model,
+                            onStream = { line -> Log.i("DshProvider", "$line plugin=${record.id}") },
+                            call = { requestJson, emit ->
+                                pluginResidentRuntime.callProvider(record.id, provider.id, requestJson, onChunk = emit)
+                            },
+                        ),
+                    )
+                    pluginProviderIds += provider.id
+                    Log.i("DshProvider", "plugin stream provider id=${provider.id} plugin=${record.id}")
+                } else {
+                    // 空协议 = 跟随宿主当前协议（插件不猜端点形状）；未知值在解析时就已归空
+                    val protocol = provider.protocol.ifBlank { settings.protocol }
+                    LlmProviders.register(
+                        ConfiguredLlmProvider(
+                            LlmProviderConfig(
+                                id = provider.id,
+                                label = provider.label,
+                                protocol = protocol,
+                                baseUrl = provider.baseUrl,
+                                model = provider.model,
+                                apiKey = provider.apiKey,
+                                ownerPlugin = record.id,
+                            ),
+                            onStream = { line -> Log.i("DshProvider", "$line plugin=${record.id}") },
+                        ),
+                    )
+                    pluginProviderIds += provider.id
+                }
+            }
+        }
+        if (pluginProviderIds.isNotEmpty()) {
+            Log.i("DshProvider", "plugin providers=${pluginProviderIds.sorted()} active=${LlmProviders.activeId}")
+        }
+    }
+
+    override fun dismissPluginNotice() {
         pluginNotice = null
     }
 
-    fun importPlugin(uri: Uri) {
+    override fun importPlugin(uri: Uri) {
         if (pluginsBusy) return
         pluginsBusy = true
         pluginNotice = null
@@ -3278,40 +6756,68 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             pluginsUi = pluginStore.list()
             pluginNotice = result.message
             pluginsBusy = false
+            // M83：新装的插件可能提供/依赖服务 → 依赖重算（QuickJS 试运行放 IO）
+            withContext(Dispatchers.IO) { pluginStore.reconcileServices() }
+            pluginsUi = pluginStore.list()
             syncPluginTools()
         }
     }
 
-    fun setPluginEnabled(id: String, enabled: Boolean) {
+    override fun setPluginEnabled(id: String, enabled: Boolean) {
         pluginStore.setEnabled(id, enabled)
         pluginsUi = pluginStore.list()
         syncPluginTools()
+        // M83 服务容器：启用集合变了要重算依赖——关掉提供者后，依赖它的插件会变成
+        // 「缺少服务 X」且不再注册工具；开回来恢复。apply 重跑放 IO 线程。
+        viewModelScope.launch {
+            val (reloaded, missing) = withContext(Dispatchers.IO) { pluginStore.reconcileServices() }
+            pluginsUi = pluginStore.list()
+            syncPluginTools()
+            Log.i("DshPlugin", "services reconcile: reloaded=$reloaded missingPlugins=$missing")
+            pluginNotice = if (missing > 0) {
+                "启用状态已更新：$missing 个插件缺少依赖服务（见插件详情）"
+            } else {
+                "启用状态已更新（重算 $reloaded 个插件的依赖）"
+            }
+        }
     }
 
-    fun reloadPlugin(id: String) {
+    override fun reloadPlugin(id: String) {
         if (pluginsBusy) return
         pluginsBusy = true
         viewModelScope.launch {
             // M37：重载会重跑 QuickJS 试运行（最长 12 秒），放 IO 线程，别把界面焊住。
             val result = withContext(Dispatchers.IO) { pluginStore.reload(id) }
+            // M83：重载后依赖关系也可能变（provide 的值/依赖项），一并重算。
+            withContext(Dispatchers.IO) { pluginStore.reconcileServices() }
             pluginsUi = pluginStore.list()
             pluginNotice = result.message
             pluginsBusy = false
+            // M84-J：重载 = 代码/配置变了，常驻运行时必须重建（否则 stream/投影还是旧闭包）。
+            pluginResidentRuntime.invalidate(id)
             syncPluginTools()
         }
     }
 
-    fun deletePlugin(id: String) {
+    override fun deletePlugin(id: String) {
         val result = pluginStore.uninstall(id)
+        // M84-N：删掉插件时连它的投影 checkpoint 一起清（停用由 sync 清）。
+        pluginResidentRuntime.forget(id)
         pluginsUi = pluginStore.list()
         pluginNotice = result.message
         syncPluginTools()
+        // M83：删掉提供者后，依赖它的插件要立刻变成「缺少服务 X」。
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { pluginStore.reconcileServices() }
+            pluginsUi = pluginStore.list()
+            syncPluginTools()
+        }
     }
 
     // ---- M67：内置 Operit 包（包管理 → 包） ----
 
     /** 扫描 `assets/operit-packages/` 下的 .js（第一次进「包」tab 时调用；结果缓存到 [operitPackagesUi]）。 */
-    fun loadOperitPackages() {
+    override fun loadOperitPackages() {
         if (operitPackagesBusy || operitPackagesUi.isNotEmpty()) return
         operitPackagesBusy = true
         viewModelScope.launch {
@@ -3320,9 +6826,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             operitPackagesBusy = false
             Log.i(
                 "DshPlugin",
-                "内置 Operit 包 ${list.size} 个：可用 ${list.count { it.status == xin.dshaa.nativeapp.data.OperitStatus.READY }}、" +
-                    "部分可用 ${list.count { it.status == xin.dshaa.nativeapp.data.OperitStatus.PARTIAL }}、" +
-                    "需要 Key ${list.count { it.status == xin.dshaa.nativeapp.data.OperitStatus.NEEDS_ENV }}",
+                "内置 Operit 包 ${list.size} 个：可用 ${list.count { it.status == xin.dshaa.ui.shellapi.data.OperitStatus.READY }}、" +
+                    "部分可用 ${list.count { it.status == xin.dshaa.ui.shellapi.data.OperitStatus.PARTIAL }}、" +
+                    "需要 Key ${list.count { it.status == xin.dshaa.ui.shellapi.data.OperitStatus.NEEDS_ENV }}",
             )
         }
     }
@@ -3331,7 +6837,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 安装一个内置 Operit 包：现拼 `package.json + <包>.js` 的 zip，走和导入 zip 完全相同的链路
      * （ToolPkg 包装、试运行、工具注册）。网络/命令/设备权限仍要用户到插件页确认。
      */
-    fun installOperitPackage(pluginId: String) {
+    override fun installOperitPackage(pluginId: String) {
         if (pluginsBusy) return
         val pkg = operitPackagesUi.firstOrNull { it.pluginId == pluginId } ?: return
         pluginsBusy = true
@@ -3347,7 +6853,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 插件页「确认授权」：危险能力逐项放行（红框确认后调用）。 */
-    fun grantPluginPermission(id: String, raw: String) {
+    override fun grantPluginPermission(id: String, raw: String) {
         val result = pluginStore.grant(id, raw)
         pluginNotice = result.message
         pluginsUi = pluginStore.list()
@@ -3355,7 +6861,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 插件详情里保存配置（M30）：JSON 对象文本；空文本 = 恢复默认。 */
-    fun savePluginConfig(id: String, jsonText: String) {
+    override fun savePluginConfig(id: String, jsonText: String) {
         val result = pluginStore.setConfig(id, jsonText)
         pluginNotice = result.message
         pluginsUi = pluginStore.list()
@@ -3365,14 +6871,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---- 技能（M19） ----
 
     /** 技能扫描的根目录（设置页展示，便于用户知道该往哪放文件）。 */
-    val skillRoots: List<SkillRoot> get() = skills.roots()
+    override val skillRoots: List<SkillRoot> get() = skills.roots()
 
     /** App 私有目录（= DSH home）/ 工作区路径：设置页把长路径缩成 `files/…`、`workspace/…`。 */
-    val filesDirPath: String get() = getApplication<Application>().filesDir.absolutePath
-    val workspacePath: String get() = workspace.absolutePath
+    override val filesDirPath: String get() = getApplication<Application>().filesDir.absolutePath
+    override val workspacePath: String get() = workspace.absolutePath
 
     /** 重新扫盘（设置页下拉/进入时调用；引擎每个 step 也会现扫）。 */
-    fun refreshSkills() {
+    override fun refreshSkills() {
         viewModelScope.launch {
             val snapshot = withContext(Dispatchers.IO) { skills.snapshot() }
             skillsUi = snapshot.skills
@@ -3382,7 +6888,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 技能开关（M81）：关掉后不再出现在目录/工具/斜杠命令里。 */
-    fun setSkillEnabled(name: String, enabled: Boolean) {
+    override fun setSkillEnabled(name: String, enabled: Boolean) {
         settings.setSkillEnabled(name, enabled)
         skillNotice = if (enabled) "已启用技能 $name" else "已关闭技能 $name"
         refreshSkills()
@@ -3392,7 +6898,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 删除用户导入的技能（M81）：内置技能只给「关」，不给删——删了下次启动
      * [BundledSkills.ensureInstalled] 又会装回来，留着按钮只会让人困惑。
      */
-    fun deleteSkill(skill: SkillSummary) {
+    override fun deleteSkill(skill: SkillSummary) {
         if (BundledSkills.isBundled(skill.name)) {
             skillNotice = "内置技能不能删除，可以关闭"
             return
@@ -3418,7 +6924,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * 内置包开关（M81）：开 = 没装过就先装再启用；关 = 只禁用，不删文件（下次开回来还是原配置）。
      */
-    fun setOperitPackageEnabled(pluginId: String, enabled: Boolean) {
+    override fun setOperitPackageEnabled(pluginId: String, enabled: Boolean) {
         val installed = pluginsUi.firstOrNull { it.id == pluginId }
         if (enabled && installed == null) {
             installOperitPackage(pluginId)
@@ -3437,7 +6943,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      *
      * 写平铺 .md 而不是目录型技能：DSH 的文件系统 provider 两种都认，单文件最好搬。
      */
-    fun importSkill(uri: Uri) {
+    override fun importSkill(uri: Uri) {
         viewModelScope.launch {
             val message = withContext(Dispatchers.IO) {
                 runCatching {
@@ -3474,7 +6980,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun dismissSkillNotice() {
+    override fun dismissSkillNotice() {
         skillNotice = null
     }
 
@@ -3800,21 +7306,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 toolContext = childToolContext,
                 stop = stop,
                 apiTools = {
-                    promptPack.androidApiTools().filter { it.name in offeredToolNames() } + pluginApiTools
+                    promptPack.androidApiTools().filter { it.name in offeredToolNames() } + pluginApiTools +
+                        pluginDevTools.apiTools().filter { it.name in offeredToolNames() }
                 },
                 systemPrompt = {
-                    promptPack.systemFor(
-                        model = settings.model,
-                        provider = providerLabel(),
-                        tools = offeredToolNames(),
-                        personaPrefix = personaPrefixText(),
-                        personaSuffix = settings.assistantSystem,
-                        extraSections = pluginPromptSections(),
-                        variables = pluginPromptVariables(),
+                    buildSystemPrompt(
+                        PromptRequest(
+                            model = settings.model,
+                            provider = providerLabel(),
+                            tools = offeredToolNames(),
+                            personaPrefix = personaPrefixText(),
+                            personaSuffix = settings.assistantSystem,
+                            extraSections = pluginPromptSections(),
+                            variables = pluginPromptVariables(),
+                        ),
                     )
                 },
                 runtimeContext = { runtimeContextText(record.depth, cwd) },
-                stream = { request, config -> client.stream(request, config) },
+                stream = { request, config -> llmStream(request, config) },
                 sessions = object : SessionGateway {
                     override fun current(): SessionSession = session
                     override suspend fun create(): SessionSession = session
@@ -3838,6 +7347,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 contextWindow = { settings.effectiveContextWindow.takeIf { it > 0 } },
                 log = { message -> Log.i("DshCompact", message) },
                 plan = PlanModeState(),
+                hooks = turnHooks(state),
             ),
         )
         val runtime = ChildRuntime(record, session, state, stop, ui, childEngine)
@@ -4023,7 +7533,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 审批：允许/拒绝当前挂起的工具调用（优先前台会话；后台会话的审批切回去再处理）。 */
-    fun resolveApproval(allow: Boolean, always: Boolean = false) {
+    override fun resolveApproval(allow: Boolean, always: Boolean) {
         val live = current?.takeIf { it.state.pendingApproval != null }
             ?: activeTurns.firstOrNull { it.state.pendingApproval != null }
             ?: current
@@ -4055,7 +7565,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** UI 提交答案（空答案 = 用户跳过）。 */
-    fun resolveQuestions(answers: List<xin.dshaa.core.tools.AskAnswer>) {
+    override fun resolveQuestions(answers: List<xin.dshaa.core.tools.AskAnswer>) {
         val live = current?.takeIf { it.state.pendingQuestions != null }
             ?: activeTurns.firstOrNull { it.state.pendingQuestions != null }
             ?: return
@@ -4115,7 +7625,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      *   `root` = base 去掉 `/anthropic`（DeepSeek 的模型目录在 OpenAI 兼容端点上）。
      * 两种响应的模型条目都按 `data[].id` 解析。
      */
-    suspend fun fetchModels(): Result<List<String>> = withContext(Dispatchers.IO) {
+    override suspend fun fetchModels(): Result<List<String>> = withContext(Dispatchers.IO) {
         val cfg = llmConfig()
         if (cfg.apiKey.isBlank()) {
             return@withContext Result.failure(IllegalStateException("未配置 API 密钥"))
@@ -4167,9 +7677,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 测试连接：发一条最小请求（max_tokens=32，无工具、无 system），只验证端点/密钥/模型名。
      * 对应 Operit 模型配置页的「测试连接」。
      */
-    suspend fun testConnection(): String = withContext(Dispatchers.IO) {
+    override suspend fun testConnection(): String = withContext(Dispatchers.IO) {
         val cfg = llmConfig()
-        if (cfg.apiKey.isBlank()) {
+        // 插件供应商可能自带 key：宿主 key 为空时不要抢在通道之前报错，让通道自己给准确原因。
+        if (cfg.apiKey.isBlank() && LlmProviders.get(settings.llmProviderId) == null) {
             return@withContext "连接失败：未配置 API 密钥"
         }
         val request = ApiRequest(
@@ -4180,11 +7691,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
         var reply = StringBuilder()
         var failure: String? = null
-        val events = if (settings.protocol == "openai") {
-            openAiClient.stream(request, cfg)
-        } else {
-            client.stream(request, cfg)
-        }
+        val events = llmStream(request, cfg)
         events.collect { event ->
             when (event) {
                 is LlmEvent.TextDelta -> reply.append(event.text)
@@ -4397,6 +7904,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { agentRegistry.shutdown() }
         runCatching { agentScope.cancel() }
         runCatching { runRecorder?.close() }
+        runCatching { remote.close() }
         super.onCleared()
     }
 
@@ -4469,11 +7977,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * M84-E1：是否有**启用中**的插件要求抑制宿主的运行时上下文快照
+     * （`ctx.systemPrompt.suppressRuntimeContext()`）。插件自己的 `systemPrompt.context`
+     * 不算 runtime context，仍照常注入。
+     */
+    private fun pluginSuppressRuntimeContext(): Boolean =
+        pluginsUi.any { it.enabled && it.suppressRuntimeContext }
+
+    /**
      * 运行时上下文快照（逐字对齐上游模板；Android 固定 danger-full-access + 审批策略按设置映射）。
      * 子代理额外追加：固定权限范围自述 + 深度用尽提示（上游 `SUBAGENT_DELEGATION_CONTEXT` /
      * `tool:subagent:depth` 两个 context contribution）。
+     * M84-E1：任一启用插件调了 `suppressRuntimeContext()` → 宿主的这段快照整段不注入。
      */
     private fun runtimeContextText(depth: Int = 0, cwd: File = toolContext.cwd): String {
+        val suppressed = pluginSuppressRuntimeContext()
         val approval = if (settings.approvalMode == "auto") {
             "Approval prompts are disabled in this session: actions that require approval are rejected automatically — " +
                 "do not request sandbox escalation (do not set `sandbox_permissions`)."
@@ -4482,28 +8000,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 "without an available answerer, the request fails closed."
         }
         return buildString {
-            append("Current runtime context. This snapshot supersedes earlier runtime-context snapshots.")
-            append("\n\n")
-            append("Current working directory: \"${cwd.absolutePath}\".")
-            append("\n\n")
-            append(
-                "Current DSH file policy: danger-full-access. " +
-                    "The DSH file sandbox does not restrict file modifications by available operations.",
-            )
-            append("\n\n")
-            append(approval)
-            if (depth > 0) {
+            if (!suppressed) {
+                append("Current runtime context. This snapshot supersedes earlier runtime-context snapshots.")
                 append("\n\n")
-                append(AgentRegistry.DELEGATION_CONTEXT)
-            }
-            if (depth > 0 && depth >= MAX_AGENT_DEPTH) {
+                append("Current working directory: \"${cwd.absolutePath}\".")
                 append("\n\n")
-                append(AgentRegistry.depthContext("subagent", depth, MAX_AGENT_DEPTH))
+                append(
+                    "Current DSH file policy: danger-full-access. " +
+                        "The DSH file sandbox does not restrict file modifications by available operations.",
+                )
+                append("\n\n")
+                append(approval)
+                if (depth > 0) {
+                    append("\n\n")
+                    append(AgentRegistry.DELEGATION_CONTEXT)
+                }
+                if (depth > 0 && depth >= MAX_AGENT_DEPTH) {
+                    append("\n\n")
+                    append(AgentRegistry.depthContext("subagent", depth, MAX_AGENT_DEPTH))
+                }
             }
-            // 插件上下文（ctx.systemPrompt.context）就在这条 user 快照末尾（M71）
+            // 插件上下文（ctx.systemPrompt.context）就在这条 user 快照末尾（M71）；
+            // suppressRuntimeContext 只压宿主那段，不压插件自己的 context。
             val pluginContext = pluginContextText()
             if (pluginContext.isNotEmpty()) {
-                append("\n\n")
+                if (isNotEmpty()) append("\n\n")
                 append(pluginContext)
             }
         }

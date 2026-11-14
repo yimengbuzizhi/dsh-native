@@ -1,0 +1,134 @@
+﻿[
+    {
+        "page":  "Sessions",
+        "expected":  "Sessions",
+        "route":  "route page=Sessions sub=-",
+        "ok":  true
+    },
+    {
+        "page":  "Workspace",
+        "expected":  "Workspace",
+        "route":  "route page=Workspace sub=-",
+        "ok":  true
+    },
+    {
+        "page":  "Agents",
+        "expected":  "Agents",
+        "route":  "route page=Agents sub=-",
+        "ok":  true
+    },
+    {
+        "page":  "Jobs",
+        "expected":  "Jobs",
+        "route":  "route page=Jobs sub=-",
+        "ok":  true
+    },
+    {
+        "page":  "Terminal",
+        "expected":  "Terminal",
+        "route":  "route page=Terminal sub=-",
+        "ok":  true
+    },
+    {
+        "page":  "VirtualScreen",
+        "expected":  "VirtualScreen",
+        "route":  "route page=VirtualScreen sub=-",
+        "ok":  true
+    },
+    {
+        "page":  "Accessibility",
+        "expected":  "Accessibility",
+        "route":  "route page=Accessibility sub=-",
+        "ok":  true
+    },
+    {
+        "page":  "Plugins",
+        "expected":  "Plugins",
+        "route":  "route page=Plugins sub=-",
+        "ok":  true
+    },
+    {
+        "page":  "Packages",
+        "expected":  "Packages",
+        "route":  "route page=Packages sub=-",
+        "ok":  true
+    },
+    {
+        "page":  "Memory",
+        "expected":  "Memory",
+        "route":  "route page=Memory sub=-",
+        "ok":  true
+    },
+    {
+        "page":  "Settings",
+        "expected":  "Settings",
+        "route":  "route page=Settings sub=-",
+        "ok":  true
+    },
+    {
+        "page":  "ModelConfig",
+        "expected":  "Settings/ModelConfig",
+        "route":  "route page=Settings sub=ModelConfig",
+        "ok":  true
+    },
+    {
+        "page":  "Assistant",
+        "expected":  "Settings/Assistant",
+        "route":  "route page=Settings sub=Assistant",
+        "ok":  true
+    },
+    {
+        "page":  "Behavior",
+        "expected":  "Settings/Behavior",
+        "route":  "route page=Settings sub=Behavior",
+        "ok":  true
+    },
+    {
+        "page":  "Backup",
+        "expected":  "Settings/Backup",
+        "route":  "route page=Settings sub=Backup",
+        "ok":  true
+    },
+    {
+        "page":  "DataMigration",
+        "expected":  "Settings/DataMigration",
+        "route":  "route page=Settings sub=DataMigration",
+        "ok":  true
+    },
+    {
+        "page":  "Skills",
+        "expected":  "Settings/Skills",
+        "route":  "route page=Settings sub=Skills",
+        "ok":  true
+    },
+    {
+        "page":  "Workspaces",
+        "expected":  "Settings/Workspaces",
+        "route":  "route page=Settings sub=Workspaces",
+        "ok":  true
+    },
+    {
+        "page":  "Permissions",
+        "expected":  "Settings/Permissions",
+        "route":  "route page=Settings sub=Permissions",
+        "ok":  true
+    },
+    {
+        "page":  "Privacy",
+        "expected":  "Settings/Privacy",
+        "route":  "route page=Settings sub=Privacy",
+        "ok":  true
+    },
+    {
+        "page":  "RemoteDsh",
+        "expected":  "Settings/RemoteDsh",
+        "route":  "route page=Settings sub=RemoteDsh",
+        "ok":  true
+    },
+    {
+        "page":  "About",
+        "expected":  "Settings/About",
+        "route":  "route page=Settings sub=About",
+        "ok":  true
+    }
+]

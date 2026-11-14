@@ -1,0 +1,153 @@
+{
+  "fixture": "M86-F-WebView-cold",
+  "version": 1,
+  "runId": "f5f2b3344033473b97adc34b8d773eab",
+  "pluginId": "m86.selftest.webcold.f5f2b3344033473b97adc34b8d773eab",
+  "shellId": "m86.webcold.f5f2b3344033473b97adc34b8d773eab",
+  "selection": "m86.selftest.webcold.f5f2b3344033473b97adc34b8d773eab#m86.webcold.f5f2b3344033473b97adc34b8d773eab",
+  "evidenceDirectory": "D:\\dsh\\native\\docs\\m86f-webview-core1",
+  "remoteDirectory": "/sdcard/Download/m86f-webview-f5f2b3344033473b97adc34b8d773eab",
+  "status": "failed",
+  "completed": true,
+  "checks": [
+    {
+      "name": "baseline_global_idle_empty_local_draft",
+      "ok": true
+    },
+    {
+      "name": "baseline_native_ui",
+      "ok": true
+    },
+    {
+      "name": "baseline_default_loading",
+      "ok": true
+    },
+    {
+      "name": "fresh_uuid_not_installed",
+      "ok": true
+    },
+    {
+      "name": "normal_install_webview_metadata",
+      "ok": true
+    },
+    {
+      "name": "own_fixture_ui_granted",
+      "ok": true
+    },
+    {
+      "name": "own_fixture_selected",
+      "ok": true
+    },
+    {
+      "name": "before_cold_global_idle_empty",
+      "ok": true
+    },
+    {
+      "name": "force_stop_process_absent",
+      "ok": true
+    },
+    {
+      "name": "one_cold_process",
+      "ok": true,
+      "pid": "21662"
+    },
+    {
+      "name": "cold_exactly_one_activity_start",
+      "ok": true,
+      "count": 1
+    },
+    {
+      "name": "cold_webview_target_and_renderer_ready",
+      "ok": true,
+      "shellId": "m86.webcold.f5f2b3344033473b97adc34b8d773eab"
+    },
+    {
+      "name": "cold_each_boot_stage_once",
+      "ok": true
+    },
+    {
+      "name": "cold_visual_ready_precedes_shell_and_fully_drawn",
+      "ok": true,
+      "stageElapsedMs": {
+        "loadingFirstDraw": 723,
+        "coreReady": 1073,
+        "shellFirstDraw": 1590,
+        "reportFullyDrawn": 1591
+      },
+      "contentVisualReadyLine": 8,
+      "shellFirstDrawLine": 10,
+      "reportFullyDrawnLine": 12,
+      "presentationConfirmed": false
+    },
+    {
+      "name": "cold_no_failure_or_fatal",
+      "ok": true
+    },
+    {
+      "name": "cold_marker_in_actual_webview_ui",
+      "ok": true,
+      "marker": "M86_WEB_COLD_READY",
+      "xml": "cold-ui.xml"
+    },
+    {
+      "name": "cold_screenshot_is_png",
+      "ok": true
+    },
+    {
+      "name": "cold_still_exact_fixture",
+      "ok": true
+    },
+    {
+      "name": "cold_no_local_send_or_draft",
+      "ok": true
+    }
+  ],
+  "pixelEvidence": {
+    "status": "pending-main-agent-read_image",
+    "marker": "M86_WEB_COLD_READY",
+    "path": "cold-webview.png",
+    "sha256": "7d3544c855430630b1813ef387ca4e23641d8ba68a1b060bd170918f3706da55",
+    "uiSemanticsMarkerFound": true,
+    "screenshotsVerified": false
+  },
+  "limitations": [
+    "VisualStateCallback and first-draw logs prove renderer order, not pixel presentation time.",
+    "The main agent must read the retained PNG before declaring visual acceptance.",
+    "Force-stop can affect accessibility binding; verify Bound separately after this run."
+  ],
+  "fixtureArchive": {
+    "path": "webview-fixture.zip",
+    "permissions": [
+      "ui"
+    ],
+    "sha256": "2b62fcaa660f2dfe93fbd438e1afc98730cb7050c852bd703a1f165779c0892c"
+  },
+  "coldObservation": {
+    "pid": "21662",
+    "log": "cold-boot.log",
+    "stageElapsedMs": {
+      "loadingFirstDraw": 723,
+      "coreReady": 1073,
+      "shellFirstDraw": 1590,
+      "reportFullyDrawn": 1591
+    },
+    "rendererOrderVerified": true,
+    "presentationConfirmed": false
+  },
+  "cleanup": {
+    "ok": false,
+    "errors": [
+      {
+        "stage": "verify-cleanup",
+        "reason": "timeout:debug_report:cleanup-native-01"
+      }
+    ],
+    "fixtureRetained": true,
+    "deletedSessions": false,
+    "originalPluginStatesVerified": false,
+    "privateFilesRead": false,
+    "evidenceRetained": true,
+    "accessibilityBoundVerified": false
+  },
+  "automatedPassed": false
+}

@@ -1,0 +1,7 @@
+{
+  "name": "m84h-demo",
+  "version": "1.0.0",
+  "description": "M84-H 验收：ctx.sessionProjections.register 常驻 JS 会话投影（每事件回调）",
+  "main": "index.js",
+  "format": "esm"
+}

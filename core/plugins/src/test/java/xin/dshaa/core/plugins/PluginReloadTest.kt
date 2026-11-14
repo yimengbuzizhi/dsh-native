@@ -117,15 +117,15 @@ class PluginReloadTest {
             description = "",
             main = "index.js",
             format = PluginFormat.OPERIT,
-            // 撤销了 net 权限，新增 ui（未实现，不授予）
+            // 撤销了 net 权限，新增 ui（M85-A 起已实现，导入即允许）
             permissions = listOf("ui", "fs:workspace"),
         )
 
         val updated = PluginReload.apply(record, manifest, PluginDryRun())
 
         assertEquals(listOf("ui", "fs:workspace"), updated.permissions)
-        // 旧的 net 授权失效；fs:workspace 按安装时规则自动补授；ui 未实现不授予。
-        assertEquals(listOf("fs:workspace"), updated.grantedPermissions)
+        // 旧的 net 授权失效；fs:workspace 与 ui 按安装时规则自动补授（顺序按记录+自动补授合并，用集合比）。
+        assertEquals(setOf("ui", "fs:workspace"), updated.grantedPermissions.toSet())
     }
 
     @Test

@@ -1,0 +1,27 @@
+{
+  "device": "192.0.2.10:45111 (OPPO A55 5G, PEMM00, Android 13)",
+  "time": "2026-11-13 19:26",
+  "prompt": {
+    "default_system_len": 5147,
+    "override_system_len": 5167,
+    "delta": 20,
+    "marker": "M84C_PROMPT_MARKER",
+    "marker_in_system": true,
+    "marker_at": 5149,
+    "default_request_marker_absent": true,
+    "request_tools": 126
+  },
+  "providers": {
+    "registered": ["debug.echo", "deepseek", "openai"],
+    "before_reset": {"llmActive": "debug.echo", "promptActive": "debug.prompt"},
+    "after_reset": {"llmActive": "", "promptActive": "", "prompt": []}
+  },
+  "turns": {
+    "debug_provider_reply": "来自 debug 供应商的一轮（M84-C 验收）",
+    "debug_provider_usage": "0 in / 12 out",
+    "real_provider_reply_prefix": "收到 ping。上下文收集正常",
+    "real_provider_usage": "19131 in / 197 out"
+  },
+  "shots": ["docs/shots/124-04-debug-turn.png", "docs/shots/124-05-real-provider.png"],
+  "note": "默认 system 5147 与替换后 5167 只差追加的 20 字节（标记 + 两个换行），说明默认 PromptPack 拼装未被改写；debug provider 与真实 DeepSeek 各跑完整一轮。"
+}

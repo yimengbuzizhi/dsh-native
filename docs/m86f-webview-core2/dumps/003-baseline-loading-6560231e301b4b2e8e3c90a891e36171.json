@@ -1,0 +1,27 @@
+{
+  "selected": "builtin.loading.native",
+  "snapshotOwner": "builtin.loading.native",
+  "snapshotSelection": "builtin.loading.native",
+  "revision": "ea2341debc7eb5e5cd7b747f3e0c64e979513e36fc327ed94d85e97f883883f9",
+  "notice": "",
+  "targets": [
+    {
+      "value": "builtin.loading.native",
+      "label": "鲸歌加载页",
+      "active": true,
+      "reason": ""
+    },
+    {
+      "value": "m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#startup",
+      "label": "M86 静态加载页 startup",
+      "active": false,
+      "reason": "提供方插件已停用"
+    },
+    {
+      "value": "m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#second",
+      "label": "M86 静态加载页 second",
+      "active": false,
+      "reason": "提供方插件已停用"
+    }
+  ]
+}

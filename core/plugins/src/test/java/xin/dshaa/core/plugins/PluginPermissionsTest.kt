@@ -42,12 +42,23 @@ class PluginPermissionsTest {
     @Test
     fun autoGrantOnlyWorkspaceAndUiAndOnlyImplemented() {
         val permissions = PluginPermissions.parseAll(listOf("fs:workspace", "ui", "net:api.example.com", "shell", "notify"))
-        // ui 这一版还没实现，所以不自动授予（授权也不会生效）；fs:workspace 自动允许。
-        assertEquals(setOf("fs:workspace"), PluginPermissions.autoGrants(permissions))
+        // M85-A：ui 已实现（整壳），和 fs:workspace 一样导入即允许；notify 仍未实现。
+        assertEquals(setOf("fs:workspace", "ui"), PluginPermissions.autoGrants(permissions))
         assertEquals(
             listOf("net:api.example.com", "shell"),
             PluginPermissions.approvalNeeded(permissions).map { it.raw },
         )
+    }
+
+    @Test
+    fun agentRoleIsImplementedAndAutoGranted() {
+        val agent = PluginPermissions.parse("agent")!!
+        assertEquals(PluginPermissionKind.AGENT, agent.kind)
+        assertTrue(agent.implemented)
+        assertTrue(agent.autoGranted)
+        assertEquals(setOf("agent"), PluginPermissions.autoGrants(listOf(agent)))
+        // 文档写法 agent:run 也归一成 agent
+        assertEquals("agent", PluginPermissions.parse("agent:run")!!.raw)
     }
 
     @Test
@@ -120,6 +131,20 @@ class PluginPermissionsTest {
         listOf("/storage/emulated/0/Download", "/data/user/0/x/files/workspace").forEach {
             assertFalse(PluginPermissions.isBroadStorageRoot(it), it)
         }
+    }
+
+    @Test
+    fun storageAndPromptRolesAreImplementedAndAutoGranted() {
+        val storage = PluginPermissions.parse("storage")!!
+        assertEquals(PluginPermissionKind.STORAGE, storage.kind)
+        assertTrue(storage.implemented)
+        assertTrue(storage.autoGranted)
+        assertEquals("storage", PluginPermissions.parse("storage:read")!!.raw)
+        val prompt = PluginPermissions.parse("prompt")!!
+        assertEquals(PluginPermissionKind.PROMPT, prompt.kind)
+        assertTrue(prompt.implemented)
+        assertTrue(prompt.autoGranted)
+        assertEquals("prompt", PluginPermissions.parse("prompt:assemble")!!.raw)
     }
 
     @Test

@@ -175,6 +175,34 @@ class TurnKeepAliveService : Service() {
         @Volatile
         private var instance: TurnKeepAliveService? = null
 
+        /**
+         * M83 阶段 4：远程 DSH 也借这个前台服务保活。
+         * 本地 turn/后台任务与远程 turn 可能同时在跑，所以用两个计数器分开记账：
+         * 本地用 [setLocalBusy]，远程用 [startRemote]/[stopRemote]；都归零才真正停服务。
+         */
+        @Volatile
+        private var localBusy = false
+
+        @Volatile
+        private var remoteHolders = 0
+
+        internal fun setLocalBusy(context: Context, busy: Boolean) {
+            localBusy = busy
+            if (!busy && remoteHolders == 0) stop(context)
+        }
+
+        /** 远程 turn 开始：起服务（已在跑就只更新文案）。 */
+        fun startRemote(context: Context, text: String? = null) {
+            remoteHolders += 1
+            start(context, text)
+        }
+
+        /** 远程 turn 结束/断开：没有本地任务时停服务。 */
+        fun stopRemote(context: Context) {
+            remoteHolders = (remoteHolders - 1).coerceAtLeast(0)
+            if (remoteHolders == 0 && !localBusy) stop(context)
+        }
+
         /** turn / 后台任务还在跑时调用；已经在跑就只更新文案。 */
         fun start(context: Context, text: String? = null) {
             val running = instance

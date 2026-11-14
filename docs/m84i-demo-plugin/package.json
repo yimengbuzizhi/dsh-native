@@ -1,0 +1,7 @@
+{
+  "name": "m84i-demo",
+  "version": "1.0.0",
+  "description": "M84-I 验收：ctx.on 事件订阅真的收到宿主会话事件 + ctx.effect cleanup 在停用时执行",
+  "main": "index.js",
+  "format": "esm"
+}

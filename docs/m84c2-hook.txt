@@ -1,0 +1,7 @@
+--------- beginning of main
+11-13 19:37:30.825 15554 15554 I DshTurnHook: step-start turn=1 step=1
+11-13 19:37:30.989 15554 15554 I DshTurnHook: tool-start name=bash id=debug-tool-call-1
+11-13 19:37:31.021 15554 15554 I DshTurnHook: tool-end name=bash id=debug-tool-call-1 error=false chars=3
+11-13 19:37:31.026 15554 15554 I DshTurnHook: step-end turn=1 step=1
+11-13 19:37:31.060 15554 15554 I DshTurnHook: step-start turn=1 step=2
+11-13 19:37:31.122 15554 15554 I DshTurnHook: step-end turn=1 step=2

@@ -11,6 +11,7 @@ import xin.dshaa.core.model.ImageRef
 import xin.dshaa.core.model.ToolCall
 import xin.dshaa.core.protocol.ApiRequest
 import xin.dshaa.core.protocol.ApiTool
+import xin.dshaa.core.protocol.TokenUsage
 import xin.dshaa.core.session.GoalRoundRef
 import xin.dshaa.core.session.GoalStore
 import xin.dshaa.core.session.SessionSession
@@ -50,6 +51,10 @@ data class TurnInput(
      * 只有图片没有文字时 [text] 为空。
      */
     val images: List<ImageRef> = emptyList(),
+    /** Durable outbox identity; only direct human inputs may carry it. */
+    val promptId: String? = null,
+    /** queue / steer, recorded on user/message.source for recovery and display. */
+    val delivery: String = "queue",
 ) {
     /** 通知唤醒轮：不追加用户消息、不起标题，直接从通知消息发请求。 */
     val wake: Boolean get() = notices.isNotEmpty()
@@ -74,6 +79,16 @@ data class UserNotice(
 
 /** 一轮结束后的状态（决定能不能自动续轮）。 */
 enum class TurnOutcome { COMPLETED, MAX_TOKENS, ERROR }
+
+/** A request attempt's lifecycle. COMPLETED means collection ended without failure/cancellation. */
+enum class RequestUsageStatus { STARTED, STREAMING, COMPLETED, FAILED, CANCELLED }
+
+/** Scoped to one main-turn request (summary requests have their own accounting). */
+data class RequestUsage(
+    val requestNo: Int,
+    val usage: TokenUsage,
+    val status: RequestUsageStatus,
+)
 
 /**
  * UI 侧（Compose 状态容器）要实现的最小接口。
@@ -104,6 +119,14 @@ interface TurnUi {
      * 引擎每个 step 成功收口时调一次，宿主按轮累加。默认空实现，宿主不关心时不用管。
      */
     fun setTokenUsage(inputTokens: Int, outputTokens: Int) {}
+
+    /**
+     * Nullable cumulative usage for each main-turn request attempt. STARTED carries an empty snapshot
+     * immediately before onRequest(requestNo, request); STREAMING updates and one terminal callback
+     * use that same number. Replace display state on STARTED; merge only within that request.
+     * Includes failed/cancelled attempts without adding them to legacy success-only rewards.
+     */
+    fun onRequestUsage(update: RequestUsage) {}
 
     /** 目标条快照（null = 没有目标）。 */
     fun setGoal(view: GoalView?)
@@ -255,4 +278,15 @@ class EngineDeps(
     val onPlanChanged: () -> Unit = {},
     /** 消息 id（测试可换成确定性序列）。 */
     val newId: () -> String = { java.util.UUID.randomUUID().toString() },
+    /**
+     * M84-C2：step / 工具 / 停止 / 错误重试的观察钩子。默认全 no-op，
+     * 不改变事件顺序与文案（只观察，不重写循环；见 `EngineHooks`）。
+     */
+    val hooks: EngineHooks = EngineHooks(),
+    /** Claim at most one durable steering input at a step boundary; never cancels an active tool. */
+    val claimSteeringInputs: suspend () -> List<TurnInput> = { emptyList() },
+    /** Claim the next human input after a successfully completed turn, before reminders/goals. */
+    val nextQueuedInput: suspend () -> TurnInput? = { null },
+    /** Called only after user/message(promptId) is durable. Failures propagate; recover by promptId. */
+    val onInputDelivered: suspend (promptId: String, seq: Long) -> Unit = { _, _ -> },
 )

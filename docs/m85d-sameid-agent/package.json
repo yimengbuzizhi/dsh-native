@@ -1,0 +1,9 @@
+{
+  "id": "m85d.sameid-agent",
+  "name": "M85-D 同 id 回合",
+  "version": "1.0.0",
+  "description": "M85-D 验收：第三方插件声明与内置回合同 id（builtin.agent.dsh）的 agent/v1 实现，选中默认回合时接管；停用后回内置引擎",
+  "main": "index.js",
+  "format": "dsh",
+  "permissions": ["agent"]
+}

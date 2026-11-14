@@ -1,0 +1,40 @@
+{
+  "batch": "M84-C3",
+  "date": "2026-11-13",
+  "device": "OPPO A55 5G（PEMM00），Android 13",
+  "feature": "模型配置页「模型通道」选择器：可显式选 LlmProviders 里的通道（内置 deepseek/openai、插件配置式供应商、debug 通道），不再只能靠 --es dsh_llm_provider。",
+  "pref": "dsh/llm_provider_id（空 = 跟随 API 提供商协议）",
+  "steps": [
+    {
+      "step": "插件启用后注册供应商",
+      "evidence": "logcat: plugin providers=[e2.demo.probe, e2.demo.provider] active=null"
+    },
+    {
+      "step": "模型配置页选择 E2 演示供应商",
+      "evidence": "prefs llm_provider_id=e2.demo.provider；dump llmSelected=e2.demo.provider",
+      "screenshot": "131-03-channel-selected.png"
+    },
+    {
+      "step": "不传 --es dsh_llm_provider，冷启跑一轮",
+      "evidence": "logcat: plugin provider id=e2.demo.provider protocol=openai model=deepseek-chat requestModel=deepseek-flash；step-start/step-end 成功"
+    },
+    {
+      "step": "停用插件后再跑一轮（选择仍是 e2.demo.provider）",
+      "evidence": "无 plugin provider 日志，DshTurnHook step-start/step-end 成功 → 回落到协议通道 openai"
+    },
+    {
+      "step": "选择器清回「跟随协议」",
+      "evidence": "prefs llm_provider_id 为空"
+    }
+  ],
+  "screenshots": [
+    "131-01-modelconfig.png",
+    "131-02-channel-dialog.png",
+    "131-03-channel-selected.png"
+  ],
+  "limitations": [
+    "选择面板列出当前已注册的通道；debug 包会列出 debug.echo/debug.slow/debug.tool，release 不会注册。",
+    "插件停用后选择不清空，但会回落到协议通道；插件重新启用后自动恢复。",
+    "没有单独测试「插件自带 key + 宿主 key 为空」的测试连接路径（代码已跳过早期 key 检查）。"
+  ]
+}

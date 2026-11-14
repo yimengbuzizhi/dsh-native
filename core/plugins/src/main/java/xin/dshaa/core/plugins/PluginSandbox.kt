@@ -87,6 +87,11 @@ class PluginSandbox(
                 "net.visit.put" -> visitPut(args)
                 "net.visit.get" -> visitGet(args)
                 "host.call" -> hostCall(args)
+                // M85-A：整壳 → 宿主的同步命令（send/stop/切会话/关壳…）；白名单在 app 侧。
+                "surface.command" -> surfaceCommand(args)
+                // M83 阶段 3：把 APK 里已有的库开成原语
+                "zip.zstd" -> zstd(args)
+                "ocr.recognize" -> ocr(args)
                 "shell.exec" -> shellExec(args)
                 "timer.wait" -> timerWait(args)
                 else -> fail("未知的宿主能力：$method", "UNKNOWN_METHOD")
@@ -433,6 +438,66 @@ class PluginSandbox(
         }
     }
 
+    // ---- M83 阶段 3：开桥（APK 里已有的库 → 插件原语） ----
+
+    /**
+     * zstd 压缩/解压（`com.github.luben:zstd-jni` 已经在 APK 里，之前只给会话存储用）。
+     *
+     * 路径走 [fsFile]：`fs:workspace` 只能读写工作区、`fs:any` 才能碰任意路径；
+     * 真正的字节处理交给 app 侧宿主桥（core 是纯 JVM 模块，不依赖 zstd 的 Android AAR）。
+     * 参数：`{ mode: "compress"|"decompress", path, out?, level? }`；不传 out 时按 `path.zst` / 去 `.zst` 生成。
+     */
+    private fun zstd(args: JsonObject): Reply {
+        val mode = (args.text("mode") ?: "compress").trim().lowercase()
+        if (mode != "compress" && mode != "decompress") {
+            throw IllegalArgumentException("zip.zstd 的 mode 只能是 compress / decompress")
+        }
+        val input = fsFile(args.text("path")?.trim().orEmpty())
+        if (!input.isFile) return fail("文件不存在：${input.name}", "NOT_FOUND")
+        val outRaw = args.text("out")?.trim().orEmpty()
+        val output = when {
+            outRaw.isNotEmpty() -> fsFile(outRaw)
+            mode == "compress" -> File(input.parentFile, input.name + ".zst")
+            else -> File(input.parentFile, input.name.removeSuffix(".zst") + ".out")
+        }
+        if (output.absolutePath == input.absolutePath) {
+            throw IllegalArgumentException("输入和输出不能是同一个文件（会边读边写坏）")
+        }
+        val host = bridge ?: return fail("当前宿主没有实现 zip.zstd", "NOT_SUPPORTED")
+        val payload = buildJsonObject {
+            put("mode", mode)
+            put("in", input.absolutePath)
+            put("out", output.absolutePath)
+            put("level", args.long("level")?.toInt() ?: 3)
+        }
+        val reply = host.call("zip.zstd", payload.toString())
+            ?: return fail("当前宿主没有实现 zip.zstd", "NOT_SUPPORTED")
+        return Reply(true, reply)
+    }
+
+    /**
+     * OCR（ML Kit 中文+拉丁，已经在 APK 里：屏幕圈选 OCR 用的就是它）。
+     *
+     * 权限：要 `device`（危险能力，插件页逐项确认）；图片路径还要过文件权限检查
+     * （`fs:workspace` 时图片要先放进工作区）。
+     * 参数：`{ path }`；返回 `{ ok, text, chars }`。
+     */
+    private fun ocr(args: JsonObject): Reply {
+        if (PluginPermissions.DEVICE !in grants) {
+            throw PluginAccessDenied("插件没有设备权限（OCR 需要 manifest 声明 device 并在插件页确认）")
+        }
+        val path = args.text("path")?.trim().orEmpty()
+        if (path.isEmpty()) throw IllegalArgumentException("ocr.recognize 缺少 path")
+        val file = fsFile(path)
+        if (!file.isFile) return fail("图片不存在：${file.name}", "NOT_FOUND")
+        val host = bridge ?: return fail("当前宿主没有实现 ocr.recognize", "NOT_SUPPORTED")
+        val reply = host.call(
+            "ocr.recognize",
+            buildJsonObject { put("path", file.absolutePath) }.toString(),
+        ) ?: return fail("当前宿主没有实现 ocr.recognize", "NOT_SUPPORTED")
+        return Reply(true, reply)
+    }
+
     // ---- 网络 ----
 
     private fun netFetch(args: JsonObject): Reply {
@@ -622,6 +687,22 @@ class PluginSandbox(
             put("url", url)
             put("body", text)
         }
+    }
+
+    /**
+     * M85-A：整壳命令。只有拿到 `ui` 授权的插件才能把自己的界面接到宿主行为上；
+     * 具体命令白名单在 app 侧 `AppViewModel.shellCommand`，这里只做权限门与转发。
+     */
+    private fun surfaceCommand(args: JsonObject): Reply {
+        if (PluginPermissions.UI !in grants) {
+            throw PluginAccessDenied("插件没有界面权限（manifest 声明 ui 并在插件页确认后才能提供整壳）")
+        }
+        val command = args.text("command")?.trim().orEmpty()
+        if (command.isEmpty()) throw IllegalArgumentException("surface.command 缺少 command")
+        val host = bridge ?: return fail("当前宿主没有实现 surface.command", "NOT_SUPPORTED")
+        val reply = host.call("surface.command", args.toString())
+            ?: return fail("当前宿主没有实现 surface.command", "NOT_SUPPORTED")
+        return Reply(true, reply)
     }
 
     /**

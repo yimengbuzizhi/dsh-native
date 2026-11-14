@@ -1,0 +1,1195 @@
+{
+  "fixture": "M86-G-AppVM",
+  "version": 1,
+  "completed": true,
+  "passed": true,
+  "createdSessionCount": 9,
+  "createdSessionIds": [
+    "6761d5d5-0b6f-4eaa-a12c-b26c76874867",
+    "388128fb-e185-4a8a-a8cc-0a26d5f7f747",
+    "4723a12c-3add-41d8-8034-532a4ad41acf",
+    "6330bfe0-b8b2-421c-8aa6-fc75deef91ba",
+    "ee8e7547-4900-4c73-8c29-b9308a18215e",
+    "cca7ebd4-87b4-450e-a024-41aa3948454d",
+    "269850f9-ccb6-4dcf-a6f3-58bfc50392b6",
+    "d016e10d-2c89-4e21-915c-46b5367d038e",
+    "ace4dfbd-111e-447e-afcd-105a93e78863"
+  ],
+  "checks": [
+    {
+      "id": "no_user_active_turns",
+      "passed": true
+    },
+    {
+      "id": "fifo_starts_idle",
+      "passed": true
+    },
+    {
+      "id": "fifo_new_draft",
+      "passed": true
+    },
+    {
+      "id": "fifo_initial_submit",
+      "passed": true
+    },
+    {
+      "id": "fifo_session_created",
+      "passed": true
+    },
+    {
+      "id": "fifo_unique_session",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "fifo_streaming_partial",
+      "passed": true
+    },
+    {
+      "id": "fifo_ONE_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "fifo_ONE_submit",
+      "passed": true
+    },
+    {
+      "id": "fifo_ONE_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "fifo_ONE_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "fifo_CANCEL_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "fifo_CANCEL_submit",
+      "passed": true
+    },
+    {
+      "id": "fifo_CANCEL_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "fifo_CANCEL_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "fifo_TWO_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "fifo_TWO_submit",
+      "passed": true
+    },
+    {
+      "id": "fifo_TWO_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "fifo_TWO_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "fifo_cancel_ui_and_disk",
+      "passed": true
+    },
+    {
+      "id": "fifo_writer_finished",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "queue_each_delivered_once",
+      "passed": true
+    },
+    {
+      "id": "queue_source_is_user_queue",
+      "passed": true
+    },
+    {
+      "id": "queue_fifo",
+      "passed": true
+    },
+    {
+      "id": "queue_acked",
+      "passed": true
+    },
+    {
+      "id": "fifo_cancel_never_delivered",
+      "passed": true
+    },
+    {
+      "id": "queue_separate_turns",
+      "passed": true
+    },
+    {
+      "id": "queue_ui_empty",
+      "passed": true
+    },
+    {
+      "id": "queue_balanced_turns",
+      "passed": true
+    },
+    {
+      "id": "queue_balanced_steps",
+      "passed": true
+    },
+    {
+      "id": "steer_starts_idle",
+      "passed": true
+    },
+    {
+      "id": "steer_new_draft",
+      "passed": true
+    },
+    {
+      "id": "steer_initial_submit",
+      "passed": true
+    },
+    {
+      "id": "steer_session_created",
+      "passed": true
+    },
+    {
+      "id": "steer_unique_session",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "steer_streaming_partial",
+      "passed": true
+    },
+    {
+      "id": "steer_ONE_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "steer_ONE_submit",
+      "passed": true
+    },
+    {
+      "id": "steer_ONE_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "steer_ONE_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "steer_TWO_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "steer_TWO_submit",
+      "passed": true
+    },
+    {
+      "id": "steer_TWO_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "steer_TWO_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "steer_saved_as_steer",
+      "passed": true
+    },
+    {
+      "id": "steer_writer_finished",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "steer_each_delivered_once",
+      "passed": true
+    },
+    {
+      "id": "steer_source_is_user_steer",
+      "passed": true
+    },
+    {
+      "id": "steer_fifo",
+      "passed": true
+    },
+    {
+      "id": "steer_acked",
+      "passed": true
+    },
+    {
+      "id": "steer_one_turn_multiple_steps",
+      "passed": true
+    },
+    {
+      "id": "steer_after_assistant_boundary",
+      "passed": true
+    },
+    {
+      "id": "steer_balanced_turns",
+      "passed": true
+    },
+    {
+      "id": "steer_balanced_steps",
+      "passed": true
+    },
+    {
+      "id": "stop_starts_idle",
+      "passed": true
+    },
+    {
+      "id": "stop_new_draft",
+      "passed": true
+    },
+    {
+      "id": "stop_initial_submit",
+      "passed": true
+    },
+    {
+      "id": "stop_session_created",
+      "passed": true
+    },
+    {
+      "id": "stop_unique_session",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "stop_streaming_partial",
+      "passed": true
+    },
+    {
+      "id": "stop_AFTER_STOP_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "stop_AFTER_STOP_submit",
+      "passed": true
+    },
+    {
+      "id": "stop_AFTER_STOP_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "stop_AFTER_STOP_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "stop_writer_finished",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "stop_retains_paused_queue",
+      "passed": true
+    },
+    {
+      "id": "stop_no_automatic_delivery",
+      "passed": true
+    },
+    {
+      "id": "stop_aborted_turn",
+      "passed": true
+    },
+    {
+      "id": "stop_manual_resume_finished",
+      "passed": true
+    },
+    {
+      "id": "stop_resume_each_delivered_once",
+      "passed": true
+    },
+    {
+      "id": "stop_resume_source_is_user_queue",
+      "passed": true
+    },
+    {
+      "id": "stop_resume_fifo",
+      "passed": true
+    },
+    {
+      "id": "stop_resume_acked",
+      "passed": true
+    },
+    {
+      "id": "stop_balanced_turns",
+      "passed": true
+    },
+    {
+      "id": "stop_balanced_steps",
+      "passed": true
+    },
+    {
+      "id": "error_starts_idle",
+      "passed": true
+    },
+    {
+      "id": "error_new_draft",
+      "passed": true
+    },
+    {
+      "id": "error_initial_submit",
+      "passed": true
+    },
+    {
+      "id": "error_session_created",
+      "passed": true
+    },
+    {
+      "id": "error_unique_session",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "error_streaming_partial",
+      "passed": true
+    },
+    {
+      "id": "error_RESUME_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "error_RESUME_submit",
+      "passed": true
+    },
+    {
+      "id": "error_RESUME_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "error_RESUME_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "error_writer_finished",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "error_visible_failure",
+      "passed": true
+    },
+    {
+      "id": "error_paused_without_delivery",
+      "passed": true
+    },
+    {
+      "id": "error_stays_idle_until_resume",
+      "passed": true
+    },
+    {
+      "id": "error_manual_resume_finished",
+      "passed": true
+    },
+    {
+      "id": "error_resume_each_delivered_once",
+      "passed": true
+    },
+    {
+      "id": "error_resume_source_is_user_queue",
+      "passed": true
+    },
+    {
+      "id": "error_resume_fifo",
+      "passed": true
+    },
+    {
+      "id": "error_resume_acked",
+      "passed": true
+    },
+    {
+      "id": "error_resume_clears_failure",
+      "passed": true
+    },
+    {
+      "id": "error_balanced_turns",
+      "passed": true
+    },
+    {
+      "id": "error_balanced_steps",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_starts_idle",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_new_draft",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_initial_submit",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_session_created",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_unique_session",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_streaming_partial",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_RESUME_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_RESUME_submit",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_RESUME_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_RESUME_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_writer_finished",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_visible_failure",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_paused_without_delivery",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_stays_idle_until_resume",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_manual_resume_finished",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_resume_each_delivered_once",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_resume_source_is_user_queue",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_resume_fifo",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_resume_acked",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_resume_clears_failure",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_balanced_turns",
+      "passed": true
+    },
+    {
+      "id": "max_tokens_balanced_steps",
+      "passed": true
+    },
+    {
+      "id": "attachments_fixture_is_app_private",
+      "passed": true
+    },
+    {
+      "id": "attachments_fixture_directory",
+      "passed": true
+    },
+    {
+      "id": "attachments_fixture_new_file",
+      "passed": true
+    },
+    {
+      "id": "attachments_starts_idle",
+      "passed": true
+    },
+    {
+      "id": "attachments_new_draft",
+      "passed": true
+    },
+    {
+      "id": "attachments_initial_submit",
+      "passed": true
+    },
+    {
+      "id": "attachments_session_created",
+      "passed": true
+    },
+    {
+      "id": "attachments_unique_session",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "attachments_streaming_partial",
+      "passed": true
+    },
+    {
+      "id": "attachments_add_text_while_running",
+      "passed": true
+    },
+    {
+      "id": "attachments_add_image_while_running",
+      "passed": true
+    },
+    {
+      "id": "attachments_both_pending",
+      "passed": true
+    },
+    {
+      "id": "attachments_rejected_send",
+      "passed": true
+    },
+    {
+      "id": "attachments_rejection_retains_draft",
+      "passed": true
+    },
+    {
+      "id": "attachments_PAYLOAD_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "attachments_PAYLOAD_submit",
+      "passed": true
+    },
+    {
+      "id": "attachments_PAYLOAD_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "attachments_PAYLOAD_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "attachments_cleared_only_after_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "attachments_writer_finished",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "attachments_each_delivered_once",
+      "passed": true
+    },
+    {
+      "id": "attachments_source_is_user_queue",
+      "passed": true
+    },
+    {
+      "id": "attachments_fifo",
+      "passed": true
+    },
+    {
+      "id": "attachments_acked",
+      "passed": true
+    },
+    {
+      "id": "attachments_delivered_text_and_image_blocks",
+      "passed": true
+    },
+    {
+      "id": "attachments_balanced_turns",
+      "passed": true
+    },
+    {
+      "id": "attachments_balanced_steps",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_starts_idle",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_new_draft",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_initial_submit",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_session_created",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_unique_session",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_streaming_partial",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_PAUSED_A_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_PAUSED_A_submit",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_PAUSED_A_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_PAUSED_A_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_stopped",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_starts_idle",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_new_draft",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_initial_submit",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_session_created",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_unique_session",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_streaming_partial",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_ONLY_B_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_ONLY_B_submit",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_ONLY_B_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_ONLY_B_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_finished",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_each_delivered_once",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_source_is_user_queue",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_fifo",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_acked",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_paused_while_b_runs",
+      "passed": true
+    },
+    {
+      "id": "isolation_no_cross_session_sources",
+      "passed": true
+    },
+    {
+      "id": "isolation_targeted_text_attachment",
+      "passed": true
+    },
+    {
+      "id": "isolation_targeted_image_attachment",
+      "passed": true
+    },
+    {
+      "id": "isolation_pending_attachments_stay_on_target",
+      "passed": true
+    },
+    {
+      "id": "isolation_focus_a",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_resume_finished",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_each_delivered_once",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_source_is_user_queue",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_fifo",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_acked",
+      "passed": true
+    },
+    {
+      "id": "isolation_resume_does_not_consume_later_draft",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_balanced_turns",
+      "passed": true
+    },
+    {
+      "id": "isolation_a_balanced_steps",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_balanced_turns",
+      "passed": true
+    },
+    {
+      "id": "isolation_b_balanced_steps",
+      "passed": true
+    },
+    {
+      "id": "restart_starts_idle",
+      "passed": true
+    },
+    {
+      "id": "restart_new_draft",
+      "passed": true
+    },
+    {
+      "id": "restart_initial_submit",
+      "passed": true
+    },
+    {
+      "id": "restart_session_created",
+      "passed": true
+    },
+    {
+      "id": "restart_unique_session",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "restart_streaming_partial",
+      "passed": true
+    },
+    {
+      "id": "restart_RECOVER_still_streaming",
+      "passed": true
+    },
+    {
+      "id": "restart_RECOVER_submit",
+      "passed": true
+    },
+    {
+      "id": "restart_RECOVER_durable_queue",
+      "passed": true
+    },
+    {
+      "id": "restart_RECOVER_queue_ui_matches_disk",
+      "passed": true
+    },
+    {
+      "id": "restart_writer_stopped",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "restart_setup_unappended_claim",
+      "passed": true
+    },
+    {
+      "id": "restart_uses_new_live_and_handle",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "restart_claim_returns_pending_paused",
+      "passed": true
+    },
+    {
+      "id": "restart_requires_manual_resume",
+      "passed": true
+    },
+    {
+      "id": "restart_resume_finished",
+      "passed": true
+    },
+    {
+      "id": "restart_each_delivered_once",
+      "passed": true
+    },
+    {
+      "id": "restart_source_is_user_queue",
+      "passed": true
+    },
+    {
+      "id": "restart_fifo",
+      "passed": true
+    },
+    {
+      "id": "restart_acked",
+      "passed": true
+    },
+    {
+      "id": "restart_second_reopen",
+      "passed": true
+    },
+    {
+      "id": "fixture_current_handle",
+      "passed": true
+    },
+    {
+      "id": "restart_second_resume_idle",
+      "passed": true
+    },
+    {
+      "id": "restart_delivery_not_replayed",
+      "passed": true
+    },
+    {
+      "id": "restart_balanced_turns",
+      "passed": true
+    },
+    {
+      "id": "restart_balanced_steps",
+      "passed": true
+    }
+  ],
+  "sessions": [
+    {
+      "sessionId": "6761d5d5-0b6f-4eaa-a12c-b26c76874867",
+      "eventCount": 21,
+      "turnCount": 3,
+      "stepCount": 3,
+      "userMessageCount": 4,
+      "assistantMessageCount": 3,
+      "toolResultCount": 0,
+      "sources": [
+        {
+          "seq": 3,
+          "kind": "user"
+        },
+        {
+          "seq": 4,
+          "kind": "skill-catalog"
+        },
+        {
+          "seq": 11,
+          "kind": "user",
+          "promptId": "prompt-2daec8f8-0933-4b6d-8e35-ac0c9bbbc7fb",
+          "delivery": "queue"
+        },
+        {
+          "seq": 17,
+          "kind": "user",
+          "promptId": "prompt-372548c8-d816-411e-a335-07637a0d7ada",
+          "delivery": "queue"
+        }
+      ]
+    },
+    {
+      "sessionId": "388128fb-e185-4a8a-a8cc-0a26d5f7f747",
+      "eventCount": 17,
+      "turnCount": 1,
+      "stepCount": 3,
+      "userMessageCount": 4,
+      "assistantMessageCount": 3,
+      "toolResultCount": 0,
+      "sources": [
+        {
+          "seq": 3,
+          "kind": "user"
+        },
+        {
+          "seq": 4,
+          "kind": "skill-catalog"
+        },
+        {
+          "seq": 8,
+          "kind": "user",
+          "promptId": "prompt-aeaf4a9e-95f0-4f25-91ea-8138c33d28f3",
+          "delivery": "steer"
+        },
+        {
+          "seq": 12,
+          "kind": "user",
+          "promptId": "prompt-10fb42dc-f9d3-41a1-91f2-405aa80924f0",
+          "delivery": "steer"
+        }
+      ]
+    },
+    {
+      "sessionId": "4723a12c-3add-41d8-8034-532a4ad41acf",
+      "eventCount": 15,
+      "turnCount": 2,
+      "stepCount": 2,
+      "userMessageCount": 3,
+      "assistantMessageCount": 2,
+      "toolResultCount": 0,
+      "sources": [
+        {
+          "seq": 3,
+          "kind": "user"
+        },
+        {
+          "seq": 4,
+          "kind": "skill-catalog"
+        },
+        {
+          "seq": 10,
+          "kind": "user",
+          "promptId": "prompt-efc1515b-f876-4341-88cb-d38acf45bcf9",
+          "delivery": "queue"
+        }
+      ]
+    },
+    {
+      "sessionId": "6330bfe0-b8b2-421c-8aa6-fc75deef91ba",
+      "eventCount": 14,
+      "turnCount": 2,
+      "stepCount": 2,
+      "userMessageCount": 3,
+      "assistantMessageCount": 1,
+      "toolResultCount": 0,
+      "sources": [
+        {
+          "seq": 3,
+          "kind": "user"
+        },
+        {
+          "seq": 4,
+          "kind": "skill-catalog"
+        },
+        {
+          "seq": 10,
+          "kind": "user",
+          "promptId": "prompt-2cc8ebbd-28f4-4648-b470-52357b19249e",
+          "delivery": "queue"
+        }
+      ]
+    },
+    {
+      "sessionId": "ee8e7547-4900-4c73-8c29-b9308a18215e",
+      "eventCount": 15,
+      "turnCount": 2,
+      "stepCount": 2,
+      "userMessageCount": 3,
+      "assistantMessageCount": 2,
+      "toolResultCount": 0,
+      "sources": [
+        {
+          "seq": 3,
+          "kind": "user"
+        },
+        {
+          "seq": 4,
+          "kind": "skill-catalog"
+        },
+        {
+          "seq": 11,
+          "kind": "user",
+          "promptId": "prompt-6f2f8034-a986-4ede-aef0-d5bbb8fccbb6",
+          "delivery": "queue"
+        }
+      ]
+    },
+    {
+      "sessionId": "cca7ebd4-87b4-450e-a024-41aa3948454d",
+      "eventCount": 15,
+      "turnCount": 2,
+      "stepCount": 2,
+      "userMessageCount": 3,
+      "assistantMessageCount": 2,
+      "toolResultCount": 0,
+      "sources": [
+        {
+          "seq": 3,
+          "kind": "user"
+        },
+        {
+          "seq": 4,
+          "kind": "skill-catalog"
+        },
+        {
+          "seq": 11,
+          "kind": "user",
+          "promptId": "prompt-e742c3e9-0404-440d-8f18-925147fc7651",
+          "delivery": "queue"
+        }
+      ]
+    },
+    {
+      "sessionId": "269850f9-ccb6-4dcf-a6f3-58bfc50392b6",
+      "eventCount": 15,
+      "turnCount": 2,
+      "stepCount": 2,
+      "userMessageCount": 3,
+      "assistantMessageCount": 2,
+      "toolResultCount": 0,
+      "sources": [
+        {
+          "seq": 3,
+          "kind": "user"
+        },
+        {
+          "seq": 4,
+          "kind": "skill-catalog"
+        },
+        {
+          "seq": 10,
+          "kind": "user",
+          "promptId": "prompt-647ee585-3e30-4cbb-a44c-7fbea4de49b1",
+          "delivery": "queue"
+        }
+      ]
+    },
+    {
+      "sessionId": "d016e10d-2c89-4e21-915c-46b5367d038e",
+      "eventCount": 15,
+      "turnCount": 2,
+      "stepCount": 2,
+      "userMessageCount": 3,
+      "assistantMessageCount": 2,
+      "toolResultCount": 0,
+      "sources": [
+        {
+          "seq": 3,
+          "kind": "user"
+        },
+        {
+          "seq": 4,
+          "kind": "skill-catalog"
+        },
+        {
+          "seq": 11,
+          "kind": "user",
+          "promptId": "prompt-801d1236-6436-4cf8-b22e-48d551167b57",
+          "delivery": "queue"
+        }
+      ]
+    },
+    {
+      "sessionId": "ace4dfbd-111e-447e-afcd-105a93e78863",
+      "eventCount": 15,
+      "turnCount": 2,
+      "stepCount": 2,
+      "userMessageCount": 3,
+      "assistantMessageCount": 2,
+      "toolResultCount": 0,
+      "sources": [
+        {
+          "seq": 3,
+          "kind": "user"
+        },
+        {
+          "seq": 4,
+          "kind": "skill-catalog"
+        },
+        {
+          "seq": 10,
+          "kind": "user",
+          "promptId": "prompt-3c358de0-1aa2-4898-a678-7bd5598a4ea1",
+          "delivery": "queue"
+        }
+      ]
+    }
+  ]
+}

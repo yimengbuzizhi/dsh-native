@@ -1,0 +1,22 @@
+== A. app 源码 import 的 ui.*（应只剩入口/安全模式/Surface/悬浮窗公共组件） ==
+app/src/main/java/xin/dshaa/nativeapp/MainActivity.kt:10:import xin.dshaa.nativeapp.ui.DshApp
+app/src/main/java/xin/dshaa/nativeapp/data/PluginShellHost.kt:29:import xin.dshaa.nativeapp.ui.surface.SurfaceRow
+app/src/main/java/xin/dshaa/nativeapp/device/floating/ui/fullscreen/FloatingFullscreenScreen.kt:90:import xin.dshaa.nativeapp.ui.chat.QuotedAttachment
+app/src/main/java/xin/dshaa/nativeapp/device/floating/ui/fullscreen/FloatingFullscreenScreen.kt:91:import xin.dshaa.nativeapp.ui.chat.consumeInnerScroll
+app/src/main/java/xin/dshaa/nativeapp/device/floating/ui/fullscreen/FloatingFullscreenScreen.kt:92:import xin.dshaa.nativeapp.ui.chat.parseQuotedAttachment
+app/src/main/java/xin/dshaa/nativeapp/device/floating/ui/window/FloatingWindowScreen.kt:93:import xin.dshaa.nativeapp.ui.chat.QuotedAttachmentChip
+app/src/main/java/xin/dshaa/nativeapp/device/floating/ui/window/FloatingWindowScreen.kt:94:import xin.dshaa.nativeapp.ui.chat.parseQuotedAttachment
+app/src/main/java/xin/dshaa/nativeapp/ui/App.kt:15:import xin.dshaa.nativeapp.ui.shell.SafeModeScreen
+app/src/main/java/xin/dshaa/nativeapp/ui/App.kt:16:import xin.dshaa.nativeapp.ui.surface.PluginShellScreen
+
+== B. app 源码里具体页面/壳类名（应只剩宿主兜底与 pluginui 渲染器） ==
+app/src/main/java/xin/dshaa/nativeapp/ui/App.kt:24: *   `ui/shell/native/NativeShellRoot.kt`（聊天/抽屉/22 页/设置/onboarding）；
+
+== C. app 源码 import 已搬走的页面包 ==
+(none)
+
+== D. app 源码 import memory（support 里的工具/存储可以，UI 不行） ==
+app/src/main/java/xin/dshaa/nativeapp/chat/AppViewModel.kt:169:import xin.dshaa.nativeapp.memory.MemoryTools
+app/src/main/java/xin/dshaa/nativeapp/data/AndroidPluginHostBridge.kt:36:import xin.dshaa.nativeapp.memory.MemoryPluginHost
+app/src/main/java/xin/dshaa/nativeapp/memory/MemoryPluginHost.kt:1:package xin.dshaa.nativeapp.memory
+

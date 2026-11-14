@@ -1,44 +1,57 @@
 ---
 name: dsh-plugin-adapter
-description: 把 DSH（DeepSeek Harness）社区插件改造成鲸歌可直接导入的插件包。用于用户拿来一个 DSH 插件（npm 包 / GitHub 仓库 / dist/index.js / src/index.ts），需要判断能不能直接导入、不能时怎么改、改完怎么打包和验证。
-whenToUse: 用户提到「DSH 插件」「社区插件」「把这个插件改成鲸歌能用」「插件导入失败」「defineTool / cordis / dsh-tools」时加载。
+description: 把 DSH（DeepSeek Harness）社区插件迁到鲸歌 Android 原生版：先判断哪些能力搬得动，再按当前宿主契约改包、装测。覆盖工具/命令/提示词/页面/加载页/整壳/回合/存储/模型/能力/投影的适配判断，以及 npm、Cordis、DOM、Electron 等不可搬部分的替代方案。
+whenToUse: 用户拿来一个 DSH 插件（npm 包 / GitHub 仓库 / dist/index.js / src/index.ts / cordis.patch.yml）问「能不能在鲸歌用」「怎么改成鲸歌插件」「插件导入失败」，或提到 defineTool / @deepseek-ai/dsh-tools / schemastery / cordis / dsh.client / root slot 时加载。
 ---
 
-# DSH 插件 → 鲸歌插件适配
+# DSH / 社区插件 → 鲸歌插件适配
 
-目标：**尽量不重写**，把 DSH 工具插件改成鲸歌 `包管理 → 插件 → 导入 zip` 能直接跑的包。
-鲸歌的插件运行时是 QuickJS，没有 Node、没有 npm、没有 DOM；只保留「模型可调用的工具」这一半。
+目标：**先判定、再搬迁、最后真机验证**。鲸歌的插件链是 QuickJS 宿主（无 Node、无 npm、无 DOM、无 Electron），但「插件化」已经覆盖角色而不只是工具：工具、斜杠命令、提示词段/整体提示词、页面与客户端窗口、启动加载页、整壳（Surface/WebView）、回合、只读存储、模型供应商、能力提供方、会话投影、跨插件服务都能接。
 
----
+角色级 API、限制与验收细节以技能 `dsh-plugin-authoring` 和宿主 `plugin_dev_*` 的实际返回为准；本技能只负责「旧插件怎么落到这些角色上」。两者冲突时以作者技能/宿主实现为准，不要照搬本文里的示例参数名。
 
-## 0. 先判断：这个 DSH 插件属于哪一类
+## 0. 先读包，再下结论
 
-看插件仓库/包里的 `package.json`：
+必看：`package.json`（`main`、`dsh.client`、`dsh.bundle.patch`、`dependencies`）、入口 JS、`dist/` 是否有可直接跑的构建产物。
 
-| 特征 | 类型 | 能不能搬 |
-|---|---|---|
-| `main` 指向 `dist/index.js`，代码里只有 `export name/inject/apply` + `ctx.tools.register(defineTool(...))` | 纯工具插件 | **大概率能直接导入**，先试 |
-| 依赖 `@deepseek-ai/dsh-tools`、`@deepseek-ai/schemastery`、`node:fs`、`node:child_process` | 工具插件 | 鲸歌已 shim 这些模块，通常能跑 |
-| 有 `client.js` / React / `ctx.ui.registerView` / `cordis.patch.yml` 里的 UI 行 | 界面插件 | Host 侧工具/命令/提示词照常接入；Web UI 不执行。界面本身是核心价值时走「原生替身」（3.9） |
-| 依赖第三方 npm 包（axios、lodash、zod 之外的东西） | 工具插件 | 需要把依赖内联/改写，工作量看依赖大小 |
-| 是 MCP server / 纯 prompt / 主题包 | 不是 DSH 工具插件 | 不走这个流程 |
+| 插件里有什么 | 现在的处置 |
+|---|---|
+| `ctx.tools.register(defineTool(...))` | 工具半侧可直接搬，先试导入 |
+| `ctx.commands.register` / `ctx.systemPrompt.section` / `ctx.systemPrompt.context` | 已支持，通常零改动 |
+| `ctx.systemPrompt.register`（整体提示词） | 已支持，作为「提示词」角色，需用户主动选中 |
+| `ctx.sessionProjections.register` / `ctx.on(...)` / `ctx.effect(...)` | 已支持（常驻 runtime）；投影/订阅需按会话重放语义改写，见作者技能 |
+| `ctx.ui.registerShell` / `ctx.ui.registerLoading` | 已支持；整壳和加载页都是「可替换角色」，装好还要用户选中 |
+| `ctx.ui.registerRoute` / `registerPage` + `dsh.client` | 已支持：插件自己的 `__ModuleLoader__` 客户端 bundle 跑在插件窗口 |
+| `ctx.agent.register` | 支持 text-only 回合插件；工具/LLM 流式原语仍 UNSUPPORTED |
+| `ctx.storage.register` | 只读存储（v1）；没有写入契约 |
+| `ctx.llm.register`（配置式或 `stream`） | 支持；不要填真实密钥 |
+| `ctx.capability.register` | 支持；调用入口是插件页/调试入口 |
+| React / DOM / Electron / Qt / PowerShell helper | 只有 Web 半侧可跑（客户端 bundle）；原生 helper 不能执行 |
+| `insert:` 展开的 cordis 组合包、npm 子插件 | 不展开、不自动安装；当普通单包处理 |
+| MCP server / 纯主题 / 纯 prompt 包 | 不走这条链，如实说明 |
 
-**第一步永远是：把插件仓库拉下来，读 `package.json` 和 `main` 指向的 JS。**
+**第一步永远是**：读 `package.json` + `main` 指向的构建后 JS。TS 源码不能直接装。
 
----
+## 1. 旧的适配结论已过期（别按记忆照抄）
 
-## 1. 鲸歌插件包长什么样
+这些说法在 M71 之前成立，现在**不成立**：
 
-一个 zip，根目录（或单独一层目录）里：
+- ❌「鲸歌只保留模型工具这一半」→ 现在工具、命令、提示词、页面、加载页、整壳、回合、存储、模型、能力、投影都能接。
+- ❌「任何接管 DSH 根界面的 root slot 一律拒绝」→ 现在插件可以 `registerShell` 提供整壳，默认仍是内置 `builtin.shell.native`，`builtin.shell.whale` 只是可选第二套；是否切换由用户在「插件 → 角色 → 界面」里决定，安装不等于选中。
+- ❌「`ctx.on` / `ctx.llm` / `ctx.sessionProjections` / `ctx.ui.register*` 只登记不回调」→ 这些都已实现（加载页、整壳、投影、事件订阅、模型流均有真实 dispatch）。
+- ❌「`shell` 权限每次调用都要用户确认」→ 按当前审批策略：`ask` 模式询问、`auto` 模式允许；授权是插件页逐项授予，不是每次弹窗。
+- ❌「插件 UI 不执行，只能做原生替身」→ 客户端窗口与整壳都是一等能力；原生替身只在 Web 半侧不可移植时考虑。
+
+仍然成立的硬边界：无 npm 安装、无相对 `import`/`require` 解析、无 DEX/APK 动态加载、无完整 Cordis 服务树、无桌面 helper、`ctx.ui.registerView` 未实现、`ctx.agent` 的 `tools.invoke`/`llm.stream`/`storage.append` 返回 UNSUPPORTED、storage v1 只读。
+
+## 2. 包形状与清单
 
 ```
 my-plugin/
   package.json      # 必需
-  index.js          # 入口，默认 main
-  ...               # 其他文件（不能超过 4MB/文件、32MB 总量）
+  index.js          # 入口（默认 lib/index.js；建议显式 main）
+  client.js         # 仅页面/客户端窗口需要
 ```
-
-`package.json` 最小示例：
 
 ```json
 {
@@ -47,243 +60,110 @@ my-plugin/
   "version": "0.1.0",
   "description": "从 DSH 插件 hello 适配",
   "main": "index.js",
-  "permissions": []
+  "permissions": ["ui"],
+  "dsh": { "client": { "platform": "web", "entry": "client.js" } },
+  "exports": { "./client": "./client.js" }
 }
 ```
 
-- `name` 必填；`id` 可省略（默认 = name），只允许字母数字 `@ . _ / -`。
-- 入口是 **ESM 或 CJS 模块**，必须导出 `apply(ctx, config)`。
-- `permissions` 是鲸歌的能力声明，不是 DSH 的：
-  - `fs:workspace`：读写当前工作区；
-  - `fs:any`：读写任意路径（危险，尽量别用）；
-  - `net:api.example.com`：只允许 https 访问这个域名/子域名；
-  - `shell`：执行 shell（每次调用要用户确认）。
-  没声明的能力，运行时直接拒绝。
+- `id` 可省（默认 name），1–80 字符，字母数字与 `@ . _ / -`；**不要**用 `builtin.*`。
+- 只声明真正用到的权限，见第 5 节。
+- zip 限制：≤2000 文件、单文件 4 MiB、解压总计 32 MiB、无绝对路径/`..`/重复路径。
+- 同 id 安装 = 升级：保留新 schema 兼容配置、重新启用、旧危险授权要重新确认；保留旧包可回退。
 
-入口形状：
+## 3. 工具适配（最常见）
+
+入口导出 `apply(ctx, config)`，ESM/CJS 都接受。DSH 的 `defineTool` 与 schemastery 子集已 shim，纯工具插件多数可零改动：
 
 ```js
-export const name = 'hello'
 export function apply(ctx) {
   ctx.tools.register({
     name: 'hello',
-    description: 'Greet a person by name.',
-    parameters: {
-      type: 'object',
-      properties: { name: { type: 'string' } },
-      required: ['name']
-    },
-    async execute(args) {
-      return `Hello, ${args.name}!`
-    }
+    description: '按名字打招呼',
+    parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+    async execute(args) { return '你好，' + String(args.name) + '！' }
   })
 }
 ```
 
-`execute` 返回字符串最稳；返回对象时鲸歌会 JSON 序列化后给模型。
+改造要点：
 
----
+- **参数**：DSH 的「参数项上的 `required: true`」DSL 会被转成 JSON Schema；认不出的 schema 不会进模型工具表（试运行会报）。优先直接写 JSON Schema。
+- **`output.schema` / `output.render`**：删除；把 render 文案并进 `execute` 返回值（字符串最稳，或可 JSON 序列化值；对象有 `text` 取 `text`）。
+- **`execute(args, exec)`**：`exec.signal/agent` 没有；长任务靠 await，宿主有超时与停止。
+- **模块**：`@deepseek-ai/dsh-tools`、`@deepseek-ai/schemastery`、`node:fs`、`node:path`、`node:os`、`node:child_process`、`fetch`、`console`、`setTimeout` 有 shim；`axios`/`lodash` 等改为原生 JS 或内联；相对 import 必须打包成单文件。
+- **状态**：工具调用会新建 QuickJS 并重新 `apply`，不能用工具闭包保存跨调用状态；`apply` 只登记，副作用放执行函数。
+- **通知**：`notify` 权限当前**未实现**，不要用插件通知作为交付前提；需要提示就在返回值里写清楚。
 
-## 2. 直接导入的兼容层（先试，不要急着改）
+## 4. 其余角色的落点（要点，细节见作者技能）
 
-鲸歌运行时已经提供：
+- **命令**：`ctx.commands.register({name, description, handler})`；`/name 参数` 执行，结果显示在命令提示条，不进模型历史。
+- **提示词段**：`ctx.systemPrompt.section/context`；`text`/`variable` 在 apply 时求值成快照，不做每请求动态执行；`complete:true` 不启用。
+- **整体提示词**：`ctx.systemPrompt.register({id,label,assemble(req)})`，需要 `prompt` 权限与用户选中。
+- **页面**：Host 侧 `ctx.ui.registerRoute/registerPage` + 清单 `dsh.client`；客户端必须是 `__ModuleLoader__` bundle，不是裸 ESM/HTML。当前客户端面只保证 `sessions/get`、`effect`、`slots`（实际渲染 `shell.overlay`）等最小集，`ctx.on` 是占位。
+- **启动加载页**：`ctx.ui.registerLoading({id,label,tree})`，`loading/v1` 静态树；预算 8 个/包、单声明 ≤32 KiB UTF-8、≤128 节点、深度 ≤12、单 text ≤2000 字符；只能 bind `boot.phase/message/elapsed`。装好后在「插件 → 角色 → 启动加载页」选择，下次冷启动读快照。
+- **整壳**：`ctx.ui.registerShell({id,label,backend:'surface'|'webview',mount,onState,onAction,onEvent})`；Surface 原语 17 种、≤2000 节点/24 层；WebView 返回 `{title,html}` 片段，用 `DshWebShell.action/command/state`。整壳命令（宿主侧 `ctx.surface.command`）包含 `send/stop/cancelQueuedPrompt/resumeQueuedPrompts/setSendWhileRunningMode/newSession/openSession/selectSession/openSettings/closeShell/setDraft/approval/pickFile/screenshot/removeAttachment/setShellView/answer/goal/deleteSchedule/focusSession`；命令在主线程同步执行并有超时，别在 onTap 里做长任务。
+- **回合**：`ctx.agent.register({id,label,run(turn,api)})`，v1 只跑纯文本轮，`api` 仅 notify/status/abort/tools.names；不要宣称自主工具回合。
+- **存储**：`ctx.storage.register({list,load})`，v1 只读；`exportList/exportLoad` 返回宿主信封，先看 `ok`。
+- **模型**：`ctx.llm.register` 配置式（protocol/baseUrl/model/apiKey）或 `stream(request,emit)`；`emit` 增量文本，最终返回 `{text, toolCalls?, stopReason?, usage?}`，缺 usage 如实缺失。
+- **能力**：`ctx.capability.register({id,label,kind,invoke})`；返回 JSON 或 `{ok,value}`；不自动获得 root/NFC/Shizuku/ADB。
+- **服务/投影/事件**：`provide/inject` 是 JSON 快照；`ctx.effect` 返回同步 cleanup；投影 init/apply/wire 必须同步且返回可存值，改结构升级 `stateVersion`。
+- **组合包**：`dsh.bundle.patch` 只解析展示元数据，`insert:` 不展开，子插件不自动安装——交付说明必须写清。
 
-- `defineTool(def)`：直接返回 def，并把 DSH 的 `parameters` DSL 转成 JSON Schema；
-- `require('@deepseek-ai/dsh-tools')` / `import { defineTool } from '@deepseek-ai/dsh-tools'`；
-- `require('@deepseek-ai/schemastery')` / `import z from '@deepseek-ai/schemastery'`（够用的 schemastery 子集）；
-- `node:fs` / `fs` / `node:fs/promises` → 沙箱文件系统；
-- `node:child_process` → `shell.exec`（需要 `shell` 权限）；
-- `node:path`、`node:os`、全局 `fetch`、`console`、`setTimeout`。
+## 5. 权限（当前表）
 
-所以对纯工具插件：
+| 声明 | 含义 | 授予方式 |
+|---|---|---|
+| `fs:workspace` | 当前工作区读写（canonical 校验防越界） | 导入即允许 |
+| `fs:any` | App 可访问的任意路径 | 插件页确认 |
+| `net:<host>` / `net:any` | 仅 https，按域名/子域；本机/内网默认拒绝 | 插件页确认 |
+| `shell` | 以 App 身份执行命令（非 root） | 插件页确认 |
+| `device` / `memory` | 设备信息/操作，鲸歌记忆库 | 插件页确认 |
+| `ui` / `agent` / `storage` / `prompt` / `capability` | 注册对应角色 | 导入即允许，**选中才生效** |
+| `notify` | 系统通知 | **本版未实现** |
+| 其它写法 | 未知 | 不授予、不生效 |
 
-1. 拿它**构建后的** `dist/index.js`（不要直接拿 TS 源文件）；
-2. 建上面的 `package.json`，`main` 指向这个 JS；
-3. 把 `dist/index.js` 一起打进 zip；
-4. 导入 → 启用 → 看工具数和参数 schema；
-5. 用「包」引用或直接让模型调用工具，验证 execute。
+安装/启用 ≠ 选中角色 ≠ 授权危险能力；AI 不得改授权表或绕过审批来完成验证，缺授权就如实记录。
 
-如果导入后报 `Cannot find module`、`xxx is not a function`、`SyntaxError`，再进入第 3 节改。
+## 6. 安装与验证流程
 
----
+1. `plugin_dev_list`：看已装插件、工具/壳/loadings 登记与权限，确认是否升级同 id。
+2. `plugin_dev_scaffold`：`template` 可取 `tool`/`surface-shell`/`webview-shell`/`loading`；不覆盖已有目录。
+3. `plugin_dev_test`：隔离跑 apply，检查 `tools/shells/loadings/unsupported/missingServices` 与错误；这是试运行，不是功能验收。
+4. `plugin_dev_install` → `plugin_dev_enable`；改包后用 `plugin_dev_reload`。
+5. 真实调用：工具用 `plugin_dev_call` + 输入条/模型调用；页面点开插件窗口；整壳/加载页/回合/存储/提示词要用户在角色页选中后做冷启动或真实回合验证。
+6. `plugin_dev_test_shell` 只校验树/HTML 形状，不切当前壳，也不证明画面已验收。
 
-## 3. 常见改造点
+没有工具时：zip 交付到「包管理 → 插件 → 导入 zip」，用插件详情的试运行/启用/重载/授权/页面入口。
 
-### 3.1 `parameters`：DSH DSL 和 JSON Schema 都认
+真机观测（debug 包）：
 
-DSH 写法（不用改，运行时会转）：
+- `--es dsh_ui_probe <路径>`：全局 writer/草稿/队列/发送模式等只读快照；
+- `--es dsh_dump_plugins <路径>`：插件启用/停用清单；
+- `--es dsh_shell_list <路径>` / `--es dsh_loading_list <路径>`：壳与加载页候选、当前选中；
+- `--es dsh_plugin_zip <路径>` / `--es dsh_plugin_grant <id>` / `--es dsh_plugin_off <id>`：安装、授权、停用；
+- `--es dsh_dump_request <路径>`：看 request 里 system/tools 的实际注入（验提示词段）。
 
-```js
-parameters: {
-  city: { type: 'string', required: true, description: '城市名' },
-  days: { type: 'number' }
-}
-```
+## 7. 交付前清单
 
-等价的 JSON Schema（想手改时用）：
+- [ ] 包能导入，`plugin_dev_test` 无错，工具/角色数量符合预期。
+- [ ] 工具的必填/可选/错误参数与真实 execute 各跑一次。
+- [ ] 权限：未授权确实拒绝、已授权按预期；日志/返回值无凭据。
+- [ ] 角色：需要用户选中的（页面/整壳/加载页/回合/存储/提示词）明确告诉用户去哪选，不宣称已生效。
+- [ ] 生命周期：停用/重载后角色撤下、cleanup 生效；重启与会话重放不重复外部副作用。
+- [ ] UI：窄屏/横屏/深浅色/长文本/键盘遮挡；整壳保留停止与恢复原生壳入口。
+- [ ] 加载页：真实冷启动看所选快照首帧，记录 loadingFirstDraw/coreReady/shellFirstDraw（renderer 证据，不是呈现时间）。
+- [ ] 无法搬的部分逐条列清原因（npm 依赖、DOM、原生 helper、Cordis 服务树、UNSUPPORTED 原语）。
 
-```js
-parameters: {
-  type: 'object',
-  properties: {
-    city: { type: 'string', description: '城市名' },
-    days: { type: 'number' }
-  },
-  required: ['city']
-}
-```
+## 8. 交付话术
 
-规则：
-- `required: true` 在参数项上 → 收进根 `required` 数组；
-- `enum`、`default`、`description`、`items` 原样保留；
-- 嵌套对象用 `type:'object', properties:{...}`；
-- 鲸歌只认 JSON Schema；认不出的参数会导致工具不注入（包管理里会显示「参数认不出」）。
+> 这个 DSH 插件按鲸歌当前插件链适配好了：`package.json` + `index.js`（+ `client.js`），工具 `xxx`、命令 `yyy`、权限 `…`。
+> 导入后启用即可用；页面/整壳/加载页这类角色需要你在「插件 → 角色」里选中才会生效。
 
-### 3.2 `output.schema` / `output.render`：删掉
+部分适配时写清：搬了哪些角色、没搬哪些、为什么、以及用户需要手动选中的步骤。
 
-鲸歌没有 canonical value / render 管线。DSH 的：
+## 9. 参考
 
-```js
-output: {
-  schema: { type: 'string' },
-  render: (_args, value) => [{ type: 'text', text: value }]
-},
-async execute(args) { return 'text' }
-```
-
-改成：
-
-```js
-async execute(args) { return 'text' }
-```
-
-如果 `execute` 返回对象而 `render` 负责拼文案，把 render 的逻辑搬进 execute，直接返回最终字符串。
-
-### 3.3 `exec` 第二参数：可以忽略
-
-DSH 的 `execute(args, exec)` 里 `exec.signal`、`exec.agent` 在鲸歌没有。
-删掉对 `exec` 的使用；长任务用 `await` 完成即可（鲸歌有超时中断）。
-
-### 3.4 import / require 替换
-
-| DSH 里的 | 鲸歌里 |
-|---|---|
-| `import { defineTool } from '@deepseek-ai/dsh-tools'` | 保留（已 shim） |
-| `import z from '@deepseek-ai/schemastery'` | 保留（已 shim，子集） |
-| `import { readFile } from 'node:fs/promises'` | 保留（映射到沙箱 fs） |
-| `import { execSync } from 'node:child_process'` | 保留（映射到 shell.exec，要 `shell` 权限） |
-| `import axios from 'axios'` | 改成 `fetch`，或把请求代码内联 |
-| `import _ from 'lodash'` | 用原生 JS 重写那几行 |
-| `import React ...` | **不支持**，这是 UI 半侧 |
-
-`fetch` 只允许 https，且域名必须在 `permissions` 里声明 `net:<host>`。
-
-### 3.5 Config
-
-DSH 的：
-
-```js
-export const Config = z.object({
-  greeting: z.string().default('Hello')
-})
-export function apply(ctx, config) { ... config.greeting ... }
-```
-
-鲸歌支持同样的 schemastery 子集；`Config` 会变成插件配置页，默认值由宿主合并后传给 `apply(ctx, config)`。
-如果 `Config` 用了鲸歌不支持的 schemastery 高级类型，退化成普通对象默认值：
-
-```js
-export function apply(ctx, config) {
-  const greeting = (config && config.greeting) || 'Hello'
-}
-```
-
-### 3.6 多文件 / 相对 import
-
-鲸歌**不解析** `import './foo.js'` 这种相对模块。必须：
-- 用打包器把插件打成单文件；或
-- 手动把被依赖的代码内联进入口文件。
-
-### 3.7 提示词 / 命令 / 通知（Host 侧，已支持）
-
-DSH 插件常注册的不只是工具，鲸歌 M57/M58 已接：
-
-| DSH 写法 | 鲸歌行为 |
-|---|---|
-| `ctx.systemPrompt.section({name, order, text})` | 持久化，每次请求按 order/name 拼到 system 末尾；`complete:true` 不启用 |
-| `ctx.systemPrompt.context({...})` | 与 section 同一条管线（按静态文本注入） |
-| `ctx.commands.register({name, description, handler})` | 出现在 `/help`「插件命令」；输入 `/name 参数` 由 `PluginModule.commandScript` 执行 handler，结果显示在命令提示条，不进模型历史 |
-| `ctx.whale.notify(...)` / 全局 `new Notification(...)` | 转 Android 通知（通道 `dsh_plugin_notify`）；试运行不弹 |
-| `ctx.on(...)` / `ctx.llm.register` / `ctx.sessionProjections.register` / `ctx.ui.register*` | 记入「用到但鲸歌未支持的能力」，插件详情警示；常驻 hook 还没做，不会真的回调 |
-
-命令 handler 返回值：字符串 → 直接显示；`{kind:'success', text}` 取 text；`{kind:'error', text}` 显示失败；Promise 会 await。
-
-### 3.8 组合包：cordis.patch.yml
-
-`package.json` 的 `dsh.bundle.patch` 目前只是**登记路径**，鲸歌还没展开 `insert:` 行。
-组合包暂时当普通插件导入（入口 main），子插件不会自动装；交付说明要写清楚。
-
-### 3.9 客户端 UI（dsh.client）
-
-- `dsh.client` 表示插件带浏览器半侧，鲸歌用**通用客户端插件宿主**（M70）跑它：
-  插件详情 →「打开插件窗口」，宿主页加载插件安装目录里的 `exports["./client"]`，
-  提供 `__ModuleLoader__`、React 18、`ctx.get('sessions')`、`ctx.effect/on/slots` 的最小面。
-- **不要再按插件 id 写死原生窗口**（M59/M62/M64/M65/M66 的老做法已全部删除）：
-  用户要的是插件自己的界面，不是鲸歌重画一个。
-- 跑不起来时先看宿主兼容层（`assets/client-host/`）缺什么能力，补宿主，不改插件；
-  插件依赖的 Host 侧 Node 接口（`/dsh-whale/*`、`/api/ventus-whale/*` 等）由宿主适配层提供。
-- 桌面专属原生 Helper（Electron / Qt / PowerShell）Android 不能执行：只跑 Web 半侧，
-  跑不了就如实标「Android 不支持」，不许拿别的窗口冒充。
-- 任何要求接管 DSH 根界面的 root slot：明确拒绝。
-
----
-
-## 4. 打包与导入
-
-1. 新建目录 `my-plugin/`，放 `package.json` + `index.js`（+ 其他运行时文件）；
-2. 压缩成 zip（根目录直接是 `package.json`，或只有一层 `my-plugin/`，两种都认）；
-3. 鲸歌：设置 → 包管理 → 插件 → 右下角 `+` → 选 zip；
-4. 启用开关；看行内「N 个工具 / 已接入 N」；
-5. 点行看详情：工具名、参数 schema、试运行报错；
-6. 用输入条「包」引用该插件，或直接对话让模型调用。
-
-包限制：单文件 ≤ 4MB、解压总量 ≤ 32MB、最多 2000 个文件、不能有绝对路径/`..`。
-
----
-
-## 5. 验证清单（交付前逐条过）
-
-- [ ] `package.json` 是合法 JSON，`main` 指向的文件在 zip 里；
-- [ ] 入口 export 了 `apply`（ESM `export function apply` 或 CJS `exports.apply`）；
-- [ ] 没有相对 import / 第三方 npm 依赖；
-- [ ] `parameters` 是 JSON Schema 或 DSH DSL（能被转换）；
-- [ ] `execute` 返回字符串/可 JSON 序列化的值，不返回内容块；
-- [ ] 网络域名写进 `permissions` 的 `net:`；
-- [ ] 文件读写声明 `fs:workspace`，shell 声明 `shell`；
-- [ ] 导入后工具数 > 0，详情里没有「参数认不出」；
-- [ ] 命令：`/help` 里能看到，执行一次结果正确；
-- [ ] 提示词段：详情能看到 name/order，`--es dsh_dump_request` 的 system 末尾有；
-- [ ] 通知：工具调用时 Android 通知出现；
-- [ ] 界面插件：先判断「工具半侧可搬」还是「需要原生替身」，再决定交付形态；
-- [ ] 真机调用一次工具，结果正确。
-
----
-
-## 6. 给用户的交付话术
-
-> 这个 DSH 插件是纯工具插件，已按鲸歌格式改好：`package.json` + `index.js`，工具 `xxx`，权限 `net:...`。
-> 直接导入 zip 即可；UI 部分（如果有）没有搬，只保留模型工具。
-
-如果只能部分适配，明确写：
-- 哪些工具搬了；
-- 哪些依赖/UI 没搬；
-- 为什么（npm 包 / DOM / 长驻进程 / 需要 Node API）。
-
----
-
-## 7. 参考
-
-- DSH 官方工具规范：`docs/cookbook/adding-a-tool.md`
-- DSH 最小插件教程：`docs/user/develop/basic/tool.md`
-- 社区参考实现：`codeasier/dsh-plugins` 的 `packages/dsh-plugin-hello`
-- 鲸歌插件运行时：`core/plugins/PluginModule.kt`（`defineTool` / `__require` shim）、`PluginSandbox.kt`（fs/net/shell 权限）
+- 作者技能：`dsh-plugin-authoring`（角色 API、loading/v1 预算、整壳原语、验收步骤以它为准）。
+- 源码入口（仓库根）：`core/plugins/PluginModule.kt`（Host ctx/shim）、`PluginSandbox.kt`（fs/net/shell）、`PluginPermissions.kt`（权限表）、`PluginServices.kt`、`SurfaceSpec.kt`、`LoadingSpec.kt`、`PluginPackage.kt`、`PluginClientEntry.kt`、`BundlePatch.kt`。
+- 客户端宿主：`app/src/main/assets/client-host/host.js`；整壳桥：`app/.../ui/surface/WebViewShellScreen.kt`；加载快照与恢复：`app/.../data/LoadingSnapshotStore.kt`、`app/.../ui/boot/`。

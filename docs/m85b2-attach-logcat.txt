@@ -1,0 +1,67 @@
+11-13 22:53:50.622  9207  9207 I DshShell: pick consumed=FILE serial=1
+11-13 22:53:50.622  9207  9207 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=47ms status=COMPLETED bytes=4717
+11-13 22:53:57.792  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=24ms status=COMPLETED bytes=4717
+11-13 22:54:01.630  9207  9207 I DshShell: action=send row=null index=-1
+11-13 22:54:01.691  9207  9207 I DshTurn : turn start session=ca9a800c-ef2b-4650-b8e9-0723c82b93c5 foreground=true model=deepseek-flash
+11-13 22:54:01.846  9207  9207 I DshTurn : foreground start
+11-13 22:54:01.897  9207  9207 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=249ms status=COMPLETED bytes=4717
+11-13 22:54:01.970  9207  9207 I DshTurnHook: step-start turn=2 step=1
+11-13 22:54:02.122  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=16ms status=COMPLETED bytes=4717
+11-13 22:54:04.105  9207  9207 I DshTurnHook: tool-start name=bash id=call_00_VHoMgfubbo788TmFOoyY3445
+11-13 22:54:04.214  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=35ms status=COMPLETED bytes=4717
+11-13 22:54:04.790  9207  9207 I DshTurnHook: tool-end name=bash id=call_00_VHoMgfubbo788TmFOoyY3445 error=false chars=537
+11-13 22:54:04.821  9207  9207 I DshTurnHook: step-end turn=2 step=1
+11-13 22:54:04.916  9207  9207 I DshTurnHook: step-start turn=2 step=2
+11-13 22:54:05.060  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=16ms status=COMPLETED bytes=4717
+11-13 22:54:06.873  9207  9207 I DshTurnHook: tool-start name=bash id=call_00_WsFgGgvjsSnQh5gTBeff7189
+11-13 22:54:06.966  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=21ms status=COMPLETED bytes=4717
+11-13 22:54:07.314  9207  9207 I DshTurnHook: tool-end name=bash id=call_00_WsFgGgvjsSnQh5gTBeff7189 error=false chars=7326
+11-13 22:54:07.346  9207  9207 I DshTurnHook: step-end turn=2 step=2
+11-13 22:54:07.473  9207  9207 I DshTurnHook: step-start turn=2 step=3
+11-13 22:54:07.628  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=28ms status=COMPLETED bytes=4717
+11-13 22:54:09.398  9207  9207 I DshTurnHook: tool-start name=bash id=call_00_hBIYm41jVGuhSGf8CT922490
+11-13 22:54:09.508  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=33ms status=COMPLETED bytes=4717
+11-13 22:54:09.516  9207  9207 I DshTurnHook: tool-end name=bash id=call_00_hBIYm41jVGuhSGf8CT922490 error=false chars=1885
+11-13 22:54:09.551  9207  9207 I DshTurnHook: step-end turn=2 step=3
+11-13 22:54:09.703  9207  9207 I DshTurnHook: step-start turn=2 step=4
+11-13 22:54:09.863  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=30ms status=COMPLETED bytes=4717
+11-13 22:54:12.337  9207  9207 I DshTurnHook: tool-start name=bash id=call_00_JUPhLZQPCAWEXdxdNxYa5309
+11-13 22:54:12.442  9207  9207 I DshTurnHook: tool-end name=bash id=call_00_JUPhLZQPCAWEXdxdNxYa5309 error=false chars=1360
+11-13 22:54:12.450  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=35ms status=COMPLETED bytes=4717
+11-13 22:54:12.467  9207  9207 I DshTurnHook: step-end turn=2 step=4
+11-13 22:54:12.557  9207  9207 I DshTurnHook: step-start turn=2 step=5
+11-13 22:54:12.782  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=85ms status=COMPLETED bytes=4717
+11-13 22:54:17.830  9207  9207 I DshTurnHook: tool-start name=bash id=call_00_JTrSZRbNZGbKxYkz8A8O8792
+11-13 22:54:17.870  9207  9207 I DshTurnHook: tool-end name=bash id=call_00_JTrSZRbNZGbKxYkz8A8O8792 error=false chars=241
+11-13 22:54:17.886  9207  9207 I DshTurnHook: step-end turn=2 step=5
+11-13 22:54:18.018  9207  9207 I DshTurnHook: step-start turn=2 step=6
+11-13 22:54:18.182  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=35ms status=COMPLETED bytes=4717
+11-13 22:54:20.414  9207  9207 I DshTurnHook: tool-start name=bash id=call_00_ofnjTJ3MvEKDABW4KWFx0209
+11-13 22:54:20.524  9207  9207 I DshTurnHook: tool-end name=bash id=call_00_ofnjTJ3MvEKDABW4KWFx0209 error=false chars=359
+11-13 22:54:20.542  9207  9207 I DshTurnHook: step-end turn=2 step=6
+11-13 22:54:20.634  9207  9207 I DshTurnHook: step-start turn=2 step=7
+11-13 22:54:20.838  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=62ms status=COMPLETED bytes=4717
+11-13 22:54:25.969  9207  9207 I DshTurnHook: step-end turn=2 step=7
+11-13 22:54:26.024  9207  9207 I DshTurn : turn end after 24332ms
+11-13 22:54:26.075  9207  9207 I DshTurn : foreground stop
+11-13 22:54:26.151  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=29ms status=COMPLETED bytes=4717
+11-13 22:54:26.703  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=44ms status=COMPLETED bytes=4717
+11-13 22:54:52.426  9207  9207 I DshShell: tap action=screenshot
+11-13 22:54:52.426  9207  9207 I DshShell: action=screenshot row=null index=-1
+11-13 22:54:52.476  9207  9207 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=26ms status=COMPLETED bytes=4717
+11-13 22:54:53.278  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=48ms status=COMPLETED bytes=4717
+11-13 22:55:05.977  9207  9207 I DshShell: action=openSession row=39762b7f-6c9c-46d1-9de8-59f9c1262cb8 index=2
+11-13 22:55:06.033  9207  9207 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=32ms status=COMPLETED bytes=4717
+11-13 22:55:06.116  9207  9207 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=15ms status=COMPLETED bytes=4717
+11-13 22:55:24.264  9207  9207 I DshShell: tap action=native
+11-13 22:55:24.265  9207  9207 I DshShell: action=native row=null index=-1
+11-13 22:55:24.290  9207  9207 I DshShell: set active=native targets=[builtin.shell.whale#builtin.shell.whale, m85a.chat#m85a.chat]
+11-13 22:55:24.297  9207  9207 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=16ms status=COMPLETED bytes=4717
+11-13 22:55:35.177  9704  9704 I DshShell: shell resolved=builtin.shell.whale:builtin.shell.whale pref=builtin.shell.whale
+11-13 22:55:35.177  9704  9704 I DshShell: active=builtin.shell.whale:builtin.shell.whale pref=builtin.shell.whale
+11-13 22:55:35.534  9704  9704 I DshShell: dispatch=shell.mount plugin=builtin.shell.whale elapsed=23ms status=COMPLETED bytes=4717
+11-13 22:55:36.175  9704  9704 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=16ms status=COMPLETED bytes=4717
+11-13 22:55:38.859  9704  9704 I DshShell: tap action=native
+11-13 22:55:38.859  9704  9704 I DshShell: action=native row=null index=-1
+11-13 22:55:38.894  9704  9704 I DshShell: set active=native targets=[builtin.shell.whale#builtin.shell.whale, m85a.chat#m85a.chat]
+11-13 22:55:38.898  9704  9704 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=19ms status=COMPLETED bytes=4717

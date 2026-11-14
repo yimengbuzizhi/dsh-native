@@ -1,0 +1,330 @@
+{
+  "totals": {
+    "tests": 361,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "suites": [
+    {
+      "module": "app",
+      "suite": "xin.dshaa.nativeapp.data.LoadingSnapshotStoreTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "app",
+      "suite": "xin.dshaa.nativeapp.data.PluginDevelopmentTest",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "app",
+      "suite": "xin.dshaa.nativeapp.data.PluginDevProbeTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "app",
+      "suite": "xin.dshaa.nativeapp.remote.RemoteTransportTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.CommandEventsTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.CompactionEventsTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.GoalAuthorityTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.GoalRoundDriverTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.GoalStoreTest",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.GoalWrapupTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.PlanModeTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.PromptQueueStoreTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.ScheduleStoreTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.SessionCwdTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.SessionForkTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.SessionMarkdownTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.SessionStoreTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.StorageRoutingTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.UserImageMessageTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/session",
+      "suite": "xin.dshaa.core.session.WorkspaceTrashTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/engine",
+      "suite": "xin.dshaa.core.engine.CompactionTest",
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/engine",
+      "suite": "xin.dshaa.core.engine.ImageOffloadTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/engine",
+      "suite": "xin.dshaa.core.engine.SessionTitleTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/engine",
+      "suite": "xin.dshaa.core.engine.TimeContextTest",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/engine",
+      "suite": "xin.dshaa.core.engine.TurnEngineTest",
+      "tests": 57,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.BundlePatchPresetTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.LoadingSpecTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.PluginClientEntryTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.PluginModuleTest",
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.PluginPackageTest",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.PluginPathGuardTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.PluginPermissionsTest",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.PluginRegistryBackupTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.PluginReloadTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.PluginSandboxTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.PluginSchemaTest",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.PluginServicesTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.ProjectionCheckpointsTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.SchemasterySchemaTest",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "core/plugins",
+      "suite": "xin.dshaa.core.plugins.SurfaceSpecTest",
+      "tests": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ]
+}

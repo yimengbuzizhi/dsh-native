@@ -1,0 +1,46 @@
+# M85-F3 宿主源码扫描（2026-11-14 09:3x）
+
+目标：浮动窗不再 import 内置 UI 插件（`ui:native-shell`）的私有聊天组件。
+检查命令只在 `app/src/main/java` 上跑，排除 `app/build`。
+
+## 1. 私有 chat UI 引用
+
+```
+git grep -n "xin.dshaa.nativeapp.ui.chat" -- app/src/main/java
+```
+
+结果：**0 命中**（exit 1）。
+
+```
+git grep -n "ui\.chat\." -- app/src/main/java
+```
+
+结果：**0 命中**（exit 1）。
+
+## 2. 浮动窗对共享模块的 import（允许）
+
+```
+app/.../device/floating/ui/fullscreen/FloatingFullscreenScreen.kt
+  import xin.dshaa.ui.shellapi.chat.ATTACHMENT_REFERENCE_HINT   （壳契约常量）
+  import xin.dshaa.ui.design.chat.QuotedAttachment              （共享设计组件，已下沉）
+  import xin.dshaa.ui.design.chat.consumeInnerScroll
+  import xin.dshaa.ui.design.chat.parseQuotedAttachment
+  import xin.dshaa.ui.design.component.MarkdownText
+  import xin.dshaa.ui.design.theme.DshTheme / DshTheme2
+
+app/.../device/floating/ui/window/FloatingWindowScreen.kt
+  import xin.dshaa.ui.design.chat.QuotedAttachmentChip
+  import xin.dshaa.ui.design.chat.parseQuotedAttachment
+```
+
+说明：`:ui:shell-api` 是壳/宿主共享契约模块，`:ui:design` 是共享设计模块；
+两者都不是「内置 UI 插件实现」，`app` 依赖它们不违反宿主骨架边界。
+
+## 3. 组件下沉
+
+- `ui/native-shell/src/main/java/xin/dshaa/nativeapp/ui/chat/QuotedAttachment.kt`
+  → `ui/design/src/main/java/xin/dshaa/ui/design/chat/QuotedAttachment.kt`（包名同步改为 `xin.dshaa.ui.design.chat`）
+- `ui/native-shell/src/main/java/xin/dshaa/nativeapp/ui/chat/NestedScrollGuard.kt`
+  → `ui/design/src/main/java/xin/dshaa/ui/design/chat/NestedScrollGuard.kt`
+
+`ui:native-shell` 内 `ChatScreen.kt` 补 3 个 import 后照常使用；原生聊天页未删除、行为未改。

@@ -1,0 +1,9 @@
+{
+  "id": "m85f.webview-shell",
+  "name": "M85-F WebView 壳",
+  "version": "1.0.0",
+  "description": "M85-F 验收：shell/v1 的 webview 后端，整屏 HTML 由插件渲染，共用 shell.* 与 surface.command",
+  "main": "index.js",
+  "format": "dsh",
+  "permissions": ["ui"]
+}

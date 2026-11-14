@@ -31,6 +31,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -87,11 +89,12 @@ import xin.dshaa.core.model.BlockType
 import xin.dshaa.core.model.ChatMessage
 import xin.dshaa.core.model.MessageRole
 import xin.dshaa.core.plugins.PluginRecord
-import xin.dshaa.nativeapp.chat.ATTACHMENT_REFERENCE_HINT
+import xin.dshaa.ui.shellapi.chat.ATTACHMENT_REFERENCE_HINT
 import xin.dshaa.nativeapp.chat.ChatMirror
-import xin.dshaa.nativeapp.chat.PendingFile
-import xin.dshaa.nativeapp.ui.chat.QuotedAttachmentChip
-import xin.dshaa.nativeapp.ui.chat.parseQuotedAttachment
+import xin.dshaa.ui.shellapi.chat.PendingFile
+import xin.dshaa.ui.shellapi.chat.ChatSessionState
+import xin.dshaa.ui.design.chat.QuotedAttachmentChip
+import xin.dshaa.ui.design.chat.parseQuotedAttachment
 import xin.dshaa.nativeapp.data.PluginStore
 import xin.dshaa.nativeapp.device.attach.AttachmentCapture
 import xin.dshaa.nativeapp.device.attach.LocationCapture
@@ -246,6 +249,7 @@ private fun WindowContent(
 
                 ProcessingStatus(chat.statusText, chat.error, chat.streaming)
                 PendingCards()
+                FloatingPromptQueue(chat)
                 AttachmentRow()
                 Composer(
                     state = state,
@@ -747,6 +751,61 @@ private fun PendingCards() {
     }
 }
 
+/** 窗口/全屏共用的小队列；消息仍归 ChatMirror 的当前本机会话。 */
+@Composable
+internal fun FloatingPromptQueue(chat: ChatSessionState, modifier: Modifier = Modifier) {
+    if (chat.queuedPrompts.isEmpty() && chat.queueNotice.isNullOrBlank()) return
+    val c = DshTheme2.colors
+    Column(
+        modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)
+            .clip(RoundedCornerShape(10.dp)).background(c.surfaceAlt)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("待发送 ${chat.queuedPrompts.size} 条", style = MaterialTheme.typography.labelSmall,
+                color = c.text, modifier = Modifier.weight(1f))
+            if (chat.queuedPrompts.any { it.pausedReason != null }) {
+                TextButton(onClick = { ChatMirror.resumeQueuedPrompts() }, enabled = !chat.readOnly && !chat.stopping) {
+                    Text("继续发送", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+        chat.queueNotice?.takeIf { it.isNotBlank() }?.let {
+            Text(it, style = MaterialTheme.typography.labelSmall, color = c.sub,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Column(Modifier.fillMaxWidth().heightIn(max = 112.dp).verticalScroll(rememberScrollState())) {
+            chat.queuedPrompts.forEach { queued ->
+                val claimed = queued.status == xin.dshaa.core.session.PromptQueueStatus.CLAIMED
+                val fileCount = queued.payload.textBlocks.count {
+                    it.startsWith("[附件: ") || it.startsWith("<attachment ")
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(queued.payload.text.ifBlank { if (fileCount > 0) "附件消息" else "图片消息" },
+                            style = MaterialTheme.typography.labelSmall, color = c.text,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(buildString {
+                            append(when {
+                                claimed -> "正在交付"
+                                queued.pausedReason != null -> "已暂停：${queued.pausedReason}"
+                                queued.delivery == xin.dshaa.core.session.PromptDelivery.STEER -> "等待插话"
+                                else -> "排队中"
+                            })
+                            if (queued.payload.images.isNotEmpty()) append(" · ${queued.payload.images.size} 张图片")
+                            if (fileCount > 0) append(" · $fileCount 个文件")
+                        }, style = MaterialTheme.typography.labelSmall, color = c.faint,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    TextButton(onClick = { ChatMirror.cancelQueuedPrompt(queued.id) }, enabled = !claimed && !chat.readOnly) {
+                        Text("取消", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun AttachmentRow() {
     val chat = ChatMirror.state ?: return
@@ -806,11 +865,11 @@ private fun Composer(
 ) {
     val c = DshTheme2.colors
     val context = LocalContext.current
-    var input by remember { mutableStateOf("") }
-    var attachOpen by remember { mutableStateOf(false) }
-    var pluginPicker by remember { mutableStateOf(false) }
-    val keyboard = LocalSoftwareKeyboardController.current
     val chat = ChatMirror.state
+    var input by remember(chat) { mutableStateOf("") }
+    var attachOpen by remember(chat) { mutableStateOf(false) }
+    var pluginPicker by remember(chat) { mutableStateOf(false) }
+    val keyboard = LocalSoftwareKeyboardController.current
     // 窗口默认 NOT_FOCUSABLE，输入框拿到焦点后要通知 Service 去掉这个 flag 并拉起 IME。
     // 不能只挂 `Modifier.onFocusChanged`：它观察的是外层装饰节点的焦点，TextField 的焦点
     // 在内部 BasicTextField 上，实测不回调（2026-11-09 真机：只弹紫色边框、键盘不出现）。
@@ -819,8 +878,13 @@ private fun Composer(
     val focusSource = remember { MutableInteractionSource() }
     val inputFocused by focusSource.collectIsFocusedAsState()
     LaunchedEffect(inputFocused) { onInputFocusRequest(inputFocused) }
-    val canSend = input.isNotBlank() || (chat?.pendingImages?.isNotEmpty() == true) ||
+    val hasDraft = input.isNotBlank() || (chat?.pendingImages?.isNotEmpty() == true) ||
         (chat?.pendingFiles?.isNotEmpty() == true)
+    val canSend = chat != null && !chat.readOnly && !chat.stopping && hasDraft
+    val sendMode = ChatMirror.sendWhileRunningMode
+    val sendLabel = if (streaming) {
+        if (sendMode == "steer") "插话发送" else "排队发送"
+    } else "发送"
     val plugins = remember(pluginPicker) { PluginStore(context).list() }
 
     fun toast(text: String) {
@@ -830,6 +894,17 @@ private fun Composer(
     Column(
         Modifier.fillMaxWidth().imePadding().padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
+        if (streaming) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("生成中可继续发送", style = MaterialTheme.typography.labelSmall,
+                    color = c.faint, modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                    ChatMirror.setSendWhileRunningMode(if (sendMode == "steer") "queue" else "steer")
+                }, enabled = chat?.stopping != true && chat?.readOnly != true) {
+                    Text("$sendLabel · 切换", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
         // Operit AttachmentPanel（docs/76 W24/W25）：5 项，屏幕/通知/位置/圈选/插件包。
         AnimatedVisibility(visible = attachOpen) {
             AttachmentPanel(
@@ -904,7 +979,7 @@ private fun Composer(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(
                     onSend = {
-                        if (canSend && !streaming) {
+                        if (canSend) {
                             if (ChatMirror.send(input)) input = ""
                             keyboard?.hide()
                         }
@@ -916,23 +991,31 @@ private fun Composer(
                 Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(if (streaming || canSend) c.brand else c.line2)
-                    .clickable(enabled = streaming || canSend) {
-                        if (streaming) {
-                            ChatMirror.stop()
-                        } else if (ChatMirror.send(input)) {
+                    .background(if (canSend) c.brand else c.line2)
+                    .clickable(enabled = canSend) {
+                        if (ChatMirror.send(input)) {
                             input = ""
                             keyboard?.hide()
                         }
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    if (streaming) Icons.Default.Stop else Icons.Default.Send,
-                    if (streaming) "停止" else "发送",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp),
-                )
+                Icon(Icons.Default.Send, sendLabel, tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+            if (streaming || chat?.stopping == true) {
+                Spacer(Modifier.width(4.dp))
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape)
+                        .background(if (chat?.stopping == true) c.surfaceAlt else c.danger)
+                        .clickable(enabled = chat?.stopping != true) { ChatMirror.stop() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (chat?.stopping == true) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = c.faint)
+                    } else {
+                        Icon(Icons.Default.Stop, "停止", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
             }
         }
     }

@@ -183,9 +183,9 @@ class SystemAssemblyTest {
             tools = tools,
             personaSuffix = "回答尽量简短。",
         )
-        assertTrue("每批工具调用前" in android)
-        assertTrue("工具失败" in android)
-        assertTrue("每个回合收尾必须给用户状态" in android)
+        assertTrue("Before each batch of tool calls" in android)
+        assertTrue("When a tool fails" in android)
+        assertTrue("End every turn with a status" in android)
         assertTrue(android.endsWith("回答尽量简短。"), "播报段不能排在 persona-suffix 之后")
 
         val desktopTools = pack.toolDefinitions.map { it.name }.toSet()
@@ -195,7 +195,7 @@ class SystemAssemblyTest {
             tools = desktopTools,
             platform = "desktop",
         )
-        assertTrue("每批工具调用前" !in desktop, "桌面平台不注入播报段")
+        assertTrue("Before each batch of tool calls" !in desktop, "桌面平台不注入播报段")
     }
 
     /** 没配角色卡时拼装结果必须和上游快照完全一致（默认人设段不被改动）。 */

@@ -155,9 +155,10 @@ class ScheduleToolsTest {
     }
 
     @Test
-    fun `default registry advertises thirty-two tools`() {
-        assertTrue("schedule_create" in DefaultTools.registry().names)
-        assertTrue("schedule_delete" in DefaultTools.registry().names)
-        assertEquals(32, DefaultTools.registry().names.size)
+    fun `builtin catalog advertises thirty-two tools`() {
+        val names = BuiltinToolCatalog.allTools().map { it.name }
+        assertTrue("schedule_create" in names)
+        assertTrue("schedule_delete" in names)
+        assertEquals(32, names.size)
     }
 }

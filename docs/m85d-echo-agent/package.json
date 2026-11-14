@@ -1,0 +1,9 @@
+{
+  "id": "m85d.echo-agent",
+  "name": "M85-D Echo 回合",
+  "version": "1.0.0",
+  "description": "M85-D 验收：插件用 ctx.agent.register 声明 agent/v1 回合，选中后输入什么就原样回什么",
+  "main": "index.js",
+  "format": "dsh",
+  "permissions": ["agent"]
+}

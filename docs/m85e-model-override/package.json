@@ -1,0 +1,9 @@
+{
+  "id": "m85e.model-override",
+  "name": "M85-E 同 id 模型覆盖",
+  "version": "1.0.0",
+  "description": "model/v1 验收：声明 provider id=deepseek（与内置同 id），启用后接管该通道；停用回内置",
+  "main": "index.js",
+  "format": "dsh",
+  "permissions": []
+}

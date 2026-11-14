@@ -15,14 +15,20 @@ import kotlinx.serialization.json.jsonPrimitive
 object StreamParser {
 
     sealed interface Event {
-        data class MessageStart(val id: String?, val model: String?, val inputTokens: Int) : Event
+        data class MessageStart(
+            val id: String?, val model: String?, val inputTokens: Int,
+            val usage: TokenUsage = TokenUsage(inputTokens = inputTokens.takeIf { it > 0 }),
+        ) : Event
         data class BlockStart(val index: Int, val type: String, val toolId: String?, val toolName: String?) : Event
         data class TextDelta(val index: Int, val text: String) : Event
         data class ThinkingDelta(val index: Int, val text: String) : Event
         data class SignatureDelta(val index: Int, val signature: String) : Event
         data class ToolInputDelta(val index: Int, val partialJson: String) : Event
         data class BlockStop(val index: Int) : Event
-        data class MessageDelta(val stopReason: String?, val outputTokens: Int) : Event
+        data class MessageDelta(
+            val stopReason: String?, val outputTokens: Int,
+            val usage: TokenUsage = TokenUsage(outputTokens = outputTokens.takeIf { it > 0 }),
+        ) : Event
         data object MessageStop : Event
         data object Ping : Event
         data class Error(val type: String?, val message: String) : Event
@@ -37,7 +43,8 @@ object StreamParser {
                 Event.MessageStart(
                     id = message?.str("id"),
                     model = message?.str("model"),
-                    inputTokens = usage?.int("input_tokens") ?: 0,
+                    inputTokens = usage.normalizedUsage().inputTokens ?: 0,
+                    usage = usage.normalizedUsage(),
                 )
             }
             StreamEvents.CONTENT_BLOCK_START -> {
@@ -66,7 +73,8 @@ object StreamParser {
                 val usage = obj["usage"]?.let { runCatching { it.jsonObject }.getOrNull() }
                 Event.MessageDelta(
                     stopReason = delta?.str("stop_reason"),
-                    outputTokens = usage?.int("output_tokens") ?: 0,
+                    outputTokens = usage.normalizedUsage().outputTokens ?: 0,
+                    usage = usage.normalizedUsage(),
                 )
             }
             StreamEvents.MESSAGE_STOP -> Event.MessageStop
@@ -78,6 +86,13 @@ object StreamParser {
             else -> null
         }
     }
+
+    private fun JsonObject?.normalizedUsage(): TokenUsage = StreamUsage(
+        inputTokens = this?.int("input_tokens")?.takeIf { it >= 0 },
+        outputTokens = this?.int("output_tokens")?.takeIf { it >= 0 },
+        cacheReadInputTokens = this?.int("cache_read_input_tokens")?.takeIf { it >= 0 },
+        cacheCreationInputTokens = this?.int("cache_creation_input_tokens")?.takeIf { it >= 0 },
+    ).normalized()
 
     private fun JsonObject.str(key: String): String? =
         runCatching { this[key]?.jsonPrimitive?.contentOrNull }.getOrNull()

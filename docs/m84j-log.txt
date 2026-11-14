@@ -1,0 +1,24 @@
+﻿11-13 21:15:44.648 11732 11732 I DshProvider: plugin stream provider id=m84j.echo plugin=m84j-demo
+11-13 21:15:44.648 11732 11732 I DshProvider: plugin providers=[m84j.echo] active=m84j.echo
+11-13 21:15:44.722 11732 11766 I DshProjection: resident started plugin=m84i-demo keys=m84iTurns subscriptions=turn/start,tool/result cleanups=1 streams=
+11-13 21:15:44.722 11732 11771 I DshProjection: resident started plugin=svc-consumer-b keys= subscriptions=turn/end cleanups=1 streams=
+11-13 21:15:44.724 11732 11767 I DshProjection: resident started plugin=m84j-demo keys= subscriptions= cleanups=0 streams=m84j.echo
+11-13 21:15:44.725 11732 11768 I DshProjection: resident started plugin=m84h-demo keys=m84hTurns subscriptions= cleanups=0 streams=
+11-13 21:15:44.732 11732 11770 I DshProjection: resident started plugin=whale-compat-test keys= subscriptions=session/event cleanups=0 streams=
+11-13 21:15:46.757 11732 11732 I DshProvider: plugin stream provider id=m84j.echo plugin=m84j-demo
+11-13 21:15:46.757 11732 11732 I DshProvider: plugin providers=[m84j.echo] active=m84j.echo
+11-13 21:15:46.759 11732 11732 I DshProjection: resident stopped plugin=m84j-demo
+11-13 21:15:46.782 11732 11787 I DshProjection: resident started plugin=m84j-demo keys= subscriptions= cleanups=0 streams=m84j.echo
+11-13 21:15:46.791 11732 11732 I DshProvider: plugin stream provider id=m84j.echo plugin=m84j-demo
+11-13 21:15:46.791 11732 11732 I DshProvider: plugin providers=[m84j.echo] active=m84j.echo
+11-13 21:15:54.860 11826 11826 I DshProvider: plugin stream provider id=m84j.echo plugin=m84j-demo
+11-13 21:15:54.860 11826 11826 I DshProvider: plugin providers=[m84j.echo] active=m84j.echo
+11-13 21:15:54.925 11826 11862 I DshProjection: resident started plugin=m84h-demo keys=m84hTurns subscriptions= cleanups=0 streams=
+11-13 21:15:54.925 11826 11861 I DshProjection: resident started plugin=whale-compat-test keys= subscriptions=session/event cleanups=0 streams=
+11-13 21:15:54.925 11826 11860 I DshProjection: resident started plugin=m84j-demo keys= subscriptions= cleanups=0 streams=m84j.echo
+11-13 21:15:54.926 11826 11859 I DshProjection: resident started plugin=m84i-demo keys=m84iTurns subscriptions=turn/start,tool/result cleanups=1 streams=
+11-13 21:15:54.930 11826 11863 I DshProjection: resident started plugin=svc-consumer-b keys= subscriptions=turn/end cleanups=1 streams=
+11-13 21:15:56.470 11826 11826 I DshProvider: plugin stream provider id=m84j.echo model=deepseek-flash requestChars=71565 plugin=m84j-demo
+11-13 21:15:56.485 11826 11871 I DshProjection: resident m84j-demo console: {"level":"info","message":"m84j request messages=1 tools=128"}
+11-13 21:15:56.518 11826 11877 I DshProjection: stream plugin=m84j-demo provider=m84j.echo chars=71
+11-13 21:16:16.721 11826 11826 I DshProvider: dump providers -> /sdcard/Android/data/xin.dshaa.nativeapp/files/m84j-providers.json

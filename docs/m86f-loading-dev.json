@@ -1,0 +1,84 @@
+{
+  "running": false,
+  "directory": "/data/user/0/xin.dshaa.nativeapp/files/workspace/m86-loading-dev-1794632875892",
+  "pluginId": "m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2",
+  "checks": [
+    {
+      "name": "loading scaffold",
+      "ok": true,
+      "detail": "已创建 loading 插件：/data/data/xin.dshaa.nativeapp/files/workspace/m86-loading-dev-1794632875892/loading；可运行 plugin_dev_test"
+    },
+    {
+      "name": "real QuickJS registerLoading metadata",
+      "ok": true,
+      "detail": "{\"ok\":true,\"message\":\"试运行通过：m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"id\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"tools\":[],\"shells\":[],\"loadings\":[{\"id\":\"startup\",\"label\":\"我的启动加载页\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#startup\"}],\"unsupported\":[],\"missingServices\":[]}"
+    },
+    {
+      "name": "real QuickJS collects multiple loadings",
+      "ok": true,
+      "detail": "{\"ok\":true,\"message\":\"试运行通过：m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"id\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"tools\":[],\"shells\":[],\"loadings\":[{\"id\":\"startup\",\"label\":\"M86 静态加载页 startup\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#startup\"},{\"id\":\"second\",\"label\":\"M86 静态加载页 second\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#second\"}],\"unsupported\":[],\"missingServices\":[]}"
+    },
+    {
+      "name": "loading install",
+      "ok": true,
+      "detail": "已导入 m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2 0.1.0；没有注册工具（可能只是 hook 插件）"
+    },
+    {
+      "name": "list returns persisted loadings",
+      "ok": true,
+      "detail": "{\"total\":1,\"truncated\":false,\"plugins\":[{\"id\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"name\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"version\":\"0.1.0\",\"enabled\":true,\"path\":\"/data/data/xin.dshaa.nativeapp/files/plugins/m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"tools\":[],\"shells\":[],\"loadings\":[{\"id\":\"startup\",\"label\":\"M86 静态加载页 startup\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#startup\"},{\"id\":\"second\",\"label\":\"M86 静态加载页 second\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#second\"}],\"permissions\":[\"ui\"],\"grantedPermissions\":[\"ui\"]}]}"
+    },
+    {
+      "name": "static snapshot roundtrip without user selection",
+      "ok": true,
+      "detail": "0e38dff4c14720a7576bb91922ac94e6479b89869332f1160082b313d469dc0a"
+    },
+    {
+      "name": "explicit declaration selection",
+      "ok": true,
+      "detail": "98a21894433d94d91917ae8035d5df2a63d875bb9b4fc109f7d96c99836e99de"
+    },
+    {
+      "name": "QuickJS rejects loading functions",
+      "ok": true,
+      "detail": "{\"ok\":false,\"message\":\"loading/v1：加载页只接受静态 JSON\",\"id\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"tools\":[],\"shells\":[],\"loadings\":[],\"unsupported\":[],\"missingServices\":[]}"
+    },
+    {
+      "name": "core rejects browser content",
+      "ok": true,
+      "detail": "{\"ok\":false,\"message\":\"loading/v1：加载页不允许原语：webview\",\"id\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"tools\":[],\"shells\":[],\"loadings\":[],\"unsupported\":[],\"missingServices\":[]}"
+    },
+    {
+      "name": "invalid upgrade preserves installed loading",
+      "ok": true,
+      "detail": "m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2：试运行失败：loading/v1：加载页不允许原语：webview"
+    },
+    {
+      "name": "core rejects chat binding",
+      "ok": true,
+      "detail": "{\"ok\":false,\"message\":\"loading/v1：加载页只允许 boot.phase/message/elapsed 绑定\",\"id\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"tools\":[],\"shells\":[],\"loadings\":[],\"unsupported\":[],\"missingServices\":[]}"
+    },
+    {
+      "name": "QuickJS rejects duplicate loading ids",
+      "ok": true,
+      "detail": "{\"ok\":false,\"message\":\"loading/v1：重复 id startup\",\"id\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"tools\":[],\"shells\":[],\"loadings\":[{\"id\":\"startup\",\"label\":\"M86 静态加载页 startup\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#startup\"}],\"unsupported\":[],\"missingServices\":[]}"
+    },
+    {
+      "name": "QuickJS rejects ninth declaration",
+      "ok": true,
+      "detail": "{\"ok\":false,\"message\":\"loading/v1：最多注册 8 个加载页\",\"id\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2\",\"tools\":[],\"shells\":[],\"loadings\":[{\"id\":\"page0\",\"label\":\"M86 静态加载页 page0\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#page0\"},{\"id\":\"page1\",\"label\":\"M86 静态加载页 page1\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#page1\"},{\"id\":\"page2\",\"label\":\"M86 静态加载页 page2\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#page2\"},{\"id\":\"page3\",\"label\":\"M86 静态加载页 page3\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#page3\"},{\"id\":\"page4\",\"label\":\"M86 静态加载页 page4\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#page4\"},{\"id\":\"page5\",\"label\":\"M86 静态加载页 page5\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#page5\"},{\"id\":\"page6\",\"label\":\"M86 静态加载页 page6\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#page6\"},{\"id\":\"page7\",\"label\":\"M86 静态加载页 page7\",\"protocol\":\"loading/v1\",\"selectionValue\":\"m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#page7\"}],\"unsupported\":[],\"missingServices\":[]}"
+    },
+    {
+      "name": "disabled provider invalidates snapshot",
+      "ok": true,
+      "detail": "加载页插件已停用：m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2"
+    }
+  ],
+  "passed": 14,
+  "total": 14,
+  "fixturesRetained": true,
+  "allCreatedPluginsDisabled": true,
+  "loadingSelectionChanged": false,
+  "coldStartVerified": false,
+  "snapshotRevision": "0e38dff4c14720a7576bb91922ac94e6479b89869332f1160082b313d469dc0a"
+}

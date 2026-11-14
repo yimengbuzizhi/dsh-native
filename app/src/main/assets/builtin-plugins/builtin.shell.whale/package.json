@@ -1,0 +1,9 @@
+{
+  "id": "builtin.shell.whale",
+  "name": "鲸歌可选壳（Surface）",
+  "version": "1.5.0",
+  "description": "Surface 可选聊天界面：消息、附件、工具、审批、提问，以及生成中插话和排队；默认界面为原生 UI 插件。",
+  "main": "index.js",
+  "format": "dsh",
+  "permissions": ["ui"]
+}

@@ -1,0 +1,29 @@
+{
+  "observedAt": 1794653802975,
+  "activeTurnCount": 1,
+  "writerCount": 1,
+  "streamingCount": 1,
+  "sessionId": "5e30a14b-f136-4654-ba43-42e5694d6318",
+  "streaming": true,
+  "stopping": false,
+  "shell": "native",
+  "sendMode": "queue",
+  "errorPresent": false,
+  "hasDraft": false,
+  "pendingImageCount": 0,
+  "pendingFileCount": 0,
+  "fixtureSession": true,
+  "turnEnds": [],
+  "messages": [
+    {
+      "role": "user",
+      "text": "M86GUI_20261114185543329116_PROCESS_RESTART_HOLD"
+    },
+    {
+      "role": "assistant",
+      "text": "M86GUI_PARTIAL"
+    }
+  ],
+  "queued": [],
+  "delivered": []
+}

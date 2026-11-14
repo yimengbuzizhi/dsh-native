@@ -74,6 +74,11 @@ class AndroidPluginHostBridge(private val app: Application) : PluginHostBridge {
                     args.str("namespace") ?: "system",
                 )
                 "device.toast" -> toast(args.str("message").orEmpty())
+                // M85-A：整壳 → 宿主的同步命令（send/stop/切会话/关壳…），白名单在 shellCommand 里。
+                "surface.command" -> SurfaceCommandRouter.handler?.invoke(
+                    args.str("command").orEmpty(),
+                    args["args"]?.toString() ?: "{}",
+                ) ?: fail("当前宿主没有壳命令接收方", "NOT_SUPPORTED")
                 "device.sendBroadcast" -> sendBroadcast(args)
                 "file.open" -> openFile(args.str("path").orEmpty())
                 "file.share" -> shareFile(args.str("path").orEmpty(), args.str("title").orEmpty())
@@ -87,6 +92,14 @@ class AndroidPluginHostBridge(private val app: Application) : PluginHostBridge {
                 "ui.pageInfo" -> pageInfo()
                 "terminal.create", "terminal.exec", "terminal.input", "terminal.screen", "terminal.close" ->
                     terminal(method.removePrefix("terminal."), args)
+                // M83 阶段 3：开桥原语（路径/权限已由 PluginSandbox 挡过，这里只做字节/识别）
+                "ocr.recognize" -> ocrRecognize(args.str("path").orEmpty())
+                "zip.zstd" -> zstd(
+                    mode = args.str("mode").orEmpty(),
+                    inPath = args.str("in").orEmpty(),
+                    outPath = args.str("out").orEmpty(),
+                    level = args.int("level") ?: 3,
+                )
                 else -> if (method.startsWith("memory.")) memory(method.removePrefix("memory."), args) else null
             }
         } catch (t: Throwable) {
@@ -98,6 +111,84 @@ class AndroidPluginHostBridge(private val app: Application) : PluginHostBridge {
     /** 记忆库（M68）：MemoryStore 走 IO 线程，这里同步等结果（单条记忆操作是毫秒级）。 */
     private fun memory(method: String, args: JsonObject): String =
         runBlocking { memoryHost.call(method, args) }
+
+    /**
+     * M83 阶段 3：OCR 原语。ML Kit（中文+拉丁）已经在 APK 里（屏幕圈选 OCR 用同一个引擎）。
+     * 大图先缩到 2000px 以内再识别，避免 OOM；结果按行拼接返回。
+     */
+    private fun ocrRecognize(path: String): String {
+        if (path.isBlank()) return fail("缺少 path")
+        val file = java.io.File(path)
+        if (!file.isFile) return fail("图片不存在：${file.name}", "NOT_FOUND")
+        val bitmap = kotlin.runCatching { android.graphics.BitmapFactory.decodeFile(path) }
+            .getOrNull() ?: return fail("解码图片失败（不是图片或太大了）")
+        val scaled = if (bitmap.width > 2000 || bitmap.height > 2000) {
+            val ratio = 2000f / maxOf(bitmap.width, bitmap.height)
+            android.graphics.Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width * ratio).toInt().coerceAtLeast(1),
+                (bitmap.height * ratio).toInt().coerceAtLeast(1),
+                true,
+            )
+        } else {
+            bitmap
+        }
+        return try {
+            val text = runBlocking {
+                xin.dshaa.nativeapp.device.floating.ui.screenocr.OcrEngine.recognize(scaled)
+            }
+            ok {
+                put("text", text)
+                put("chars", text.length)
+                put("image", "${scaled.width}x${scaled.height}")
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "ocr failed: ${t.message}", t)
+            fail("OCR 失败：${t.message ?: t.javaClass.simpleName}")
+        } finally {
+            if (scaled !== bitmap) scaled.recycle()
+            bitmap.recycle()
+        }
+    }
+
+    /**
+     * M83 阶段 3：zstd 压缩/解压（`zstd-jni` 已经在 APK 里，之前只给会话存储用）。
+     * 用流式 API，压缩/解压都不需要预先知道原文大小。
+     */
+    private fun zstd(mode: String, inPath: String, outPath: String, level: Int): String {
+        val input = java.io.File(inPath)
+        if (!input.isFile) return fail("输入文件不存在：${input.name}", "NOT_FOUND")
+        if (outPath.isBlank()) return fail("缺少输出路径")
+        val output = java.io.File(outPath)
+        output.parentFile?.mkdirs()
+        return try {
+            val started = System.currentTimeMillis()
+            if (mode == "decompress") {
+                java.io.FileInputStream(input).use { raw ->
+                    com.github.luben.zstd.ZstdInputStream(raw).use { z ->
+                        java.io.FileOutputStream(output).use { out -> z.copyTo(out) }
+                    }
+                }
+            } else {
+                val lvl = level.coerceIn(-5, 19)
+                java.io.FileOutputStream(output).use { out ->
+                    com.github.luben.zstd.ZstdOutputStream(out, lvl).use { z ->
+                        java.io.FileInputStream(input).use { raw -> raw.copyTo(z) }
+                    }
+                }
+            }
+            ok {
+                put("mode", mode)
+                put("in", input.length())
+                put("out", output.length())
+                put("outPath", output.absolutePath)
+                put("ms", System.currentTimeMillis() - started)
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "zstd failed: ${t.message}", t)
+            fail("zstd 失败：${t.message ?: t.javaClass.simpleName}")
+        }
+    }
 
     /** 终端（M68）：真 PTY 会话可能跑几十秒，同步等（调用方是插件的 JS 线程，不能回主线程）。 */
     private fun terminal(action: String, args: JsonObject): String =

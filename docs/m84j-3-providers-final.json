@@ -1,0 +1,1 @@
+{"llm":["debug.echo","debug.slow","debug.tool","deepseek","m84j.echo","openai"],"llmActive":"","llmSelected":"","pluginProviders":[{"id":"m84j.echo","label":"M84-J JS stream 演示","protocol":"","model":"m84j-js-1","baseUrl":"","owner":"m84j-demo","hasKey":false,"hasStream":true}],"prompt":[],"promptActive":""}

@@ -4,6 +4,7 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import xin.dshaa.ui.shellapi.chat.ChatSessionState
 
 /**
  * 大肥鱼（dsh-dafeiyu）状态机——照 `src/protocol.js` + `src/companion-reducer.js` 移植。

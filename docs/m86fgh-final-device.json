@@ -1,0 +1,18 @@
+{
+ "nativeSelected": true,
+ "allWritersIdle": true,
+ "emptyDraft": true,
+ "currentSessionId": "",
+ "sendMode": "queue",
+ "modelFollow": true,
+ "defaultLoading": true,
+ "whaleEnabledNotSelected": true,
+ "newFixturesDisabled": [
+  "m86g.restart.fixture.20261114185932198887",
+  "m86g.restart.fixture.20261114185543329116",
+  "m86.selftest.webcold.5acf56d017da4b568775b38cda6e5d29",
+  "m86.selftest.webcold.f5f2b3344033473b97adc34b8d773eab"
+ ],
+ "versionName": "0.3.2",
+ "versionCode": 5
+}

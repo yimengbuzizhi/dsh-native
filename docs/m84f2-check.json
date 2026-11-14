@@ -1,0 +1,82 @@
+{
+  "batch": "M84-F2",
+  "date": "2026-11-13",
+  "device": "OPPO A55 5G（PEMM00），Android 13，720×1600",
+  "goal": "把 F 空壳里剩下的 26 个设备/终端/记忆工具归入内置插件组，让 23 个内置插件全关时 tools[] 真正为 0；不改内置插件总数（仍 23）。",
+  "changes": {
+    "builtin.shell": "+6 个终端会话工具（create/execute/input/close/get_screen/execute_hidden）",
+    "builtin.page.device": "+12 个设备工具（device_info/dump_ui/click_element/tap/long_press/swipe/press_key/input_text/launch_app/capture_screenshot/start_virtual_display/close_all_virtual_displays）",
+    "builtin.memory": "+8 个记忆工具（query/get_by_title/create/update/delete/link/query_links/move）",
+    "appViewModel": "syncBuiltinTools 对不在 BuiltinToolCatalog 的 app 工具按所属内置插件组注册/注销；appToolsByName 保留实例",
+    "note": "工具名仍唯一；BuiltinToolCatalog 仍是 32 个/12 组；内置插件计数仍 23（没有新增插件，只是把已有工具归组）。"
+  },
+  "emptyShell": {
+    "builtinPlugins": 23,
+    "builtinDisabled": 22,
+    "userPlugins": 30,
+    "userPluginsEnabled": 0,
+    "toolsAll": 0,
+    "toolsOffered": 0,
+    "pages": 22,
+    "pagesEnabled": 2,
+    "providers": ["debug.echo", "debug.slow", "debug.tool", "deepseek", "openai"],
+    "coldStartMs": [1839, 1832, 1853, 1842, 1842],
+    "coldStartMedianMs": 1842
+  },
+  "fullAssembly": {
+    "builtinPlugins": 23,
+    "builtinDisabled": 0,
+    "userPluginsEnabled": 19,
+    "userPluginTools": 68,
+    "toolsAll": 126,
+    "toolsOffered": 126,
+    "toolsCatalog": 32,
+    "pages": 22,
+    "pagesEnabled": 22,
+    "coldStartMs": [1852, 1847, 1842, 1837, 1873],
+    "coldStartMedianMs": 1847
+  },
+  "groupToggles": [
+    {
+      "id": "builtin.shell",
+      "expectedTools": 118,
+      "actualTools": 118,
+      "expectedPagesEnabled": 21,
+      "actualPagesEnabled": 21,
+      "note": "126 - 8（bash/working_directory + 6 终端工具）；Terminal 页同时关闭"
+    },
+    {
+      "id": "builtin.page.device",
+      "expectedTools": 114,
+      "actualTools": 114,
+      "expectedPagesEnabled": 19,
+      "actualPagesEnabled": 19,
+      "note": "126 - 12（设备工具）；VirtualScreen/Accessibility/Permissions 三页同时关闭"
+    },
+    {
+      "id": "builtin.memory",
+      "expectedTools": 118,
+      "actualTools": 118,
+      "expectedPagesEnabled": 21,
+      "actualPagesEnabled": 21,
+      "note": "126 - 8（记忆工具）；Memory 页同时关闭"
+    }
+  ],
+  "evidence": [
+    "docs/f2-empty-tools.json",
+    "docs/f2-empty-pages.json",
+    "docs/f2-empty-plugins.json",
+    "docs/f2-full-tools.json",
+    "docs/f2-full-pages.json",
+    "docs/f2-full-plugins.json",
+    "docs/f2-off-shell-tools.json",
+    "docs/f2-off-device-tools.json",
+    "docs/f2-off-memory-tools.json"
+  ],
+  "limitations": [
+    "页面内容仍是 Kotlin/Compose；本次只把工具归组，页面实现未插件化。",
+    "M84-B 142 项逐页对拍仍未重跑；22 条路由冒烟在 F 已通过。",
+    "release 冷启动未测；debug 包 + 85 个会话。",
+    "operit-extended-http 15s 超时未解决。"
+  ]
+}

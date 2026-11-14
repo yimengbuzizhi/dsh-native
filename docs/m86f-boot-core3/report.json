@@ -1,0 +1,143 @@
+{
+  "device": "192.0.2.10:39905",
+  "fixture": "D:\\dsh\\native\\docs\\m86f-loading-dev.json",
+  "pluginId": "m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2",
+  "evidenceDirectory": "docs\\m86f-boot-core3",
+  "remoteDirectory": "/sdcard/Download/m86f-boot-core3",
+  "checks": [
+    {
+      "name": "startup:selection",
+      "ok": true
+    },
+    {
+      "name": "startup:snapshot-owner",
+      "ok": true,
+      "expected": "m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2",
+      "actual": "m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2"
+    },
+    {
+      "name": "startup:draw-order",
+      "ok": true,
+      "times": {
+        "loadingFirstDraw": 704,
+        "coreReady": 1013,
+        "shellFirstDraw": 1611,
+        "reportFullyDrawn": 1612
+      },
+      "log": "startup\\boot.log"
+    },
+    {
+      "name": "second:explicit-declaration",
+      "ok": true,
+      "selection": "m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#second"
+    },
+    {
+      "name": "disabled:snapshot-default",
+      "ok": true,
+      "notice": "加载页插件已停用：m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2"
+    },
+    {
+      "name": "disabled:snapshot-owner",
+      "ok": true,
+      "expected": "builtin.loading.native",
+      "actual": "builtin.loading.native"
+    },
+    {
+      "name": "disabled:draw-order",
+      "ok": true,
+      "times": {
+        "loadingFirstDraw": 690,
+        "coreReady": 1014,
+        "shellFirstDraw": 1599,
+        "reportFullyDrawn": 1600
+      },
+      "log": "disabled\\boot.log"
+    },
+    {
+      "name": "corrupt:snapshot-owner",
+      "ok": true,
+      "expected": "builtin.loading.native",
+      "actual": "builtin.loading.native"
+    },
+    {
+      "name": "corrupt:draw-order",
+      "ok": true,
+      "times": {
+        "loadingFirstDraw": 686,
+        "coreReady": 1022,
+        "shellFirstDraw": 1619,
+        "reportFullyDrawn": 1620
+      },
+      "log": "corrupt\\boot.log"
+    },
+    {
+      "name": "default:explicit-selection",
+      "ok": true
+    },
+    {
+      "name": "onboarding:snapshot-owner",
+      "ok": true,
+      "expected": "builtin.loading.native",
+      "actual": "builtin.loading.native"
+    },
+    {
+      "name": "onboarding:draw-order",
+      "ok": true,
+      "times": {
+        "loadingFirstDraw": 688,
+        "coreReady": 1052,
+        "shellFirstDraw": 1251,
+        "reportFullyDrawn": 1252
+      },
+      "log": "onboarding\\boot.log"
+    },
+    {
+      "name": "onboarding:welcome",
+      "ok": true
+    },
+    {
+      "name": "onboarding:permissions-page",
+      "ok": true
+    },
+    {
+      "name": "onboarding:completed-by-ui",
+      "ok": true
+    },
+    {
+      "name": "safe-mode:visible",
+      "ok": true
+    },
+    {
+      "name": "safe-mode:manager",
+      "ok": true
+    },
+    {
+      "name": "cleanup:original-snapshot-bytes-restored",
+      "ok": true,
+      "sha256": "d4eda1a665799cc91c1f1bb31cd786a688c4bbfdc639c0705e29ae042cad8d9c"
+    }
+  ],
+  "pixelEvidence": {
+    "status": "agent-verified-visible",
+    "marker": "M86_LOADING_FIRST",
+    "reason": "Root agent read_image confirmed M86_LOADING_FIRST in startup/burst/frame-004.png; renderer timing remains distinct from screen presentation.",
+    "verifiedFrame": "startup/burst/frame-004.png",
+    "verifiedFrameSha256": "d9c440120396527be7e089ec802c35a5f37be37739a27744220e69d0e972834a",
+    "burst": "startup/burst",
+    "video": "startup/screenrecord.mp4",
+    "frameManifest": "startup/frames.json"
+  },
+  "forbiddenActions": "no secrets/prefs reads, no session deletion, no permissions/audio/alarm changes",
+  "snapshotBackup": {
+    "path": "loading-snapshot.original.json",
+    "sha256": "d4eda1a665799cc91c1f1bb31cd786a688c4bbfdc639c0705e29ae042cad8d9c"
+  },
+  "cleanup": {
+    "ok": true,
+    "failures": [],
+    "appLeftStopped": true,
+    "probeSessionsRetained": true
+  },
+  "status": "failed",
+  "error": "restore native button unavailable after scrolling"
+}

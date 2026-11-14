@@ -5,15 +5,32 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import xin.dshaa.nativeapp.ui.DshApp
+import androidx.activity.viewModels
+import xin.dshaa.nativeapp.chat.AppViewModel
+import xin.dshaa.nativeapp.ui.boot.BootHost
 import xin.dshaa.ui.design.theme.DshTheme
+import xin.dshaa.ui.shellapi.data.SettingsStore
 
 class MainActivity : ComponentActivity() {
+
+    /** 和 Compose 里的 `viewModel()` 是同一个实例（同一 ViewModelStore）。 */
+    private val appVm: AppViewModel by viewModels()
+    private var bootReady = false
+    private var debugRecreatePending = false
+    private val pendingBootIntents = ArrayDeque<Pair<Intent, Boolean>>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        val activityStartedAt = android.os.SystemClock.elapsedRealtime()
         super.onCreate(savedInstanceState)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            // The platform icon must release as soon as app content can draw; its fade can hide
+            // the entire replaceable loading page when plugin initialization finishes quickly.
+            splashScreen.setOnExitAnimationListener { splash -> splash.remove() }
+        }
+        android.util.Log.i("DshBoot", "activityStart elapsedRealtimeMs=$activityStartedAt")
         // 调试通道：`am start --es dsh_account_token <token>` 导入 DeepSeek 账号令牌（仅 debug 包生效）。
         // 2026-11-09：DeepSeek 账号登录已删除，这个通道一并移除。
-        if (BuildConfig.DEBUG) {
+        if (BuildConfig.DEBUG && (savedInstanceState == null || savedInstanceState.getBoolean("dsh.debugRecreatePending", false))) {
             // 调试通道：`--es dsh_avatar <filesDir 里的绝对路径>` 直接指定助手头像（自动验收用）
             intent?.getStringExtra("dsh_avatar")?.takeIf { it.isNotBlank() }?.let { path ->
                 getSharedPreferences("dsh", 0).edit().putString("assistant_avatar", path).apply()
@@ -37,7 +54,7 @@ class MainActivity : ComponentActivity() {
             // 门 2 回放：`--es dsh_base_url http://127.0.0.1:18080`（`default` 还原官方端点）
             intent?.getStringExtra("dsh_base_url")?.takeIf { it.isNotBlank() }?.let { url ->
                 val value = if (url.equals("default", ignoreCase = true)) {
-                    xin.dshaa.nativeapp.data.SettingsStore.DEFAULT_BASE_URL
+                    xin.dshaa.ui.shellapi.data.SettingsStore.DEFAULT_BASE_URL
                 } else {
                     url.trim()
                 }
@@ -133,7 +150,7 @@ class MainActivity : ComponentActivity() {
                 runCatching {
                     val text = String(android.util.Base64.decode(raw, android.util.Base64.NO_WRAP), Charsets.UTF_8)
                     val json = org.json.JSONObject(text)
-                    val store = xin.dshaa.nativeapp.data.SettingsStore(getSharedPreferences("dsh", 0))
+                    val store = xin.dshaa.ui.shellapi.data.SettingsStore(getSharedPreferences("dsh", 0))
                     json.optString("name").takeIf { it.isNotEmpty() }?.let { store.setAssistantName(it) }
                     if (json.has("persona")) store.setAssistantPersona(json.optString("persona"))
                     if (json.has("opening")) store.setAssistantOpening(json.optString("opening"))
@@ -202,6 +219,57 @@ class MainActivity : ComponentActivity() {
             intent?.getStringExtra("dsh_open_screen")?.takeIf { it.isNotBlank() }?.let { name ->
                 getSharedPreferences("dsh", 0).edit().putString("debug_open_screen", name.trim()).apply()
             }
+            // 远程 DSH 验收（M83 阶段 4）：`--es dsh_remote_url http://100.x.x.x:8137 --es dsh_remote_token 12345678`
+            intent?.getStringExtra("dsh_remote_url")?.takeIf { it.isNotBlank() }?.let { url ->
+                getSharedPreferences("dsh", 0).edit().putString("debug_remote_url", url.trim()).apply()
+            }
+            intent?.getStringExtra("dsh_remote_token")?.takeIf { it.isNotBlank() }?.let { token ->
+                getSharedPreferences("dsh", 0).edit().putString("debug_remote_token", token.trim()).apply()
+            }
+            // 内置插件验收（M84-A）：关掉/打开指定分组，并把当前 tools[] 名单落盘。
+            // 例：`--es dsh_builtin_off builtin.fs --es dsh_dump_tools <files>/tools.json`
+            // 真正执行在 setContent 之后的 handleBuiltinDebugIntent()（可以同进程反复 am start）。
+            // M84-C 模型通道/提示词验收：`--es dsh_llm_provider debug.echo|off`
+            // `--es dsh_prompt_override <标记>|off`（热切换见 handleProviderDebugIntent）
+            intent?.getStringExtra("dsh_llm_provider")?.takeIf { it.isNotBlank() }?.let { value ->
+                val sp = getSharedPreferences("dsh", 0)
+                if (value.equals("off", ignoreCase = true)) sp.edit().remove("debug_llm_provider").apply()
+                else sp.edit().putString("debug_llm_provider", value.trim()).apply()
+            }
+            intent?.getStringExtra("dsh_prompt_override")?.takeIf { it.isNotBlank() }?.let { value ->
+                val sp = getSharedPreferences("dsh", 0)
+                if (value.equals("off", ignoreCase = true)) sp.edit().remove("debug_prompt_override").apply()
+                else sp.edit().putString("debug_prompt_override", value.trim()).apply()
+            }
+            // M84-C2 会话存储验收：`--es dsh_session_store memory|off`（需冷启；VM 构造时按它选实现）
+            intent?.getStringExtra("dsh_session_store")?.takeIf { it.isNotBlank() }?.let { value ->
+                val sp = getSharedPreferences("dsh", 0)
+                if (value.equals("off", ignoreCase = true)) sp.edit().remove("debug_session_store").apply()
+                else sp.edit().putString("debug_session_store", value.trim()).apply()
+            }
+            // M85-A 壳验收：`--es dsh_shell <插件id[#壳id]|native>`（需冷启；VM 构造时按它选壳）
+            intent?.getStringExtra("dsh_shell")?.takeIf { it.isNotBlank() }?.let { value ->
+                getSharedPreferences("dsh", 0).edit().putString("dsh_shell", value.trim()).apply()
+            }
+            // M85-D 回合验收：`--es dsh_agent <插件id[#回合id]|native|builtin.agent.dsh>`（VM 构造时按它选回合）
+            intent?.getStringExtra("dsh_agent")?.takeIf { it.isNotBlank() }?.let { value ->
+                getSharedPreferences("dsh", 0).edit().putString("dsh_agent", value.trim()).apply()
+            }
+            // M85-E 存储/提示词/模型验收（冷启按它解析；角色选择规则见 core 里的 Routing）：
+            // `--es dsh_storage <插件id[#存储id]|native|builtin.storage.jsonl>`
+            // `--es dsh_prompt  <插件id[#实现id]|native|builtin.prompt.dsh>`
+            // `--es dsh_model   <provider id|off>`（off = 跟随协议；写 settings 的 llm_provider_id）
+            intent?.getStringExtra("dsh_storage")?.takeIf { it.isNotBlank() }?.let { value ->
+                getSharedPreferences("dsh", 0).edit().putString("dsh_storage", value.trim()).apply()
+            }
+            intent?.getStringExtra("dsh_prompt")?.takeIf { it.isNotBlank() }?.let { value ->
+                getSharedPreferences("dsh", 0).edit().putString("dsh_prompt", value.trim()).apply()
+            }
+            intent?.getStringExtra("dsh_model")?.takeIf { it.isNotBlank() }?.let { value ->
+                getSharedPreferences("dsh", 0).edit()
+                    .putString("llm_provider_id", if (value.equals("off", ignoreCase = true)) "" else value.trim())
+                    .apply()
+            }
             // 工作区验收：`--es dsh_workspace <绝对路径>` 启动即切到该工作区（抽屉会话列表/工具根）
             intent?.getStringExtra("dsh_workspace")?.takeIf { it.isNotBlank() }?.let { path ->
                 getSharedPreferences("dsh", 0).edit().putString("workspace_path", path.trim()).apply()
@@ -243,8 +311,177 @@ class MainActivity : ComponentActivity() {
             }
         }
         enableEdgeToEdge()
+        // Preserve arrivals across rotation/recreate while the boot gate is still closed.
+        if (BuildConfig.DEBUG) {
+            val restored = savedInstanceState?.getParcelableArrayList<Intent>("dsh.pendingBootIntents")
+            val hotFlags = savedInstanceState?.getBooleanArray("dsh.pendingBootHot")
+            if (restored != null) restored.forEachIndexed { index, captured ->
+                pendingBootIntents.addLast(Intent(captured) to (hotFlags?.getOrNull(index) ?: false))
+            } else if (savedInstanceState == null || savedInstanceState.getBoolean("dsh.debugRecreatePending", false)) {
+                pendingBootIntents.addLast(Intent(intent) to false)
+            }
+        }
         setContent {
-            DshApp()
+            BootHost(
+                activity = this,
+                activityStartedAt = activityStartedAt,
+                createViewModel = { appVm },
+                onReady = { bootReady = true; drainBootIntents() },
+            )
+        }
+    }
+
+    private fun drainBootIntents() {
+        if (!bootReady) return
+        while (pendingBootIntents.isNotEmpty()) {
+            val (captured, hot) = pendingBootIntents.removeFirst()
+            handleUserPluginDebugIntent(captured)
+            handleBuiltinDebugIntent(captured)
+            handlePageDebugIntent(captured)
+            handleProviderDebugIntent(captured)
+            handleSessionStoreDebugIntent(captured)
+            handleProjectionDebugIntent(captured)
+            handleShellDebugIntent(captured, applySelection = hot)
+            if (hot && DEBUG_EXTRAS.any { captured.hasExtra(it) }) {
+                setIntent(captured)
+                pendingBootIntents.addFirst(Intent(captured) to false)
+                debugRecreatePending = true
+                bootReady = false
+                recreate()
+                return
+            }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putParcelableArrayList("dsh.pendingBootIntents", ArrayList(pendingBootIntents.map { it.first }))
+        outState.putBooleanArray("dsh.pendingBootHot", pendingBootIntents.map { it.second }.toBooleanArray())
+        outState.putBoolean("dsh.debugRecreatePending", debugRecreatePending)
+        super.onSaveInstanceState(outState)
+    }
+
+    /** M84-F：所有导入插件一起开/关 + 当前名单落盘（空壳/全装配验收）。 */
+    private fun handleUserPluginDebugIntent(intent: Intent) {
+        val off = intent.getBooleanExtra("dsh_plugins_all_off", false)
+        val on = intent.getBooleanExtra("dsh_plugins_all_on", false)
+        val dump = intent.getStringExtra("dsh_dump_plugins")
+        // M84-H：单个插件开/关（验常驻运行时随开关起停 + 投影值收回）
+        val offId = intent.getStringExtra("dsh_plugin_off")
+        val onId = intent.getStringExtra("dsh_plugin_on")
+        val projectionDump = intent.getStringExtra("dsh_dump_projections")
+        if (off || on || !dump.isNullOrBlank()) appVm.applyDebugUserPlugins(off, on, dump)
+        if (!offId.isNullOrBlank() || !onId.isNullOrBlank()) {
+            appVm.applyDebugPluginToggle(offId, onId, projectionDump)
+        }
+    }
+
+    /** M84-C：热切换模型供应商 / 提示词实现（不重建 Activity，下一次请求即生效）。 */
+    private fun handleProviderDebugIntent(intent: Intent) {
+        val provider = intent.getStringExtra("dsh_llm_provider")
+        val prompt = intent.getStringExtra("dsh_prompt_override")
+        val dump = intent.getStringExtra("dsh_dump_providers")
+        if (provider.isNullOrBlank() && prompt.isNullOrBlank() && dump.isNullOrBlank()) return
+        appVm.applyDebugProviders(provider, prompt)
+        appVm.dumpProviders(dump)
+    }
+
+    /** M84-C2：把当前会话存储实现/活动会话/磁盘会话数落盘（热启动即可，不重建 Activity）。 */
+    private fun handleSessionStoreDebugIntent(intent: Intent) {
+        val dump = intent.getStringExtra("dsh_dump_sessions") ?: return
+        if (dump.isBlank()) return
+        appVm.dumpSessionStore(dump)
+    }
+
+    /** 内置插件验收通道（仅 debug）：同进程反复 `am start` 即可改开关并落盘 tools[]。 */
+    private fun handleBuiltinDebugIntent(intent: Intent) {
+        val off = intent.getStringExtra("dsh_builtin_off")
+        val on = intent.getStringExtra("dsh_builtin_on")
+        val reset = intent.getBooleanExtra("dsh_builtin_reset", false)
+        val dump = intent.getStringExtra("dsh_dump_tools")
+        if (off.isNullOrBlank() && on.isNullOrBlank() && !reset && dump.isNullOrBlank()) return
+        appVm.applyDebugBuiltin(off, on, reset, dump)
+    }
+
+    /** M84-H：常驻 JS 运行时/会话投影落盘（`--es dsh_dump_projections <绝对路径>`）。 */
+    private fun handleProjectionDebugIntent(intent: Intent) {
+        val dump = intent.getStringExtra("dsh_dump_projections") ?: return
+        if (dump.isBlank()) return
+        appVm.dumpProjections(dump)
+    }
+
+    /**
+     * M85-A 壳验收（仅 debug）：
+     * - `--es dsh_shell <插件id[#壳id]|native>`：冷启在 onCreate 之前写 pref；热启动直接切；
+     * - `--es dsh_shell_list <绝对路径>`：等常驻运行时/mount 落定后把壳清单和当前树状态落盘。
+     */
+    private fun handleShellDebugIntent(intent: Intent, applySelection: Boolean) {
+        if (applySelection) {
+            intent.getStringExtra("dsh_shell")?.takeIf { it.isNotBlank() }?.let { value ->
+                appVm.setActiveShell(appVm.resolveShellTarget(value))
+            }
+        }
+        intent.getStringExtra("dsh_shell_list")?.takeIf { it.isNotBlank() }?.let { path ->
+            window.decorView.postDelayed({ appVm.dumpShells(path) }, 3_500)
+        }
+        // M85-D：回合插件选择/清单（与 dsh_shell 同一套热启动通道；冷启时 onCreate 会先写 pref）。
+        if (applySelection) {
+            intent.getStringExtra("dsh_agent")?.takeIf { it.isNotBlank() }?.let { value ->
+                appVm.setActiveAgent(value.trim())
+            }
+        }
+        intent.getStringExtra("dsh_agent_list")?.takeIf { it.isNotBlank() }?.let { path ->
+            window.decorView.postDelayed({ appVm.dumpAgents(path) }, 3_500)
+        }
+        // M85-E：存储 / 提示词 / 模型三角色热切换 + 清单落盘。
+        if (applySelection) {
+            intent.getStringExtra("dsh_storage")?.takeIf { it.isNotBlank() }?.let { value ->
+                appVm.setActiveStorage(value.trim())
+            }
+            intent.getStringExtra("dsh_prompt")?.takeIf { it.isNotBlank() }?.let { value ->
+                appVm.setActivePrompt(value.trim())
+            }
+            intent.getStringExtra("dsh_model")?.takeIf { it.isNotBlank() }?.let { value ->
+                if (value.equals("off", ignoreCase = true)) appVm.restoreBuiltinModel()
+                else appVm.setActiveModel(value.trim())
+            }
+        }
+        intent.getStringExtra("dsh_roles_list")?.takeIf { it.isNotBlank() }?.let { path ->
+            window.decorView.postDelayed({ appVm.dumpRoles(path) }, 3_500)
+        }
+        intent.getStringExtra("dsh_plugin_dev_test")?.takeIf { it.isNotBlank() }?.let { path ->
+            appVm.runPluginDevSelfTest(path)
+        }
+        intent.getStringExtra("dsh_context_usage")?.takeIf { it.isNotBlank() }?.let { path ->
+            appVm.dumpContextUsage(path)
+        }
+        intent.getStringExtra("dsh_loading_dev_test")?.takeIf { it.isNotBlank() }?.let { appVm.runLoadingDevSelfTest(it) }
+        intent.getStringExtra("dsh_loading")?.takeIf { it.isNotBlank() }?.let { value ->
+            if (value == "default" || value == "native") appVm.restoreBuiltinLoading() else appVm.selectLoading(value)
+        }
+        intent.getStringExtra("dsh_loading_list")?.takeIf { it.isNotBlank() }?.let { appVm.dumpLoading(it) }
+        intent.getStringExtra("dsh_ui_probe")?.takeIf { it.isNotBlank() }?.let { appVm.dumpUiProbeState(it) }
+        intent.getStringExtra("dsh_queue_test")?.takeIf { it.isNotBlank() }?.let { appVm.runPromptQueueDeviceProbe(it) }
+        intent.getStringExtra("dsh_remote_test")?.takeIf { it.isNotBlank() }?.let { appVm.runRemoteConversationDeviceProbe(it) }
+        // M85-F：能力插件（capability/v1）清单 / 调用验收。
+        intent.getStringExtra("dsh_capability_list")?.takeIf { it.isNotBlank() }?.let { path ->
+            window.decorView.postDelayed({ appVm.dumpCapabilities(path) }, 3_500)
+        }
+        intent.getStringExtra("dsh_capability_test")?.takeIf { it.isNotBlank() }?.let { path ->
+            window.decorView.postDelayed({ appVm.runCapabilityTest(path) }, 3_500)
+        }
+    }
+
+    /**
+     * M84-B 页面验收通道（仅 debug）：
+     * - `--es dsh_open_screen <页面id>`：热启动直接落页面（不再 recreate；关掉的页面会被路由拦回）；
+     * - `--es dsh_dump_pages <绝对路径>`：把 22 个页面的归属/开关落盘。
+     */
+    private fun handlePageDebugIntent(intent: Intent) {
+        intent.getStringExtra("dsh_open_screen")?.takeIf { it.isNotBlank() }?.let { name ->
+            appVm.requestDebugScreen(name.trim())
+        }
+        intent.getStringExtra("dsh_dump_pages")?.takeIf { it.isNotBlank() }?.let { path ->
+            appVm.applyDebugPages(path.trim())
         }
     }
 
@@ -324,6 +561,11 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // M84-A：内置插件验收不重建 Activity（VM 里的开关直接改，tools[] 现算）
+        if (BuildConfig.DEBUG) {
+            pendingBootIntents.addLast(Intent(intent) to true)
+            drainBootIntents()
+        }
         // 悬浮球开关不需要重建 Activity：热启动直接起/停服务
         if (intent.getBooleanExtra("dsh_floating", false)) {
             xin.dshaa.nativeapp.device.floating.FloatingBallService.start(this)
@@ -344,15 +586,12 @@ class MainActivity : ComponentActivity() {
                 600,
             )
         }
-        if (BuildConfig.DEBUG && DEBUG_EXTRAS.any { intent.hasExtra(it) }) {
-            recreate()
-        }
+        // VM-dependent debug actions/recreate are drained only after runtime readiness.
     }
 
     private companion object {
         val DEBUG_EXTRAS = listOf(
             "dsh_send",
-            "dsh_open_screen",
             "dsh_open_session",
             "dsh_goal",
             "dsh_import_zip",
@@ -378,6 +617,8 @@ class MainActivity : ComponentActivity() {
             "dsh_overflow_once",
             "dsh_image_budget_bytes",
             "dsh_dump_summary_request",
+            "dsh_remote_url",
+            "dsh_remote_token",
         )
     }
 }

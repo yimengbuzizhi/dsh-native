@@ -1,0 +1,9 @@
+{
+  "id": "m85e.mark-prompt",
+  "name": "M85-E 标记提示词",
+  "version": "1.0.0",
+  "description": "prompt/v1 验收：同 id 接管 builtin.prompt.dsh，在内置拼装结果后追加验收标记",
+  "main": "index.js",
+  "format": "dsh",
+  "permissions": ["prompt"]
+}

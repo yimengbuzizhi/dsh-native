@@ -1,0 +1,391 @@
+{
+  "batch": "M84-E2",
+  "date": "2026-11-13",
+  "device": "OPPO A55 5G（PEMM00），Android 13，720×1600",
+  "method": "真机 adb：每个插件用 --es dsh_plugin_call 调一次工具（参数走 base64），UI 插件用 --es dsh_client_plugin 打开；原始结果取 logcat tag DshPlugin / DshClientHost / DshClientHostWeb。未跑的一律标 not_run，不写“通过”。",
+  "capabilityVersion": "m84.2",
+  "capabilities": {
+    "total": 26,
+    "implemented": 24,
+    "newInE2": ["llm.register（配置式）", "ui.route（元数据 + 打开插件 dsh.client）"],
+    "stillUnsupported": ["ui.view", "session.projections"]
+  },
+  "summary": {
+    "plugins": 18,
+    "primaryCommunityPlugins": 10,
+    "toolCalls": 13,
+    "toolOk": 11,
+    "toolError": 1,
+    "toolTimeout": 1,
+    "uiOpenAttempts": 4,
+    "uiApplied": 1,
+    "uiFixturesWithoutClientEntry": 3
+  },
+  "plugins": [
+    {
+      "id": "dsh-hello",
+      "kind": "DSH",
+      "primary": true,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 1,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "toolTest": {
+        "name": "hello",
+        "args": {"name": "matrix"},
+        "ok": true,
+        "output": "Hello, matrix!"
+      },
+      "note": "标准 DSH 工具插件：安装/启停/工具注入/直接调用全通。"
+    },
+    {
+      "id": "whale-compat-test",
+      "kind": "DSH",
+      "primary": true,
+      "enabled": true,
+      "dryRun": "ok（reload 后）",
+      "tools": 1,
+      "promptSections": 1,
+      "contexts": 1,
+      "commands": 1,
+      "unsupported": ["sessionProjections"],
+      "clientUi": true,
+      "clientEntry": null,
+      "toolTest": {
+        "name": "compat_echo",
+        "args": {"text": "matrix"},
+        "ok": true,
+        "output": "compat echo: matrix"
+      },
+      "note": "E2 重载后：提示词段/上下文/命令仍在；ctx.llm.register({})（无 id、无 stream）被忽略不再误报，unsupported 从 ctx.on+llm.register+sessionProjections 收敛为 sessionProjections。dsh.client 清单存在但没有 client 入口，打不开界面。"
+    },
+    {
+      "id": "operit-time",
+      "kind": "Operit/ToolPkg",
+      "primary": true,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 3,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "toolTest": {
+        "name": "get_time",
+        "args": {},
+        "ok": true,
+        "output": "{\"timestamp\":1794571740688,\"iso\":\"2026-11-13T12:09:00.688Z\",\"local\":\"11/13/2026, 08:09:00 PM\",\"date\":{\"year\":2026,\"month\":11,\"day\":13,\"weekday\":\"11/13/2026\"},\"time\":{\"hours\":20,\"minutes\":9,\"seconds\":0}}"
+      },
+      "note": "ToolPkg 包装路径 + 无权限工具，正常。"
+    },
+    {
+      "id": "operit-env-demo",
+      "kind": "Operit/ToolPkg",
+      "primary": true,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 2,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "toolTest": {
+        "name": "env_echo",
+        "args": {},
+        "ok": true,
+        "output": "{\"apiKey\":\"demo-key-123\",\"apiKeyLength\":12,\"baseUrl\":\"https://api.example.com\",\"notDeclared\":\"\",\"notDeclaredIsEmptyString\":true}"
+      },
+      "note": "验证 manifest Config 默认值进入 env（示例值，非真实 secret）。"
+    },
+    {
+      "id": "operit-extended-file-tools",
+      "kind": "Operit/ToolPkg",
+      "primary": true,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 9,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "grants": ["fs:any", "fs:workspace"],
+      "toolTest": {
+        "name": "file_exists",
+        "args": {"path": "/sdcard"},
+        "ok": true,
+        "output": "{\"path\":\"/sdcard\",\"exists\":true,\"isDirectory\":true,\"size\":0,\"env\":\"android\"}"
+      },
+      "note": "fs:any 已授权；文件系统桥可用。"
+    },
+    {
+      "id": "operit-extended-http",
+      "kind": "Operit/ToolPkg",
+      "primary": true,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 4,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "grants": ["net:any"],
+      "toolTest": {
+        "name": "http_request",
+        "args": {"url": "https://example.com", "method": "GET"},
+        "ok": null,
+        "status": "timeout",
+        "output": null
+      },
+      "note": "两次真机调用，第二次等到 15s 仍没有 debug call 日志；宿主进程存活、无崩溃。判定为 QuickJS 内网络调用未结算，列入未解决项，不写“通过”。"
+    },
+    {
+      "id": "operit-zhipu-search",
+      "kind": "Operit/ToolPkg",
+      "primary": true,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 3,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "grants": [],
+      "toolTest": {
+        "name": "search",
+        "args": {"query": "deepseek"},
+        "ok": false,
+        "output": "错误: 搜索失败：未设置 API Key，请配置 ZHIPU_SEARCH_API_KEY 环境变量或在调用时传入 api_key 参数"
+      },
+      "note": "工具能调用、错误能原样返回；插件把错误放在正常 text 里，isError=false。net:any 未授权，本次错误在 API Key 之前就返回。"
+    },
+    {
+      "id": "operit-system-tools",
+      "kind": "Operit/ToolPkg",
+      "primary": true,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 33,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "grants": ["device", "shell", "fs:any", "fs:workspace"],
+      "toolTest": {
+        "name": "get_device_info",
+        "args": {},
+        "ok": true,
+        "output": "{\"ok\":true,\"deviceId\":\"<redacted>\",\"model\":\"PEMM00\",\"manufacturer\":\"OPPO\",\"androidVersion\":\"13\",\"sdkVersion\":33,\"screenResolution\":\"720x1504\",\"densityDpi\":320,\"availableMemory\":\"2.9 GB\",\"availableStorage\":\"79.4 GB\"}"
+      },
+      "note": "device 权限已授权；deviceId 在文档里打码。33 个工具只抽一个执行，其余只验证注册。"
+    },
+    {
+      "id": "@dsh-external/dsh-client-ui-pet",
+      "kind": "DSH UI",
+      "primary": true,
+      "enabled": false,
+      "dryRun": "ok",
+      "tools": 0,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": true,
+      "clientEntry": "lib/client.js",
+      "toolTest": null,
+      "uiTest": {
+        "openResult": "正在打开",
+        "logs": [
+          "client host ready plugin=@dsh-external/dsh-client-ui-pet entry=lib/client.js",
+          "plugin applied: @dsh-external/dsh-client-ui-pet name=@dsh-external/dsh-client-ui-pet slots=0",
+          "plugin page ready: @dsh-external/dsh-client-ui-pet"
+        ],
+        "ok": true
+      },
+      "note": "真实社区 UI 插件（exports[\"./client\"] → lib/client.js）：插件自己的代码被加载并 apply。日志另报 1 个缺图 media/pet/idle_0/42.png（插件资源少一帧，不影响启动）。"
+    },
+    {
+      "id": "dsh-dafeiyu",
+      "kind": "DSH UI 夹具",
+      "primary": true,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 0,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": true,
+      "clientEntry": null,
+      "toolTest": null,
+      "uiTest": {
+        "openResult": "这个插件没有可运行的浏览器半侧：找不到 client 入口（lib/client.js 等）",
+        "ok": false
+      },
+      "note": "清单声明 dsh.client，但目录里没有客户端 bundle（验收夹具），打不开界面；错因如实返回。"
+    },
+    {
+      "id": "dsh-ventus-whale",
+      "kind": "DSH UI 夹具",
+      "primary": false,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 0,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": true,
+      "clientEntry": null,
+      "toolTest": null,
+      "uiTest": {
+        "openResult": "这个插件没有可运行的浏览器半侧：找不到 client 入口（lib/client.js 等）",
+        "ok": false
+      },
+      "note": "同 dafeiyu：夹具只有 index.js + cordis.patch.yml。"
+    },
+    {
+      "id": "dsh-client-ui-pet",
+      "kind": "DSH UI 夹具",
+      "primary": false,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 0,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": true,
+      "clientEntry": null,
+      "toolTest": null,
+      "uiTest": {
+        "openResult": "这个插件没有可运行的浏览器半侧：找不到 client 入口（lib/client.js 等）",
+        "ok": false
+      },
+      "note": "同 dafeiyu。"
+    },
+    {
+      "id": "zstd-demo",
+      "kind": "DSH 验收插件",
+      "primary": false,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 1,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "grants": ["fs:workspace"],
+      "toolTest": {
+        "name": "zstd_roundtrip",
+        "args": {"path": "matrix-zstd.txt"},
+        "ok": false,
+        "output": "Error: 文件不存在：matrix-zstd.txt"
+      },
+      "note": "相对路径按插件目录解析，不是工作区；本次用相对路径触发错误，绝对路径未再验。错误原样回给模型。"
+    },
+    {
+      "id": "bridge-denied",
+      "kind": "DSH 验收插件",
+      "primary": false,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 1,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "toolTest": {
+        "name": "bridge_denied",
+        "args": {},
+        "ok": true,
+        "output": "ocr:denied:插件没有设备权限（OCR 需要 manifest 声明 device 并在插件页确认） | zstd:denied:插件没有文件权限（manifest 里要声明 fs:workspace）"
+      },
+      "note": "权限门仍按预期拒绝；拒绝原因原样返回。"
+    },
+    {
+      "id": "svc-provider-a",
+      "kind": "DSH 服务插件",
+      "primary": false,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 1,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "toolTest": {
+        "name": "svc_a_now",
+        "args": {},
+        "ok": true,
+        "output": "A clock now=1234567890"
+      },
+      "note": "ctx.provide 快照可用。"
+    },
+    {
+      "id": "svc-consumer-b",
+      "kind": "DSH 服务插件",
+      "primary": false,
+      "enabled": true,
+      "dryRun": "ok",
+      "tools": 1,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "toolTest": {
+        "name": "svc_b_echo",
+        "args": {},
+        "ok": true,
+        "output": "B injected clock: {\"now\":1234567890,\"from\":\"A\"}"
+      },
+      "note": "ctx.inject 回调拿到 A 提供的服务。"
+    },
+    {
+      "id": "m84e2-demo",
+      "kind": "DSH 验收插件（本批）",
+      "primary": false,
+      "enabled": false,
+      "dryRun": "ok",
+      "tools": 1,
+      "promptSections": 0,
+      "contexts": 0,
+      "commands": 0,
+      "unsupported": ["ui.registerView", "sessionProjections"],
+      "clientUi": true,
+      "clientEntry": "client.js",
+      "llmProviders": ["e2.demo.provider", "e2.demo.probe"],
+      "routes": ["/m84e2"],
+      "toolTest": null,
+      "note": "E2 验收插件：llm.register 2 条（一条有效模型、一条无效模型探针）、ui.registerRoute 1 条、ui.registerView/sessionProjections 明确 unsupported、自带 client.js 可打开。验收后已停用。"
+    },
+    {
+      "id": "suppress-runtime-demo",
+      "kind": "DSH 验收插件（E1）",
+      "primary": false,
+      "enabled": false,
+      "dryRun": "ok",
+      "tools": 1,
+      "promptSections": 0,
+      "contexts": 1,
+      "commands": 0,
+      "unsupported": [],
+      "clientUi": false,
+      "toolTest": null,
+      "note": "E1 遗留演示插件，保持停用。"
+    }
+  ]
+}

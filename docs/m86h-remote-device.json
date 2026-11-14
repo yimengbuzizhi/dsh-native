@@ -1,0 +1,291 @@
+{
+  "fixture": "M86-H-device-remote-conversation",
+  "version": 1,
+  "running": false,
+  "completed": true,
+  "passed": true,
+  "checks": [
+    {
+      "id": "local_state_identity_before",
+      "passed": true
+    },
+    {
+      "id": "fixture_backends_idle_before_reset",
+      "passed": true
+    },
+    {
+      "id": "two_dedicated_profiles_created",
+      "passed": true
+    },
+    {
+      "id": "a_connected_list",
+      "passed": true
+    },
+    {
+      "id": "a_shared_follow_ready",
+      "passed": true
+    },
+    {
+      "id": "remote_capabilities_hide_local_unknown_data",
+      "passed": true
+    },
+    {
+      "id": "a_first_target_is_fixture",
+      "passed": true
+    },
+    {
+      "id": "a_first_accepted_for_submission",
+      "passed": true
+    },
+    {
+      "id": "a_first_durable_echo_and_turn_end",
+      "passed": true
+    },
+    {
+      "id": "a_tool_result_pairing",
+      "passed": true
+    },
+    {
+      "id": "b_connected_list",
+      "passed": true
+    },
+    {
+      "id": "b_shared_follow_ready",
+      "passed": true
+    },
+    {
+      "id": "b_first_target_is_fixture",
+      "passed": true
+    },
+    {
+      "id": "b_first_accepted_for_submission",
+      "passed": true
+    },
+    {
+      "id": "b_first_durable_echo_and_turn_end",
+      "passed": true
+    },
+    {
+      "id": "same_session_and_tool_ids_are_namespaced",
+      "passed": true
+    },
+    {
+      "id": "a_b_message_contents_stay_separate",
+      "passed": true
+    },
+    {
+      "id": "local_state_and_draft_after_a_b",
+      "passed": true
+    },
+    {
+      "id": "a_return_connected_list",
+      "passed": true
+    },
+    {
+      "id": "a_return_shared_follow_ready",
+      "passed": true
+    },
+    {
+      "id": "a_draft_preserved",
+      "passed": true
+    },
+    {
+      "id": "b_return_connected_list",
+      "passed": true
+    },
+    {
+      "id": "b_return_shared_follow_ready",
+      "passed": true
+    },
+    {
+      "id": "b_draft_preserved",
+      "passed": true
+    },
+    {
+      "id": "a_questions_connected_list",
+      "passed": true
+    },
+    {
+      "id": "a_questions_shared_follow_ready",
+      "passed": true
+    },
+    {
+      "id": "timed_questions_target_is_fixture",
+      "passed": true
+    },
+    {
+      "id": "timed_questions_accepted_for_submission",
+      "passed": true
+    },
+    {
+      "id": "timed_multi_questions_remain_answerable_after_pending",
+      "passed": true
+    },
+    {
+      "id": "multi_select_custom_answer_delivered_once",
+      "passed": true
+    },
+    {
+      "id": "answer_payload_names_every_question",
+      "passed": true
+    },
+    {
+      "id": "hold_target_is_fixture",
+      "passed": true
+    },
+    {
+      "id": "hold_accepted_for_submission",
+      "passed": true
+    },
+    {
+      "id": "running_remote_accepts_queue",
+      "passed": true
+    },
+    {
+      "id": "running_queue_target_is_fixture",
+      "passed": true
+    },
+    {
+      "id": "running_queue_accepted_for_submission",
+      "passed": true
+    },
+    {
+      "id": "running_queue_wire_mode",
+      "passed": true
+    },
+    {
+      "id": "wire_uses_only_existing_queue_mode",
+      "passed": true
+    },
+    {
+      "id": "remote_stop_reaches_cancel_and_queued_turn_finishes",
+      "passed": true
+    },
+    {
+      "id": "websocket_reconnects_without_prompt_replay",
+      "passed": true
+    },
+    {
+      "id": "http_reject_target_is_fixture",
+      "passed": true
+    },
+    {
+      "id": "http_reject_accepted_for_submission",
+      "passed": true
+    },
+    {
+      "id": "http_reject_restores_original_draft",
+      "passed": true
+    },
+    {
+      "id": "rejected_draft_survives_reconnect",
+      "passed": true
+    },
+    {
+      "id": "rejected_prompt_not_retried_or_accepted",
+      "passed": true
+    },
+    {
+      "id": "accept_drop_target_is_fixture",
+      "passed": true
+    },
+    {
+      "id": "accept_drop_accepted_for_submission",
+      "passed": true
+    },
+    {
+      "id": "unknown_ack_temporarily_restores_original_draft",
+      "passed": true
+    },
+    {
+      "id": "accept_drop_durable_echo_and_turn_end",
+      "passed": true
+    },
+    {
+      "id": "durable_rpc_echo_clears_only_recovered_draft",
+      "passed": true
+    },
+    {
+      "id": "accept_drop_history_reconnect_ready",
+      "passed": true
+    },
+    {
+      "id": "accepted_prompt_not_automatically_resent",
+      "passed": true
+    },
+    {
+      "id": "slow_a_operations_admitted",
+      "passed": true
+    },
+    {
+      "id": "b_during_slow_a_connected_list",
+      "passed": true
+    },
+    {
+      "id": "b_during_slow_a_shared_follow_ready",
+      "passed": true
+    },
+    {
+      "id": "late_a_http_callbacks_do_not_pollute_b",
+      "passed": true
+    },
+    {
+      "id": "fixture_bad_credential_saved",
+      "passed": true
+    },
+    {
+      "id": "failed_remote_connection_retains_draft",
+      "passed": true
+    },
+    {
+      "id": "failed_remote_submit_keeps_draft",
+      "passed": true
+    },
+    {
+      "id": "fixture_credential_repaired",
+      "passed": true
+    },
+    {
+      "id": "repaired_remote_create_transfers_unsent_draft",
+      "passed": true
+    },
+    {
+      "id": "all_fixture_prompts_sent_exactly_once",
+      "passed": true
+    },
+    {
+      "id": "local_reference_and_probe_draft_unchanged_at_end",
+      "passed": true
+    },
+    {
+      "id": "fixture_profiles_removed_and_active_restored",
+      "passed": true
+    },
+    {
+      "id": "local_reference_and_original_draft_restored",
+      "passed": true
+    },
+    {
+      "id": "local_jsonl_file_set_and_hashes_unchanged",
+      "passed": true
+    }
+  ],
+  "passedCount": 66,
+  "total": 66,
+  "createdProfileCount": 2,
+  "createdLocalSessions": 0,
+  "localSubmitCalls": 0,
+  "fixtureExpectedPromptCalls": {
+    "a": 6,
+    "b": 1
+  },
+  "localJsonl": {
+    "beforeCount": 147,
+    "beforeDigest": "78a3e396c92e01fcf6ab9e5c8fe08b373c47b894c4e82c64b97cc4c68f0a1acd",
+    "afterCount": 147,
+    "afterDigest": "78a3e396c92e01fcf6ab9e5c8fe08b373c47b894c4e82c64b97cc4c68f0a1acd",
+    "mapEqual": true
+  },
+  "screenshotsVerified": false,
+  "realDesktopVerified": false
+}

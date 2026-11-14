@@ -1,0 +1,7 @@
+{
+  "name": "suppress-runtime-demo",
+  "version": "1.0.0",
+  "description": "M84-E1 验收：ctx.systemPrompt.suppressRuntimeContext + 一个工具",
+  "main": "index.js",
+  "format": "esm"
+}

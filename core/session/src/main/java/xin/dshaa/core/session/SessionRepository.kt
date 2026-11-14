@@ -35,6 +35,23 @@ object WorkspaceSlug {
 }
 
 /**
+ * 回收站里的一条（M79，用户 2026-11-12「到现在为止还不能彻底删除会话」）。
+ * 目录名是 `<id>-<删除时间戳>`，[id] 从会话头里读，[title] 解不出来时退化成「已删除的会话」。
+ *
+ * M84-C2 从 `SessionRepository.TrashedSession` 提到顶层：它现在是
+ * [SessionStore] 契约的一部分，文件实现与内存实现返回同一种条目。
+ */
+data class TrashedSession(
+    val dirName: String,
+    val id: String,
+    val title: String,
+    /** 删除时间（目录名后缀；解析不出来时用目录 mtime）。 */
+    val deletedAt: Long,
+    /** 整个会话目录的字节数，用于「彻底删除」时告诉用户释放了多少。 */
+    val bytes: Long,
+)
+
+/**
  * 会话仓库：负责目录布局、读写、投影。
  *
  * 布局与上游一致：`<root>/<workspace-slug>/<session-id>/session.v4.jsonl.zstd`
@@ -168,20 +185,8 @@ class SessionRepository(val root: File) {
     }
 
     /**
-     * 回收站里的一条（M79，用户 2026-11-12「到现在为止还不能彻底删除会话」）。
-     * 目录名是 `<id>-<删除时间戳>`，[id] 从会话头里读，[title] 解不出来时退化成「已删除的会话」。
+     * 回收站目录（`.trash/`），不存在就建。
      */
-    data class TrashedSession(
-        val dirName: String,
-        val id: String,
-        val title: String,
-        /** 删除时间（目录名后缀；解析不出来时用目录 mtime）。 */
-        val deletedAt: Long,
-        /** 整个会话目录的字节数，用于「彻底删除」时告诉用户释放了多少。 */
-        val bytes: Long,
-    )
-
-    /** 回收站目录（`.trash/`），不存在就建。 */
     private fun trashDir(): File = File(root, TRASH_DIR).apply { mkdirs() }
 
     /** 列出回收站；解不开头的目录也列出来（id 用目录名），保证用户能删掉它。 */
@@ -386,7 +391,7 @@ class SessionRepository(val root: File) {
 }
 
 /** 一个已打开的会话：可继续 append 事件。 */
-class SessionSession(
+open class SessionSession(
     val file: File,
     val header: SessionHeader,
     initialEvents: List<SessionEvent>,
@@ -396,6 +401,22 @@ class SessionSession(
     @Volatile
     var events: List<SessionEvent> = initialEvents
         private set
+
+    /**
+     * M84-H：每条事件落库后的同步回调（插件会话投影按事件折叠）。
+     *
+     * 回调在 append 的调用线程上跑，**实现方必须立刻返回**（插件事件投递是异步入队）；
+     * 回调异常被吞掉，不影响落库。
+     */
+    private val eventListeners = java.util.concurrent.CopyOnWriteArrayList<(SessionEvent) -> Unit>()
+
+    fun addEventListener(listener: (SessionEvent) -> Unit) {
+        eventListeners.add(listener)
+    }
+
+    fun removeEventListener(listener: (SessionEvent) -> Unit) {
+        eventListeners.remove(listener)
+    }
 
     private var seq: Long = (initialEvents.mapNotNull { it.seq }.maxOrNull() ?: -1) + 1
 
@@ -426,11 +447,38 @@ class SessionSession(
         val mySeq = seq++
         val now = System.currentTimeMillis()
         val line = SessionCodec.encodeEvent(type, mySeq, now, data, surfaceOp, sourceEventSeqs)
+        persist(line)
+        val appended = SessionEvent(type, mySeq, now, data, surfaceOp)
+        events = events + appended
+        if (eventListeners.isNotEmpty()) {
+            for (listener in eventListeners) {
+                try {
+                    listener(appended)
+                } catch (t: Throwable) {
+                    // 监听者（插件投影投递）出问题不能让事件落库失败。
+                }
+            }
+        }
+        return mySeq
+    }
+
+    /**
+     * 把一行事件写进存储。默认实现追加到 [file] 的 zstd 帧流。
+     *
+     * M84-C2：`SessionStore` 的另一种实现（[MemorySessionStore]）覆盖它把事件留在内存里，
+     * 从而证明会话**事件存储**也不是写死文件（`appendRaw` 的 seq/events 语义保持不变）。
+     */
+    protected open fun persist(line: String) {
         FileOutputStream(file, true).use { out ->
             out.write(ZstdFrames.compressFrame(line + "\n"))
         }
-        events = events + SessionEvent(type, mySeq, now, data, surfaceOp)
-        return mySeq
+    }
+
+    /** Persisted outbox acknowledgments must follow a durable user/message, not only a closed stream. */
+    @Synchronized
+    open fun flushDurable() {
+        check(!readOnly && file.isFile) { "会话尚未持久化" }
+        FileOutputStream(file, true).use { it.fd.sync() }
     }
 
     fun startTurn(): Int {

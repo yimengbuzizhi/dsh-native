@@ -12,11 +12,14 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
@@ -35,8 +39,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.pow
@@ -59,6 +65,8 @@ fun FloatingOrb(
     size: Dp = 60.dp,
     active: Boolean = false,
     fadingOut: Boolean = false,
+    /** M84-D：球插口的角标（插件提供）；null = 不显示。 */
+    badge: FloatingBadge? = null,
     onTap: () -> Unit = {},
     onDrag: (Float, Float) -> Unit = { _, _ -> },
     onDragEnd: () -> Unit = {},
@@ -325,6 +333,27 @@ fun FloatingOrb(
                     size = Size(baseRadius, baseRadius),
                     style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round),
                 )
+            }
+        }
+        // M84-D：球插口的角标（红点/未读数由插件决定；默认无）。
+        badge?.let { mark ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = -(size * 0.08f), y = size * 0.02f)
+                    .size(size * 0.42f)
+                    .clip(CircleShape)
+                    .background(mark.color),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (mark.text.isNotBlank()) {
+                    Text(
+                        mark.text,
+                        color = Color.White,
+                        fontSize = (size.value * 0.22f).sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }

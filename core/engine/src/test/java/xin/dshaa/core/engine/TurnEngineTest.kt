@@ -36,6 +36,7 @@ import xin.dshaa.core.model.toContentBlock
 import xin.dshaa.core.model.toImageRef
 import xin.dshaa.core.protocol.ApiRequest
 import xin.dshaa.core.protocol.ApiTool
+import xin.dshaa.core.protocol.TokenUsage
 import xin.dshaa.core.protocol.ContentBlock as ApiBlock
 import xin.dshaa.core.session.GoalActivationState
 import xin.dshaa.core.session.GoalStore
@@ -1260,6 +1261,475 @@ class TurnEngineTest {
         assertTrue(!retried.contains("MIDDLE-UNIQUE-"))
     }
 
+    // ---------------- M84-C2：EngineHooks ----------------
+
+    @Test
+    fun hooksSeeStepAndToolBoundariesInOrder() = runBlocking {
+        responses += toolCallResponse("call-1", "fake_tool", "{}")
+        responses += textResponse("done")
+        val seen = mutableListOf<String>()
+        val hooks = EngineHooks(
+            onStepStart = { seen += "step-start:${it.turn}.${it.step}" },
+            onToolStart = { seen += "tool-start:${it.name}" },
+            onToolEnd = { call, result -> seen += "tool-end:${call.name}:${result.isError}" },
+            onStepEnd = { seen += "step-end:${it.turn}.${it.step}" },
+        )
+
+        val outcome = engine(hooks = hooks).startTurn(ui, TurnInput("U1"))
+
+        assertEquals(TurnOutcome.COMPLETED, outcome)
+        // 一轮两步：工具步（step 1）在前，收口步（step 2）在后；钩子顺序与事件顺序一致。
+        assertEquals(
+            listOf(
+                "step-start:1.1",
+                "tool-start:fake_tool",
+                "tool-end:fake_tool:false",
+                "step-end:1.1",
+                "step-start:1.2",
+                "step-end:1.2",
+            ),
+            seen,
+        )
+    }
+
+    @Test
+    fun hooksReportFailureAndOverflowRetry() = runBlocking {
+        val user1 = "U1-" + "B".repeat(20_000)
+        val reply1 = "A1-" + "A".repeat(20_000)
+        val user2 = "C".repeat(4_000)
+        responses += textResponse(reply1)
+        responses += listOf(
+            LlmEvent.Failed(
+                "This model's maximum context length is 200000 tokens. However, your messages resulted in " +
+                    "260000 tokens. Please reduce the length of the messages.",
+                code = "invalid_request_error",
+                status = 400,
+            ),
+        )
+        responses += textResponse("SUMMARY")
+        responses += textResponse("done")
+        val errors = mutableListOf<EngineFailure>()
+        val retries = mutableListOf<EngineRetry>()
+        val hooks = EngineHooks(onError = { errors += it }, onRetry = { retries += it })
+
+        val e = engine(contextWindow = 200_000, hooks = hooks)
+        e.startTurn(ui, TurnInput(user1))
+        assertEquals(TurnOutcome.COMPLETED, e.startTurn(ui, TurnInput(user2)))
+
+        // 失败钩子拿到与 SSE 同源的 code/status；重试钩子只在压缩重发时触发一次。
+        assertEquals(1, errors.size)
+        assertEquals("invalid_request_error", errors.single().code)
+        assertEquals(400, errors.single().status)
+        assertEquals(
+            listOf(EngineRetry("context-overflow", 1, Compaction.MAX_OVERFLOW_RETRIES)),
+            retries,
+        )
+    }
+
+    @Test
+    fun hookStopDistinguishesUserStopFromInternalCancel() = runBlocking {
+        val emitted = CompletableDeferred<Unit>()
+        streamOverride = {
+            flow {
+                emit(LlmEvent.MessageStart("m", "deepseek-flash", 1))
+                emit(LlmEvent.BlockStart(0, "text", null, null))
+                emit(LlmEvent.TextDelta(0, "half "))
+                emitted.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val stops = mutableListOf<EngineStop>()
+        val stop = TurnStopState()
+        val engine = engine(hooks = EngineHooks(onStop = { stops += it }), stop = stop)
+
+        val job = launch(Dispatchers.Default) { engine.startTurn(ui, TurnInput("hi")) }
+        emitted.await()
+        stop.requested = true // 用户按停止
+        job.cancelAndJoin()
+
+        assertEquals(1, stops.size)
+        assertEquals("user", stops.single().reason)
+        assertTrue(stops.single().userRequested)
+        assertEquals(1, stops.single().turn)
+        assertEquals(1, stops.single().step)
+    }
+
+    @Test
+    fun hookStopReportsInternalCancel() = runBlocking {
+        val emitted = CompletableDeferred<Unit>()
+        streamOverride = {
+            flow {
+                emit(LlmEvent.MessageStart("m", "deepseek-flash", 1))
+                emit(LlmEvent.BlockStart(0, "text", null, null))
+                emit(LlmEvent.TextDelta(0, "half "))
+                emitted.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val stops = mutableListOf<EngineStop>()
+        val engine = engine(hooks = EngineHooks(onStop = { stops += it }))
+
+        val job = launch(Dispatchers.Default) { engine.startTurn(ui, TurnInput("hi")) }
+        emitted.await()
+        job.cancelAndJoin() // 切会话/关页面：没按停止
+
+        assertEquals(1, stops.size)
+        assertEquals("cancelled", stops.single().reason)
+        assertTrue(!stops.single().userRequested)
+    }
+
+    @Test
+    fun usageSnapshotsReplaceCumulativeOutputAndKeepMissingStopUsage() = runBlocking {
+        responses += listOf(
+            LlmEvent.MessageStart("m", "model", 100, TokenUsage(100, 0, 80, 8)),
+            LlmEvent.MessageDelta(null, 3),
+            LlmEvent.MessageDelta(null, 7),
+            LlmEvent.MessageDelta(null, 7),
+            LlmEvent.MessageDelta(null, 10),
+            LlmEvent.MessageDelta("end_turn", 0, TokenUsage()),
+            LlmEvent.MessageStop,
+        )
+        val order = mutableListOf<String>()
+        ui.onUsage = { order += it.status.name }
+        engine(onRequest = { number, _ -> order += "REQUEST:$number" }).startTurn(ui, TurnInput("hi"))
+        assertEquals(listOf("STARTED", "REQUEST:1"), order.take(2))
+        assertEquals(RequestUsage(1, TokenUsage(100, 10, 80, 8), RequestUsageStatus.COMPLETED), ui.requestUsages.last())
+        assertEquals(listOf(100 to 10), ui.tokenUsages)
+        assertEquals("100 in / 10 out", ui.lastUsage)
+    }
+
+    @Test
+    fun usageUnknownAndZeroDoNotReusePriorRequest() = runBlocking {
+        responses += textResponse("first")
+        responses += listOf(LlmEvent.MessageStart("m", "model", 0), LlmEvent.MessageDelta("end_turn", 0), LlmEvent.MessageStop)
+        responses += listOf(LlmEvent.MessageStart("m", "model", 0, TokenUsage(0)), LlmEvent.MessageDelta("end_turn", 0, TokenUsage(outputTokens = 0)), LlmEvent.MessageStop)
+        val e = engine()
+        e.startTurn(ui, TurnInput("one"))
+        e.startTurn(ui, TurnInput("two"))
+        assertEquals(TokenUsage(), ui.requestUsages.last().usage)
+        assertNull(ui.lastUsage)
+        e.startTurn(ui, TurnInput("three"))
+        assertEquals(TokenUsage(0, 0), ui.requestUsages.last().usage)
+        assertEquals("0 in / 0 out", ui.lastUsage)
+        assertEquals(listOf(10 to 5, 0 to 0), ui.tokenUsages)
+        assertTrue(ui.requestUsages.filter { it.status == RequestUsageStatus.STARTED }.all { it.usage == TokenUsage() })
+    }
+
+    @Test
+    fun failedAttemptReportsKnownUsageWithoutSuccessReward() = runBlocking {
+        responses += listOf(LlmEvent.MessageStart("m", "model", 100), LlmEvent.MessageDelta(null, 3), LlmEvent.Failed("network"))
+        assertEquals(TurnOutcome.ERROR, engine().startTurn(ui, TurnInput("hi")))
+        assertEquals(RequestUsage(1, TokenUsage(100, 3), RequestUsageStatus.FAILED), ui.requestUsages.last())
+        assertTrue(ui.tokenUsages.isEmpty())
+    }
+
+    @Test
+    fun cancelledAttemptReportsPartialUsageExactlyOnce() = runBlocking {
+        val ready = CompletableDeferred<Unit>()
+        streamOverride = {
+            flow {
+                emit(LlmEvent.MessageStart("m", "model", 100))
+                emit(LlmEvent.MessageDelta(null, 3))
+                ready.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val e = engine()
+        val job = launch(Dispatchers.Default) { e.startTurn(ui, TurnInput("hi")) }
+        ready.await()
+        job.cancelAndJoin()
+        assertEquals(RequestUsage(1, TokenUsage(100, 3), RequestUsageStatus.CANCELLED), ui.requestUsages.last())
+        assertEquals(1, ui.requestUsages.count { it.status == RequestUsageStatus.CANCELLED })
+        assertTrue(ui.requestUsages.none { it.status == RequestUsageStatus.COMPLETED || it.status == RequestUsageStatus.FAILED })
+        assertTrue(ui.tokenUsages.isEmpty())
+    }
+
+    @Test
+    fun imageOffloadRetryHasDistinctRequestAndDoesNotInheritUsage() = runBlocking {
+        responses += listOf(
+            LlmEvent.MessageStart("m", "model", 100),
+            LlmEvent.MessageDelta(null, 9),
+            LlmEvent.Failed("offload", code = ImageOffload.REQUIRED_CODE, offloadImages = 1),
+        )
+        responses += listOf(LlmEvent.MessageStart("retry", "model", 0), LlmEvent.MessageDelta("end_turn", 0), LlmEvent.MessageStop)
+        val ref = ImageRef("sha256:" + "a".repeat(64), "image/png", 4, 2, 2)
+        engine(imageBytes = { byteArrayOf(1, 2, 3, 4) }).startTurn(ui, TurnInput("hi", images = listOf(ref)))
+        val terminal = ui.requestUsages.filter { it.status == RequestUsageStatus.FAILED || it.status == RequestUsageStatus.COMPLETED }
+        assertEquals(listOf(RequestUsage(1, TokenUsage(100, 9), RequestUsageStatus.FAILED), RequestUsage(2, TokenUsage(), RequestUsageStatus.COMPLETED)), terminal)
+        assertTrue(ui.tokenUsages.isEmpty())
+    }
+
+    @Test
+    fun summaryUsageUsesSameSnapshotsAndOmitsUnknownFields() = runBlocking {
+        responses += listOf(
+            LlmEvent.MessageStart("m", "model", 100, TokenUsage(100, cacheReadInputTokens = 80)),
+            LlmEvent.TextDelta(0, "summary"),
+            LlmEvent.MessageDelta(null, 3),
+            LlmEvent.MessageDelta(null, 7),
+            LlmEvent.MessageDelta("end_turn", 0, TokenUsage()),
+        )
+        val e = engine()
+        val summary = e.summarizeCompaction(emptyList(), LlmConfig("fixture"))
+        assertEquals(100, summary.usage!!["inputTokens"]!!.jsonPrimitive.intOrNull)
+        assertEquals(7, summary.usage!!["outputTokens"]!!.jsonPrimitive.intOrNull)
+        assertEquals(107, summary.usage!!["totalTokens"]!!.jsonPrimitive.intOrNull)
+        assertEquals(80, summary.usage!!["cacheReadTokens"]!!.jsonPrimitive.intOrNull)
+        assertNull(summary.usage!!["cacheWriteTokens"])
+        responses += listOf(LlmEvent.TextDelta(0, "unknown"))
+        assertEquals(buildJsonObject {}, e.summarizeCompaction(emptyList(), LlmConfig("fixture")).usage)
+        assertTrue(ui.requestUsages.isEmpty(), "Summary accounting does not overwrite the main request display")
+    }
+
+    @Test
+    fun queuedHumanTurnRunsBeforeReminderAndGoal() = runBlocking {
+        val session = gateway.create()
+        GoalStore(session, activation = activation).create("goal", maxGoalRounds = 1)
+        val queued = ArrayDeque(listOf(TurnInput("queued human", promptId = "p-queue")))
+        var reminder = "reminder"
+        val acks = mutableListOf<String>()
+        repeat(4) { responses += textResponse("done-$it") }
+        engine(nextQueuedInput = { queued.removeFirstOrNull() },
+            nextSchedulePrompt = { reminder.takeIf { it.isNotEmpty() }?.also { reminder = "" } },
+            onInputDelivered = { id, seq ->
+                assertTrue(session.events.any { it.seq == seq && it.type == "user/message" })
+                acks += id
+            }).startTurn(ui, TurnInput("initial"))
+        val users = SessionCodec.messagesOf(session.events).filter { it.role == MessageRole.USER }
+        assertEquals(listOf("initial", "queued human", "reminder"), users.take(3).map { it.content.first().text })
+        assertEquals("goal", users.last().source?.get("kind")?.jsonPrimitive?.content)
+        assertEquals(listOf("p-queue"), acks)
+        assertEquals("user", users[1].source?.get("kind")?.jsonPrimitive?.content)
+        assertEquals("p-queue", users[1].source?.get("promptId")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun steeringAfterPlainReplyCreatesAnotherStepAndLoadsSkillWithAttachments() = runBlocking {
+        var steering: TurnInput? = null
+        val image = ImageRef("steer-image", "image/png", 3, 1, 1)
+        var calls = 0
+        val skills = mutableListOf<List<String>>()
+        streamOverride = {
+            flow {
+                textResponse(if (++calls == 1) "first answer" else "updated answer").forEach { emit(it) }
+                if (calls == 1) steering = TurnInput("/review", textBlocks = listOf("/review", "attached text"),
+                    images = listOf(image), promptId = "p-steer", delivery = "steer")
+            }
+        }
+        val acks = mutableListOf<String>()
+        engine(claimSteeringInputs = { listOfNotNull(steering.also { steering = null }) },
+            onInputDelivered = { id, _ -> acks += id }, imageBytes = { byteArrayOf(1, 2, 3) },
+            skillInvocations = { _, texts -> skills += texts; emptyList() }).startTurn(ui, TurnInput("initial"))
+        val session = gateway.session!!
+        assertEquals(1, session.events.count { it.type == "turn/start" })
+        assertEquals(2, session.events.count { it.type == "step/start" })
+        assertEquals(listOf("p-steer"), acks)
+        assertEquals(listOf("/review", "attached text"), skills.last())
+        assertTrue(requests.last().allText().contains("attached text"))
+        assertTrue(requests.last().messages.any { message -> message.content.any { it is ApiBlock.Image } })
+        val injected = session.events.first { it.type == "user/message" &&
+            it.data?.jsonObject?.get("source")?.jsonObject?.get("promptId")?.jsonPrimitive?.content == "p-steer" }
+        assertEquals("user", injected.data!!.jsonObject.getValue("source").jsonObject.getValue("kind").jsonPrimitive.content)
+    }
+
+    @Test
+    fun stoppingDuringSteeringReplyPreservesPartialAssistantAfterDiskReload() = runBlocking {
+        val partialEmitted = CompletableDeferred<Unit>()
+        val stop = TurnStopState()
+        var steering: TurnInput? = null
+        var calls = 0
+        var queuedClaims = 0
+        val acks = mutableListOf<String>()
+        streamOverride = {
+            flow {
+                if (++calls == 1) {
+                    textResponse("first answer").forEach { emit(it) }
+                    steering = TurnInput("follow up", promptId = "p-stop-steer", delivery = "steer")
+                } else {
+                    emit(LlmEvent.MessageStart("partial", "deepseek-flash", 1))
+                    emit(LlmEvent.BlockStart(0, "text", null, null))
+                    emit(LlmEvent.TextDelta(0, "partial steering answer"))
+                    partialEmitted.complete(Unit)
+                    awaitCancellation()
+                }
+            }
+        }
+        val e = engine(stop = stop,
+            claimSteeringInputs = { listOfNotNull(steering.also { steering = null }) },
+            onInputDelivered = { id, _ -> acks += id },
+            nextQueuedInput = { queuedClaims++; null })
+        val job = launch(Dispatchers.Default) { e.startTurn(ui, TurnInput("initial")) }
+        try {
+            withTimeout(5_000) { partialEmitted.await() }
+            stop.requested = true
+        } finally {
+            job.cancelAndJoin()
+        }
+
+        val reloaded = assertNotNull(repo.load(gateway.session!!.header.id))
+        val assistants = SessionCodec.surfaceOf(reloaded.events).filter { it.role == MessageRole.ASSISTANT }
+        assertEquals(listOf("first answer", "partial steering answer"), assistants.map { it.content.single().text })
+        assertEquals(2, reloaded.events.count { it.type == "assistant/message" })
+        assertEquals(1, reloaded.events.count { it.type == "turn/start" })
+        assertEquals(2, reloaded.events.count { it.type == "step/start" })
+        assertEquals(2, reloaded.events.count { it.type == "step/end" })
+        assertEquals("aborted", turnEndKind(reloaded))
+        assertEquals(listOf("p-stop-steer"), acks)
+        assertEquals(0, queuedClaims)
+        assertEquals(1, reloaded.events.count { it.type == "user/message" &&
+            it.data?.jsonObject?.get("source")?.jsonObject?.get("promptId")?.jsonPrimitive?.content == "p-stop-steer" })
+        val shown = ui.messages.last { it.role == MessageRole.ASSISTANT }
+        assertEquals(assistants.last().seq, shown.seq)
+        assertTrue(!shown.streaming)
+    }
+
+    @Test
+    fun steeringWaitsForEntireToolBatchWithoutCancellingTools() = runBlocking {
+        var steering: TurnInput? = null
+        val executed = mutableListOf<String>()
+        toolResult = {
+            executed += "tool"
+            steering = TurnInput("new instruction", promptId = "after-tools", delivery = "steer")
+            ToolResult.ok("completed safely")
+        }
+        val batch = toolCallResponse("call-1", "fake_tool", "{}").toMutableList()
+        batch.addAll(batch.size - 2, listOf(LlmEvent.BlockStart(2, "tool_use", "call-2", "fake_tool"),
+            LlmEvent.ToolInputDelta(2, "{}"), LlmEvent.BlockStop(2)))
+        responses += batch
+        responses += textResponse("done")
+        engine(claimSteeringInputs = { listOfNotNull(steering.also { steering = null }) },
+            onInputDelivered = { _, _ -> assertEquals(2, executed.size) }).startTurn(ui, TurnInput("initial"))
+        val events = gateway.session!!.events
+        val injected = events.first { it.type == "user/message" &&
+            it.data?.jsonObject?.get("source")?.jsonObject?.get("promptId")?.jsonPrimitive?.content == "after-tools" }
+        assertTrue(events.filter { it.type == "tool/result" }.all { it.seq!! < injected.seq!! })
+        assertEquals(2, executed.size)
+        assertEquals(2, requests.last().messages.last().content.filterIsInstance<ApiBlock.ToolResult>().size)
+        assertTrue(requests.last().allText().contains("new instruction"))
+    }
+
+    @Test
+    fun failedRequestDoesNotClaimQueuedHumanInput() = runBlocking {
+        var claimed = false
+        responses += listOf(LlmEvent.Failed("offline"))
+        assertEquals(TurnOutcome.ERROR, engine(nextQueuedInput = { claimed = true; null }).startTurn(ui, TurnInput("initial")))
+        assertTrue(!claimed)
+    }
+
+    @Test
+    fun stopDuringToolDoesNotDeliverPendingSteeringOrStartQueue() = runBlocking {
+        val stop = TurnStopState()
+        var steering: TurnInput? = null
+        var queueClaimed = false
+        toolResult = {
+            steering = TurnInput("wait for resume", promptId = "stopped-steer", delivery = "steer")
+            stop.requested = true
+            ToolResult.ok("tool finished")
+        }
+        responses += toolCallResponse("call-stop", "fake_tool", "{}")
+        assertFailsWith<kotlinx.coroutines.CancellationException> {
+            engine(stop = stop,
+                claimSteeringInputs = { listOfNotNull(steering.also { steering = null }) },
+                nextQueuedInput = { queueClaimed = true; null }).startTurn(ui, TurnInput("initial"))
+        }
+        assertNotNull(steering)
+        assertTrue(!queueClaimed)
+        assertEquals("aborted", turnEndKind(gateway.session!!))
+        assertEquals(1, gateway.session!!.events.count { it.type == "tool/result" })
+    }
+
+    @Test
+    fun maxTokensDoesNotClaimPendingInputs() = runBlocking {
+        var queueClaimed = false
+        var polls = 0
+        responses += listOf(LlmEvent.TextDelta(0, "truncated"), LlmEvent.MessageDelta("max_tokens", 5))
+        engine(claimSteeringInputs = { polls++; emptyList() },
+            nextQueuedInput = { queueClaimed = true; null }).startTurn(ui, TurnInput("initial"))
+        assertTrue(!queueClaimed)
+        assertEquals(1, polls, "Only the initial pre-request boundary may poll; max_tokens must not claim late inputs")
+    }
+
+    @Test
+    fun truncatedToolBatchIsPersistedButNeverExecuted() = runBlocking {
+        var executed = 0
+        var polls = 0
+        var queueClaimed = false
+        toolResult = { executed++; ToolResult.ok("must not run") }
+        // max_tokens 正好切在 tool_use 中间：参数是半截 JSON
+        responses += truncatedToolCallResponse(
+            "call-cut-1" to ("fake_tool" to """{"path":"/tmp/half"""),
+            "call-cut-2" to ("fake_tool" to """{"path":"/tmp/also-half"""),
+        )
+        val outcome = engine(
+            claimSteeringInputs = { polls++; emptyList() },
+            nextQueuedInput = { queueClaimed = true; null },
+        ).startTurn(ui, TurnInput("initial"))
+
+        assertEquals(TurnOutcome.ERROR, outcome)
+        assertEquals(0, executed, "截断的工具批次一次都不能执行")
+        assertTrue(!queueClaimed, "max_tokens 后不能领队列")
+        assertEquals(1, polls, "截断的 step 结束后不能再 poll steer")
+
+        val session = assertNotNull(repo.load(gateway.session!!.header.id))
+        assertEquals(1, session.events.count { it.type == "turn/start" })
+        assertEquals(1, session.events.count { it.type == "turn/end" })
+        assertEquals(1, session.events.count { it.type == "step/start" })
+        assertEquals(1, session.events.count { it.type == "step/end" })
+        assertEquals("error", turnEndKind(session))
+        // 每条已落库的 tool_use 都有配对结果：正文是「没执行」占位，且 isError
+        val calls = session.events.filter { it.type == "tool/call" }
+            .map { it.data!!.jsonObject["callId"]!!.jsonPrimitive.content }
+        val results = session.events.filter { it.type == "tool/result" }
+        assertEquals(calls.sorted(), results.map { it.data!!.jsonObject["message"]!!.jsonObject["toolCallId"]!!.jsonPrimitive.content }.sorted())
+        results.forEach { result ->
+            val message = result.data!!.jsonObject["message"]!!.jsonObject
+            assertTrue(message["isError"]!!.jsonPrimitive.booleanOrNull == true)
+            assertEquals(
+                TRUNCATED_TOOL_RESULT,
+                message["content"]!!.jsonArray.first().jsonObject["text"]!!.jsonPrimitive.content,
+            )
+        }
+        assertTrue(ui.lastError.orEmpty().contains("max_tokens"), "要提示暂停原因：${ui.lastError}")
+
+        // 会话仍然平衡可用：下一轮正常请求把未执行的 tool_result 一起发给模型
+        responses += textResponse("recovered")
+        assertEquals(TurnOutcome.COMPLETED, engine().startTurn(ui, TurnInput("continue")))
+        assertTrue(requests.last().allText().contains(TRUNCATED_TOOL_RESULT))
+    }
+
+    @Test
+    fun truncationAfterCompletedToolBatchKeepsPairingAndStops() = runBlocking {
+        var executed = 0
+        toolResult = { executed++; ToolResult.ok("first batch ok") }
+        responses += toolCallResponse("call-ok", "fake_tool", "{}")
+        responses += truncatedToolCallResponse("call-cut" to ("fake_tool" to "{}"))
+        val outcome = engine().startTurn(ui, TurnInput("initial"))
+
+        assertEquals(TurnOutcome.ERROR, outcome)
+        assertEquals(1, executed, "第一批发出的工具正常执行，截断的那一批不执行")
+        val session = assertNotNull(repo.load(gateway.session!!.header.id))
+        val calls = session.events.filter { it.type == "tool/call" }
+            .map { it.data!!.jsonObject["callId"]!!.jsonPrimitive.content }
+        val results = session.events.filter { it.type == "tool/result" }
+            .map { it.data!!.jsonObject["message"]!!.jsonObject["toolCallId"]!!.jsonPrimitive.content }
+        assertEquals(calls.sorted(), results.sorted(), "tool_use / tool_result 必须一一配对")
+        assertEquals(2, session.events.count { it.type == "step/start" })
+        assertEquals(2, session.events.count { it.type == "step/end" })
+        assertEquals("error", turnEndKind(session))
+    }
+
+    @Test
+    fun failedQueueAckPropagatesAfterDurableAppendAndBalancesTurn() = runBlocking {
+        assertFailsWith<IllegalStateException> {
+            engine(onInputDelivered = { _, _ -> error("disk full") })
+                .startTurn(ui, TurnInput("durable input", promptId = "p-ack"))
+        }
+        val session = gateway.session!!
+        assertEquals(1, session.events.count { it.type == "user/message" })
+        assertEquals(session.events.count { it.type == "step/start" }, session.events.count { it.type == "step/end" })
+        assertEquals("error", turnEndKind(session))
+        assertTrue(requests.isEmpty())
+    }
+
     // ---------------- 脚手架 ----------------
     private fun engine(
         jobNotices: () -> List<UserNotice> = { emptyList() },
@@ -1272,6 +1742,13 @@ class TurnEngineTest {
         effort: String = "high",
         contextWindow: Int? = null,
         approval: suspend (xin.dshaa.core.model.ToolCall) -> Boolean = { approve },
+        hooks: EngineHooks = EngineHooks(),
+        stop: TurnStopState = TurnStopState(),
+        onRequest: (Int, ApiRequest) -> Unit = { _, _ -> },
+        claimSteeringInputs: suspend () -> List<TurnInput> = { emptyList() },
+        nextQueuedInput: suspend () -> TurnInput? = { null },
+        onInputDelivered: suspend (String, Long) -> Unit = { _, _ -> },
+        nextSchedulePrompt: () -> String? = { null },
     ): TurnEngine = TurnEngine(
         EngineDeps(
             workspacePath = root.absolutePath,
@@ -1287,6 +1764,7 @@ class TurnEngineTest {
                 ),
             ),
             toolContext = ToolContext(File(root, "workspace").apply { mkdirs() }),
+            stop = stop,
             apiTools = { listOf(ApiTool(name = "fake_tool", description = "fake", inputSchema = buildJsonObject { put("type", "object") })) },
             systemPrompt = { if (plan.selected()) "SYS-PLAN" else "SYS" },
             runtimeContext = { "CTX" },
@@ -1299,9 +1777,9 @@ class TurnEngineTest {
             imagePath = imagePath,
             imageBudget = imageBudget,
             approval = { call -> approval(call) },
-            nextSchedulePrompt = { null },
+            nextSchedulePrompt = nextSchedulePrompt,
             tickSchedules = { },
-            onRequest = { _, request -> requests += request },
+            onRequest = { number, request -> requests += request; onRequest(number, request) },
             onLlmEvent = { _, _ -> },
             onToolResult = { _, _, _ -> },
             onTurnFinished = { },
@@ -1312,6 +1790,10 @@ class TurnEngineTest {
             log = { logs += it },
             plan = plan,
             newId = { "id-${idSeq++}" },
+            hooks = hooks,
+            claimSteeringInputs = claimSteeringInputs,
+            nextQueuedInput = nextQueuedInput,
+            onInputDelivered = onInputDelivered,
         ),
     )
 
@@ -1340,6 +1822,23 @@ class TurnEngineTest {
         LlmEvent.MessageDelta("tool_use", 5),
         LlmEvent.MessageStop,
     )
+
+    /** `max_tokens` 截断在 tool_use 上：多个（id → name/半截参数）+ 结束原因是 max_tokens。 */
+    private fun truncatedToolCallResponse(vararg calls: Pair<String, Pair<String, String>>): List<LlmEvent> = buildList {
+        add(LlmEvent.MessageStart("m", "deepseek-flash", 10))
+        add(LlmEvent.BlockStart(0, "text", null, null))
+        add(LlmEvent.TextDelta(0, "I will check"))
+        add(LlmEvent.BlockStop(0))
+        calls.forEachIndexed { offset, (id, nameAndArgs) ->
+            val index = offset + 1
+            add(LlmEvent.BlockStart(index, "tool_use", id, nameAndArgs.first))
+            add(LlmEvent.ToolInputDelta(index, nameAndArgs.second))
+            add(LlmEvent.BlockStop(index))
+        }
+        add(LlmEvent.MessageDelta("tool_use", 5))
+        add(LlmEvent.MessageDelta("max_tokens", 3))
+        add(LlmEvent.MessageStop)
+    }
 
     /** 请求里模型可见的全部文本（含 `tool_result` 的 content，修剪断言用）。 */
     private fun ApiRequest.allText(): String = messages.flatMap { message ->
@@ -1382,6 +1881,18 @@ class TurnEngineTest {
         var lastError: String? = null
         var lastUsage: String? = null
         var lastGoal: GoalView? = null
+        val requestUsages = mutableListOf<RequestUsage>()
+        val tokenUsages = mutableListOf<Pair<Int, Int>>()
+        var onUsage: (RequestUsage) -> Unit = {}
+
+        override fun onRequestUsage(update: RequestUsage) {
+            requestUsages += update
+            onUsage(update)
+        }
+
+        override fun setTokenUsage(inputTokens: Int, outputTokens: Int) {
+            tokenUsages += inputTokens to outputTokens
+        }
 
         override fun messages(): List<ChatMessage> = messages
         override fun title(): String = currentTitle

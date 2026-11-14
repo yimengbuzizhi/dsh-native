@@ -1,0 +1,95 @@
+# M84-E2 真机日志摘录（原始 logcat，仅去掉时间前缀后的关键行）
+
+设备：OPPO A55 5G（PEMM00），Android 13。安装包：debug（BuildConfig.DEBUG）。
+演示插件：`m84e2-demo`（docs/m84e2-demo-plugin/，`--es dsh_plugin_zip` 导入）。
+
+## 1. 正向：插件登记的供应商跑完一轮
+
+```
+I DshProvider: plugin providers=[e2.demo.probe, e2.demo.provider] active=e2.demo.provider
+I DshTurnHook: step-start turn=1 step=1
+I DshProvider: plugin provider id=e2.demo.provider protocol=openai model=deepseek-chat baseUrl=host apiKey=host requestModel=deepseek-flash plugin=m84e2-demo
+I DshTurnHook: step-end turn=1 step=1
+```
+
+启动命令（插件在上一轮已导入）：
+
+```
+adb shell am start -n xin.dshaa.nativeapp/.MainActivity \
+  --es dsh_llm_provider e2.demo.provider \
+  --es dsh_send "E2 plugin provider round"
+```
+
+要点：
+
+- 宿主当前设置是 `deepseek-openai` / `https://api.deepseek.com` / 模型 `deepseek-flash`；
+- 插件没写 `protocol`，宿主按当前协议解析为 `openai`；
+- 插件写了 `model: deepseek-chat`，请求体模型被改写（`requestModel=deepseek-flash` →
+  实际 `model=deepseek-chat`）；
+- 插件没写 `baseUrl` / `apiKey`，跟随宿主端点与 key（日志 `baseUrl=host apiKey=host`）；
+- 一轮正常结束（`step-end`，聊天页出现回复）。
+
+## 2. 负向：无效模型名证明配置真的到上游
+
+```
+I DshProvider: plugin provider id=e2.demo.probe protocol=openai model=m84-e2-model-does-not-exist baseUrl=host apiKey=host requestModel=deepseek-flash plugin=m84e2-demo
+I DshTurnHook: error code=invalid_request_error status=400 message=The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed m84-e2-model-does-not-exist. (request_id: ...)
+I DshFish : publish owner=... state=ERROR ... detail=The supported API model names are ...
+I DshTurnHook: step-end turn=1 step=1
+```
+
+上游错误原文点名了插件写进请求的 `m84-e2-model-does-not-exist`，说明配置不是装饰性数据。
+
+## 3. 生命周期：停用插件 → 供应商从注册表收回
+
+```
+# 插件页关掉 m84e2-demo 后
+I DshProvider: dump providers -> .../m84e2-providers-disabled.json
+```
+
+dump 内容（无 API key）：
+
+```json
+{"llm":["debug.echo","debug.slow","debug.tool","deepseek","openai"],
+ "llmActive":"",
+ "pluginProviders":[],
+ "prompt":[],"promptActive":""}
+```
+
+对照启用时（`m84e2-providers-after.json`）：`llm` 数组包含 `e2.demo.probe` / `e2.demo.provider`，
+`llmActive=e2.demo.provider`，`pluginProviders` 两条。停用后插件 id 全部消失，内置
+`deepseek` / `openai` 仍在。
+
+## 4. 页面路由：插件自己的 dsh.client
+
+```
+I DshClientHost: open plugin window id=m84e2-demo entry=client.js
+I DshClientHost: overlay plugin=m84e2-demo entry=client.js 600x760 at 108,584 passThrough=true
+I DshClientHostWeb: [m84e2-demo] client host ready plugin=m84e2-demo entry=client.js
+I DshClientHostWeb: [m84e2-demo] plugin applied: m84e2-demo name=m84e2-demo slots=0
+I DshClientHost: resize plugin window 600x280 at 108,1064
+I DshClientHost: plugin page ready: m84e2-demo
+```
+
+`resize` 来自插件 client.js 里的 `__DSH_HOST__.setContentSize(300, 140)`（dp），证明跑的是插件自己的代码，
+不是宿主按插件 id 画的原生窗口。
+
+## 5. 真实社区 UI 插件
+
+```
+I DshClientHost: debug open plugin window id=@dsh-external/dsh-client-ui-pet -> 正在打开「@dsh-external/dsh-client-ui-pet」的插件界面
+I DshClientHostWeb: [@dsh-external/dsh-client-ui-pet] plugin applied: @dsh-external/dsh-client-ui-pet name=@dsh-external/dsh-client-ui-pet slots=0
+W DshClientHost: plugin file miss: @dsh-external/dsh-client-ui-pet/media/pet/idle_0/42.png
+```
+
+插件自己的 `lib/client.js` 被加载并 apply；缺一张动画帧（42.png），不影响启动。
+
+## 6. 兼容层重载（E2 内置行为变化）
+
+```
+I DshPlugin: debug reload ok=true whale-compat-test：试运行通过，注册 1 个工具
+```
+
+重载后记录：`promptSections=1`、`contexts=1`、`commands=1`、`tools=1`、`error=null`、
+`unsupported=["sessionProjections"]`。旧版本里这条插件会因 `ctx.llm.register({})`（既无 id 也无 stream）
+误报错误；E2 起无 id/无 stream 的调用静默忽略，带 `stream` 的调用记为 `llm.register(stream)` unsupported。

@@ -1,0 +1,95 @@
+﻿ M app/src/main/assets/builtin-plugins/builtin.shell.whale/index.js
+ M app/src/main/assets/builtin-plugins/builtin.shell.whale/package.json
+ M app/src/main/java/xin/dshaa/nativeapp/MainActivity.kt
+ M app/src/main/java/xin/dshaa/nativeapp/chat/AppViewModel.kt
+ M app/src/main/java/xin/dshaa/nativeapp/chat/ShellAttachments.kt
+ M app/src/main/java/xin/dshaa/nativeapp/data/PluginDevScaffold.kt
+ M app/src/main/java/xin/dshaa/nativeapp/data/PluginDevTools.kt
+ M app/src/main/java/xin/dshaa/nativeapp/data/PluginResidentRuntime.kt
+ M app/src/main/java/xin/dshaa/nativeapp/data/PluginShellHost.kt
+ M app/src/main/java/xin/dshaa/nativeapp/data/PluginStore.kt
+ M app/src/main/java/xin/dshaa/nativeapp/device/floating/ui/fullscreen/FloatingFullscreenScreen.kt
+ M app/src/main/java/xin/dshaa/nativeapp/device/floating/ui/window/FloatingWindowScreen.kt
+ M app/src/main/java/xin/dshaa/nativeapp/remote/RemoteDsh.kt
+ M app/src/main/java/xin/dshaa/nativeapp/ui/surface/PluginShellScreen.kt
+ M app/src/main/java/xin/dshaa/nativeapp/ui/surface/SurfaceRenderer.kt
+ M app/src/main/java/xin/dshaa/nativeapp/ui/surface/WebViewShellScreen.kt
+ M app/src/test/java/xin/dshaa/nativeapp/data/PluginDevelopmentTest.kt
+ M core/attachment/src/main/java/xin/dshaa/core/attachment/AttachmentStore.kt
+ M core/engine/src/main/java/xin/dshaa/core/engine/EngineContracts.kt
+ M core/engine/src/main/java/xin/dshaa/core/engine/TurnEngine.kt
+ M core/engine/src/test/java/xin/dshaa/core/engine/TurnEngineTest.kt
+ M core/plugins/src/main/java/xin/dshaa/core/plugins/PluginModel.kt
+ M core/plugins/src/main/java/xin/dshaa/core/plugins/PluginModule.kt
+ M core/plugins/src/main/java/xin/dshaa/core/plugins/PluginReload.kt
+ M core/plugins/src/main/java/xin/dshaa/core/plugins/PluginServices.kt
+ M core/plugins/src/main/java/xin/dshaa/core/plugins/SurfaceSpec.kt
+ M core/session/src/main/java/xin/dshaa/core/session/MemorySessionStore.kt
+ M core/session/src/main/java/xin/dshaa/core/session/SessionRepository.kt
+ M docs/HANDOFF.md
+ M support/src/main/assets/skills/dsh-plugin-authoring/SKILL.md
+ M support/src/main/java/xin/dshaa/nativeapp/chat/ChatMirror.kt
+ M support/src/main/java/xin/dshaa/nativeapp/device/attach/AttachmentCapture.kt
+ M support/src/main/java/xin/dshaa/nativeapp/device/attach/LocationAttachActivity.kt
+ M support/src/main/java/xin/dshaa/nativeapp/device/attach/LocationCapture.kt
+ M ui/native-shell/src/main/java/xin/dshaa/nativeapp/ui/chat/ChatComposer.kt
+ M ui/native-shell/src/main/java/xin/dshaa/nativeapp/ui/chat/ChatScreen.kt
+ M ui/native-shell/src/main/java/xin/dshaa/nativeapp/ui/plugins/PluginsScreen.kt
+ M ui/native-shell/src/main/java/xin/dshaa/nativeapp/ui/remote/RemoteDshScreen.kt
+ M ui/native-shell/src/main/java/xin/dshaa/nativeapp/ui/settings/BehaviorScreen.kt
+ M ui/native-shell/src/main/java/xin/dshaa/nativeapp/ui/shell/DshDrawer.kt
+ M ui/native-shell/src/main/java/xin/dshaa/nativeapp/ui/shell/native/NativeShellRoot.kt
+ M ui/native-shell/src/main/java/xin/dshaa/nativeapp/ui/shell/native/pages/NativePageDispatch.kt
+ M ui/native-shell/src/main/java/xin/dshaa/nativeapp/ui/shell/native/pages/NativePluginsPage.kt
+ M ui/shell-api/src/main/java/xin/dshaa/ui/shellapi/NativeShellHost.kt
+ M ui/shell-api/src/main/java/xin/dshaa/ui/shellapi/chat/ChatSessionState.kt
+ M ui/shell-api/src/main/java/xin/dshaa/ui/shellapi/data/SettingsStore.kt
+ M ui/shell-api/src/main/java/xin/dshaa/ui/shellapi/remote/RemoteTypes.kt
+ M ui/shell-api/src/main/java/xin/dshaa/ui/shellapi/remote/ShellRemote.kt
+?? app/src/main/java/xin/dshaa/nativeapp/chat/PromptQueueDeviceProbe.kt
+?? app/src/main/java/xin/dshaa/nativeapp/chat/RemoteConversationDeviceProbe.kt
+?? app/src/main/java/xin/dshaa/nativeapp/data/LoadingSnapshotStore.kt
+?? app/src/main/java/xin/dshaa/nativeapp/data/PluginLoadingDevSelfTest.kt
+?? app/src/main/java/xin/dshaa/nativeapp/remote/ConversationAdapter.kt
+?? app/src/main/java/xin/dshaa/nativeapp/remote/LocalConversation.kt
+?? app/src/main/java/xin/dshaa/nativeapp/remote/RemoteProfileStore.kt
+?? app/src/main/java/xin/dshaa/nativeapp/remote/RemotePromptDrafts.kt
+?? app/src/main/java/xin/dshaa/nativeapp/ui/boot/
+?? app/src/test/java/xin/dshaa/nativeapp/chat/
+?? app/src/test/java/xin/dshaa/nativeapp/data/LoadingSnapshotStoreTest.kt
+?? app/src/test/java/xin/dshaa/nativeapp/data/PluginLoadingDevelopmentTest.kt
+?? app/src/test/java/xin/dshaa/nativeapp/remote/
+?? core/plugins/src/main/java/xin/dshaa/core/plugins/LoadingSpec.kt
+?? core/plugins/src/test/java/xin/dshaa/core/plugins/LoadingContractBoundaryTest.kt
+?? core/plugins/src/test/java/xin/dshaa/core/plugins/LoadingSpecTest.kt
+?? core/session/src/main/java/xin/dshaa/core/session/PromptQueueStore.kt
+?? core/session/src/test/java/xin/dshaa/core/session/PromptQueueStoreTest.kt
+?? "docs/174-M86-FGH-\344\270\223\351\241\271\351\200\232\350\277\207\344\270\216\351\246\226\345\270\247\345\244\215\351\252\214\344\272\244\346\216\245.md"
+?? docs/m86a-roles.xml
+?? docs/m86a-ui.xml
+?? docs/m86b-context-fixture.json
+?? docs/m86b-current.xml
+?? docs/m86b-usage-provider.zip
+?? docs/m86f-boot-core/
+?? docs/m86f-boot-core2/
+?? docs/m86f-boot-core3/
+?? docs/m86f-loading-dev.json
+?? docs/m86fgh-app-summary.json
+?? docs/m86fgh-core-summary.json
+?? docs/m86fgh-handoff-git-status.txt
+?? docs/m86fgh-handoff-roles.json
+?? docs/m86fgh-main-review.diff
+?? docs/m86g-queue-device.json
+?? docs/m86h-remote-device.json
+?? docs/shots/m86a-01-import.png
+?? docs/shots/m86a-02-roles-draft.png
+?? docs/shots/m86a-03-roles.png
+?? docs/shots/m86h-probe-shared-chat.png
+?? tools/m86f-boot-check.py
+?? tools/m86f-recovery-check.py
+?? tools/m86fgh-device-probes.py
+?? tools/m86g-attachment-patch.py
+?? tools/m86g-ui-check.py
+?? tools/m86h-remote-fixture.py
+?? tools/m86h-ui-check.py
+?? ui/shell-api/src/main/java/xin/dshaa/ui/shellapi/ShellConversation.kt

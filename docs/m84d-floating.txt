@@ -1,0 +1,9 @@
+--------- beginning of main
+11-13 19:46:46.767 18103 18103 I DshFloatingSlot: sync demo=false plugins=[]
+11-13 19:46:46.798 18103 18103 I DshFloatingSlot: registered demo.floating
+11-13 19:46:46.798 18103 18103 I DshFloatingSlot: sync demo=true plugins=[demo.floating]
+11-13 19:46:50.403 18103 18103 I DshFloatingSlot: show slot=BALL plugin=demo.floating
+11-13 19:46:57.631 18103 18103 I DshFloatingSlot: click slot=BALL plugin=demo.floating (default action kept)
+11-13 19:46:57.782 18103 18103 I DshFloatingSlot: show slot=PANEL plugin=demo.floating
+11-13 19:47:00.832 18103 18103 I DshFloatingSlot: unregistered demo.floating
+11-13 19:47:00.832 18103 18103 I DshFloatingSlot: sync demo=false plugins=[]

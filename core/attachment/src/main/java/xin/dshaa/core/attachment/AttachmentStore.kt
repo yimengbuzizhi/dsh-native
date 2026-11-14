@@ -44,11 +44,11 @@ class AttachmentStore(private val root: File) : AttachmentHost {
         file.parentFile?.mkdirs()
         val tmp = File(file.parentFile, "$hex.tmp-${System.nanoTime()}")
         try {
-            tmp.writeBytes(data)
+            java.io.FileOutputStream(tmp).use { out -> out.write(data); out.fd.sync() }
             if (!tmp.renameTo(file)) {
                 // 目标已存在时 rename 在部分文件系统上失败：内容相同就直接复用
                 if (!file.exists()) {
-                    file.writeBytes(data)
+                    java.io.FileOutputStream(file).use { out -> out.write(data); out.fd.sync() }
                 }
                 tmp.delete()
             }

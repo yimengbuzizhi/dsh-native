@@ -26,6 +26,28 @@ class PluginSandboxTest {
     private fun JsonObject.text(key: String): String? = this[key]?.jsonPrimitive?.content
 
     @Test
+    fun surfaceCommandRequiresUiGrantAndForwardsToHost() {
+        val workspace = tempDir("dsh-sandbox")
+        var seen: String? = null
+        val bridge = object : PluginHostBridge {
+            override fun call(method: String, payloadJson: String): String {
+                seen = "$method:$payloadJson"
+                return """{"ok":true}"""
+            }
+        }
+        val denied = PluginSandbox("demo", workspace, perms("ui"), emptyList(), bridge)
+        val deniedReply = reply(denied, "surface.command", """{"command":"send"}""")
+        assertFalse(deniedReply.ok())
+        assertEquals("PERMISSION_DENIED", deniedReply.text("code"))
+
+        val allowed = PluginSandbox("demo", workspace, perms("ui"), listOf("ui"), bridge)
+        val result = reply(allowed, "surface.command", """{"command":"send","args":{"text":"hi"}}""")
+        assertTrue(result.ok())
+        assertTrue(seen.orEmpty().startsWith("surface.command:"))
+        assertTrue(seen.orEmpty().contains("\"send\""))
+    }
+
+    @Test
     fun fsWithoutPermissionIsDeniedWithClearCode() {
         val workspace = tempDir("dsh-sandbox")
         File(workspace, "a.txt").writeText("hi")

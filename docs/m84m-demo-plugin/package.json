@@ -1,0 +1,7 @@
+{
+  "name": "m84m-demo",
+  "version": "1.0.0",
+  "description": "M84-M 验收：插件模型发起工具调用 + 逐 token 流（stream(request, emit) 与 toolCalls）",
+  "main": "index.js",
+  "format": "esm"
+}

@@ -1,0 +1,35 @@
+11-14 08:18:47.223 14181 14181 I DshAgent: set active=m85d.echo-agent#m85.echo label=Echo 回合（演示）
+11-14 08:18:51.130 17542 17542 I DshAgent: resolved active=m85d.echo-agent:m85.echo pref=m85d.echo-agent#m85.echo
+11-14 08:18:51.130 17542 17542 I DshShell: active=null:null pref=native
+11-14 08:18:51.130 17542 17542 I DshAgent: active=m85d.echo-agent:m85.echo pref=m85d.echo-agent#m85.echo safety=-
+11-14 08:18:51.146 17542 17542 I DshTurn : turn start session=- foreground=true model=deepseek-flash agent=m85d.echo-agent:m85.echo
+11-14 08:18:51.223 17542 17542 I DshShell: native ui config width=360dp density=2.0 wide=false
+11-14 08:18:51.890 17542 17542 I DshPage : route page=Chat sub=-
+11-14 08:18:51.909 17542 17542 I DshTurn : foreground start
+11-14 08:18:51.930 17542 17542 I DshAgent: created session c43b502d-2c96-4720-9092-09caa49c03ad for plugin agent turn
+11-14 08:18:52.515 17542 17542 I DshAgent: plugin turn done agent=m85.echo plugin=m85d.echo-agent session=c43b502d-2c96-4720-9092-09caa49c03ad turn=1 chars=21 stop=completed error=-
+11-14 08:18:52.516 17542 17542 I DshTurn : turn end after 1370ms
+11-14 08:18:52.525 17542 17542 I DshTurn : foreground stop
+11-14 08:19:00.947 17542 17542 I DshAgent: set active=native label=dsH 引擎（内置）
+11-14 08:19:04.790 17686 17686 I DshAgent: resolved active=builtin:builtin.agent.dsh pref=native
+11-14 08:19:04.790 17686 17686 I DshShell: active=null:null pref=native
+11-14 08:19:04.790 17686 17686 I DshAgent: active=builtin:builtin.agent.dsh pref=native safety=-
+11-14 08:19:04.804 17686 17686 I DshTurn : turn start session=- foreground=true model=deepseek-flash agent=builtin:builtin.agent.dsh
+11-14 08:19:04.923 17686 17686 I DshShell: native ui config width=360dp density=2.0 wide=false
+11-14 08:19:05.548 17686 17686 I DshPage : route page=Chat sub=-
+11-14 08:19:05.573 17686 17686 I DshTurn : foreground start
+11-14 08:19:06.102 17686 17686 I DshTurnHook: step-start turn=1 step=1
+11-14 08:19:08.305 17686 17686 I DshTurnHook: step-end turn=1 step=1
+11-14 08:19:08.381 17686 17686 I DshTurn : turn end after 3577ms
+11-14 08:19:08.465 17686 17686 I DshTurn : foreground stop
+11-14 08:19:24.654 17686 17686 W DshAgent: agent unavailable: 内置回合插件 builtin.agent.dsh 已停用；没有可用的回合实现。 pref=native
+11-14 08:19:24.654 17686 17686 I DshAgent: debug builtin off=builtin.agent.dsh on=- reset=false agent=- safety=内置回合插件 builtin.agent.dsh 已停用；没有可用的回合实现。
+11-14 08:19:34.359 17686 17686 I DshAgent: resolved active=builtin:builtin.agent.dsh pref=native
+11-14 08:19:34.359 17686 17686 I DshAgent: restore builtin active=builtin.agent.dsh safety=-
+11-14 08:19:40.731 17929 17929 I DshAgent: resolved active=builtin:builtin.agent.dsh pref=native
+11-14 08:19:40.731 17929 17929 I DshShell: active=null:null pref=native
+11-14 08:19:40.731 17929 17929 I DshAgent: active=builtin:builtin.agent.dsh pref=native safety=-
+11-14 08:19:40.806 17929 17929 I DshShell: native ui config width=360dp density=2.0 wide=false
+11-14 08:19:41.131 17929 17929 I DshPage : route page=Chat sub=-
+11-14 08:19:41.140 17929 17929 I DshShell: native ui config width=360dp density=2.0 wide=false
+11-14 08:19:48.790 17929 17966 I DshAgent: dump agents pref=native active=builtin.agent.dsh -> /data/user/0/xin.dshaa.nativeapp/files/agents-final.json

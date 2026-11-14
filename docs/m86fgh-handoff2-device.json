@@ -1,0 +1,13 @@
+{
+  "nativeSelected": true,
+  "allWritersIdle": true,
+  "agentBuiltin": true,
+  "storageWritableBuiltin": true,
+  "promptBuiltin": true,
+  "modelFollow": true,
+  "defaultLoading": true,
+  "testFixturesDisabled": true,
+  "whaleEnabled": true,
+  "sendMode": "queue",
+  "currentSessionId": "5c40bf9f-c0eb-454b-a00b-66de69db8652"
+}

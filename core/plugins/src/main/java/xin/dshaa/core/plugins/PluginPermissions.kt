@@ -15,7 +15,12 @@ package xin.dshaa.core.plugins
  * | `shell` | 以 App 身份执行 shell | 需确认（红框） |
  * | `device` | 设备信息 / 应用 / 无障碍手势 / 截图 | 需确认（M67 起实现） |
  * | `memory` | 读写鲸歌记忆库（M68） | 需确认 |
- * | `ui` / `notify` | 本版尚未实现 | 不授予（界面明说） |
+ * | `ui` | 注册整壳（`ctx.ui.registerShell`，M85-A 起生效） | 导入即允许 |
+ * | `agent` | 注册回合实现（`ctx.agent.register`，M85-D 起生效） | 导入即允许（选中才生效） |
+ * | `storage` | 注册存储实现（`ctx.storage.register`，M85-E 起生效；v1 只读） | 导入即允许（选中才生效） |
+ * | `prompt` | 注册提示词实现（`ctx.systemPrompt.register`，M85-E 起生效） | 导入即允许（选中才生效） |
+ * | `capability` | 注册能力提供方（`ctx.capability.register`，M85-F 起生效；调用于插件页/调试） | 导入即允许（调用才生效） |
+ * | `notify` | 发系统通知 | 本版尚未实现 |
  *
  * 认不出的写法一律 [PluginPermissionKind.UNKNOWN]，**不猜、不授予**（宁可不支持，也不放大权限）。
  */
@@ -26,6 +31,10 @@ enum class PluginPermissionKind(val title: String) {
     NET_ANY("网络（任意域名）"),
     SHELL("执行命令"),
     UI("界面扩展"),
+    AGENT("回合扩展"),
+    STORAGE("存储扩展"),
+    PROMPT("提示词扩展"),
+    CAPABILITY("能力扩展"),
     NOTIFY("通知"),
     DEVICE("设备控制"),
     MEMORY("记忆库"),
@@ -52,9 +61,14 @@ data class PluginPermission(
             else -> false
         }
 
-    /** 导入时自动允许（docs/04：fs:workspace、ui 默认允许）。 */
+    /** 导入时自动允许（docs/04：fs:workspace、ui、agent、storage、prompt 默认允许；真正生效还要用户主动选中）。 */
     val autoGranted: Boolean
-        get() = kind == PluginPermissionKind.FS_WORKSPACE || kind == PluginPermissionKind.UI
+        get() = kind == PluginPermissionKind.FS_WORKSPACE ||
+            kind == PluginPermissionKind.UI ||
+            kind == PluginPermissionKind.AGENT ||
+            kind == PluginPermissionKind.STORAGE ||
+            kind == PluginPermissionKind.PROMPT ||
+            kind == PluginPermissionKind.CAPABILITY
 
     /** 这个版本真的实现了的能力；其余只展示、不生效，避免「给了权限但什么也没发生」的误解。 */
     val implemented: Boolean
@@ -66,6 +80,16 @@ data class PluginPermission(
             PluginPermissionKind.SHELL,
             PluginPermissionKind.DEVICE,
             PluginPermissionKind.MEMORY,
+            // M85-A：`ui` 真的生效了——`ctx.ui.registerShell` 的整壳可由用户选为当前界面。
+            PluginPermissionKind.UI,
+            // M85-D：`agent` 生效——`ctx.agent.register` 的回合实现可被 `dsh_agent` 选中。
+            PluginPermissionKind.AGENT,
+            // M85-E：`storage` / `prompt` 生效——注册的存储/提示词实现可被选中（v1 存储只读）。
+            PluginPermissionKind.STORAGE,
+            PluginPermissionKind.PROMPT,
+            // M85-F：`capability` 生效——`ctx.capability.register` 的能力可被插件页/调试通道调用
+            //（没有提供方时如实报「不可用」）。
+            PluginPermissionKind.CAPABILITY,
             -> true
             else -> false
         }
@@ -88,7 +112,21 @@ data class PluginPermission(
                 "用 https 访问任意域名。本机/内网地址（127.0.0.1、10.x、192.168.x 等）默认仍然拒绝。"
             PluginPermissionKind.SHELL ->
                 "以 App 身份执行 shell 命令（不是 root）。命令能读写 App 能访问的一切，风险最高。"
-            PluginPermissionKind.UI -> "注册插件自己的页面/弹窗（本版还没实现，授权也不会生效）。"
+            PluginPermissionKind.UI -> "注册插件自己的整壳（Shell）作为主界面：界面由插件返回的 UI 树渲染，" + "能看到当前会话的消息与状态、能发消息/停止/切会话（M85-A 起生效）。"
+            PluginPermissionKind.AGENT ->
+                "注册自己的回合实现（agent/v1）：被选中后，每条消息的回合循环由这个插件跑。" +
+                    "插件能看到用户输入与会话状态，并通过宿主原语发通知/改状态（M85-D 起生效；" +
+                    "选中它需要在回合插件设置里显式切换，停用即回安全提示）。"
+            PluginPermissionKind.STORAGE ->
+                "注册自己的会话存储（storage/v1，v1 只读导出）：被选中后，会话列表/打开由这个插件提供；" +
+                    "插件能读到导出的会话摘要与内容，但不能新建或写入（M85-E 起生效；需显式选中，停用即回安全提示）。"
+            PluginPermissionKind.PROMPT ->
+                "注册自己的系统提示词实现（prompt/v1）：被选中后，每轮 system 由这个插件拼装/改写；" +
+                    "插件能看到内置拼装结果与模型/工具信息（M85-E 起生效；需显式选中，停用即回内置提示词）。"
+            PluginPermissionKind.CAPABILITY ->
+                "注册自己的能力提供方（capability/v1，例如 NFC / root / Shizuku / ADB shell）：" +
+                    "能力只在你显式调用时执行，宿主负责登记、权限门与超时；" +
+                    "没有提供方时如实报「不可用」，宿主不写死任何特权能力（M85-F 起生效）。"
             PluginPermissionKind.NOTIFY -> "发系统通知（本版还没实现，授权也不会生效）。"
             PluginPermissionKind.DEVICE ->
                 "读设备信息与应用列表、启动/停止应用、读系统设置、用无障碍点按/滑动/截图（M67 起生效）。" +
@@ -115,6 +153,10 @@ object PluginPermissions {
     const val NET_ANY = "net:any"
     const val SHELL = "shell"
     const val UI = "ui"
+    const val AGENT = "agent"
+    const val STORAGE = "storage"
+    const val PROMPT = "prompt"
+    const val CAPABILITY = "capability"
     const val NOTIFY = "notify"
     const val DEVICE = "device"
     const val MEMORY = "memory"
@@ -134,6 +176,17 @@ object PluginPermissions {
                 PluginPermission(FS_ANY, PluginPermissionKind.FS_ANY)
             lower == "ui" || lower == "ui:register" ->
                 PluginPermission(UI, PluginPermissionKind.UI)
+            // M85-D：回合契约只接受规范的 `agent` 写法（`agent:run` 也认，保持和文档一致）。
+            lower == AGENT || lower == "agent:run" ->
+                PluginPermission(AGENT, PluginPermissionKind.AGENT)
+            // M85-E：存储/提示词角色（v1 存储只读；`storage:read` 与 `storage` 等价）。
+            lower == STORAGE || lower == "storage:read" || lower == "storage:rw" || lower == "session" ->
+                PluginPermission(STORAGE, PluginPermissionKind.STORAGE)
+            lower == PROMPT || lower == "prompt:assemble" || lower == "system-prompt" ->
+                PluginPermission(PROMPT, PluginPermissionKind.PROMPT)
+            // M85-F：能力提供方（capability/v1）；`capability:provide` 与 `capability` 等价。
+            lower == CAPABILITY || lower == "capability:provide" || lower == "capabilities" ->
+                PluginPermission(CAPABILITY, PluginPermissionKind.CAPABILITY)
             lower == NOTIFY || lower == "notification" ->
                 PluginPermission(NOTIFY, PluginPermissionKind.NOTIFY)
             lower == DEVICE || lower.startsWith("device:") ->

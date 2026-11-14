@@ -2,7 +2,6 @@ package xin.dshaa.nativeapp.data
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -45,18 +44,73 @@ import java.io.File
 class PluginStore(private val context: Context) {
 
     private val root = File(context.filesDir, "plugins")
-    private val registry = PluginRegistryFile(File(context.filesDir, "plugins.json"))
+    private val registryFile = File(context.filesDir, "plugins.json")
+    private val registry = PluginRegistryFile(registryFile)
 
     data class Result(val ok: Boolean, val message: String)
 
     fun list(): List<PluginRecord> = registry.list().sortedByDescending { it.installedAt }
 
+    @Synchronized
     fun setEnabled(id: String, enabled: Boolean): Boolean = registry.setEnabled(id, enabled) != null
+
+    /**
+     * M84-F：把所有导入插件一起开/关（空壳与全装配验收）。
+     * 返回真正改了状态的条数；不动 `plugins.json` 里其它字段。
+     */
+    @Synchronized
+    fun setAllEnabled(enabled: Boolean): Int {
+        var changed = 0
+        registry.list().forEach { record ->
+            if (record.enabled != enabled) {
+                registry.upsert(record.copy(enabled = enabled))
+                changed += 1
+            }
+        }
+        return changed
+    }
+
+    /** M83：当前依赖图（谁提供什么、谁依赖谁、谁缺服务）。插件页直接用。 */
+    fun resolution(): xin.dshaa.core.plugins.PluginServiceResolution =
+        xin.dshaa.core.plugins.PluginServices.resolve(registry.list())
+
+    /**
+     * M83 服务容器：启用集合变了之后重算依赖。
+     *
+     * 顺序按依赖排序（提供者在前面）重载所有「提供 / 依赖 / 以前缺依赖」的插件：
+     * - 提供者的 `ctx.provide` 快照跟着这次 apply 更新；
+     * - 依赖者的 `ctx.inject` 回调重新执行（拿到服务 → 重新注册工具；缺服务 → 不注册）；
+     * - 最后把 `missingServices` 写回记录，插件页立刻能显示「缺少服务 X」。
+     *
+     * 返回 (重载的插件数, 仍然缺依赖的插件数)。
+     */
+    @Synchronized
+    fun reconcileServices(): Pair<Int, Int> {
+        val before = resolution()
+        val byId = registry.list().associateBy { it.id }
+        var reloaded = 0
+        before.order.forEach { id ->
+            val record = byId[id] ?: return@forEach
+            if (!record.enabled) return@forEach
+            if (record.provides.isEmpty() && record.injects.isEmpty() && record.missingServices.isEmpty()) return@forEach
+            reload(id)
+            reloaded += 1
+        }
+        val after = xin.dshaa.core.plugins.PluginServices.resolve(registry.list())
+        registry.list().forEach { record ->
+            val missing = after.missing[record.id].orEmpty()
+            if (record.missingServices != missing) {
+                registry.upsert(record.copy(missingServices = missing))
+            }
+        }
+        return reloaded to after.missing.size
+    }
 
     /**
      * 用户点「确认授权」：只允许清单里申请过、这一版已实现、且确实是危险能力的项。
      * 自动允许的权限（fs:workspace / ui）不需要走这里。
      */
+    @Synchronized
     fun grant(id: String, raw: String): Result {
         val record = registry.find(id) ?: return Result(false, "这个插件不在清单里")
         val permission = PluginPermissions.parse(raw) ?: return Result(false, "认不出这条权限：$raw")
@@ -72,6 +126,7 @@ class PluginStore(private val context: Context) {
     }
 
     /** 调试通道用：一次把清单里所有危险且已实现的权限都授了（锁屏无 UI 时验宿主链路）。 */
+    @Synchronized
     fun grantAll(id: String): Result {
         val record = registry.find(id) ?: return Result(false, "这个插件不在清单里")
         val requested = PluginPermissions.parseAll(record.permissions)
@@ -83,6 +138,7 @@ class PluginStore(private val context: Context) {
     }
 
     /** 删除插件目录 + 清单记录。返回给用户看的文案。 */
+    @Synchronized
     fun uninstall(id: String): Result {
         val record = registry.remove(id) ?: return Result(false, "这个插件不在清单里")
         val removed = runCatching { File(record.path).deleteRecursively() }.getOrDefault(false)
@@ -97,6 +153,7 @@ class PluginStore(private val context: Context) {
      * 保存用户配置（M30）。只接受 Config schema 里认识的键；值类型暂不校验（下一轮和工具参数校验一起做）。
      * 传空文本 = 恢复默认（清空用户值，执行时再合并默认值）。
      */
+    @Synchronized
     fun setConfig(id: String, jsonText: String): Result {
         val record = registry.find(id) ?: return Result(false, "这个插件不在清单里")
         val schema = record.configSchema ?: return Result(false, "${record.name} 没有声明配置（Config）")
@@ -135,6 +192,7 @@ class PluginStore(private val context: Context) {
      * name/version/description/main/configSchema/configDefaults/permissions 跟着新清单走，
      * 用户配置按新 schema 裁剪，已授权限按新清单过滤。改清单不用再重装。
      */
+    @Synchronized
     fun reload(id: String): Result {
         val record = registry.find(id) ?: return Result(false, "这个插件不在清单里")
         val dir = File(record.path)
@@ -171,7 +229,10 @@ class PluginStore(private val context: Context) {
             format = manifest?.format?.label ?: record.format,
             cwd = dir.absolutePath,
             configJson = record.config,
-            defaultsJson = manifest?.configDefaults?.toString() ?: record.configDefaults,
+            defaultsJson = if (manifest != null) manifest.configDefaults?.toString() ?: "{}" else record.configDefaults,
+            manifestSchema = manifest?.configSchema?.let { PluginSchema.normalize(it)?.toString() } ?: record.configSchema,
+            // 重载时能看到别的插件提供的服务；自己旧快照不算（避免自己 inject 自己）。
+            services = xin.dshaa.core.plugins.PluginServices.snapshot(registry.list(), excludingOwner = id),
         )
         val updated = if (manifest != null) {
             PluginReload.apply(record, manifest, run)
@@ -191,8 +252,23 @@ class PluginStore(private val context: Context) {
                 promptSections = run.promptSections,
                 contexts = run.contexts,
                 promptVariables = run.promptVariables,
+                suppressRuntimeContext = run.suppressRuntimeContext,
                 commands = run.commands,
+                llmProviders = run.llmProviders,
+                routes = run.routes,
+                projections = run.projections,
+                shells = run.shells,
+                loadings = run.loadings,
+                agents = run.agents,
+                storages = run.storages,
+                prompts = run.prompts,
+                capabilities = run.capabilities,
                 unsupported = run.unsupported,
+                provides = run.provides,
+                injects = run.injects,
+                missingServices = run.missingServices,
+                effects = run.effects,
+                subscriptions = run.subscriptions,
             )
         }
         registry.upsert(updated)
@@ -230,8 +306,66 @@ class PluginStore(private val context: Context) {
         installFrom(file)
     }
 
-    /** 真正的导入流程：读 zip → 解析清单 → 落盘 → QuickJS 试运行 → 写清单。 */
-    private fun installFrom(archive: File): Result {
+    data class TestResult(
+        val ok: Boolean,
+        val message: String,
+        val id: String? = null,
+        val run: PluginDryRun? = null,
+    )
+
+    /** Real apply(ctx) in a disposable package directory, without registry/host capabilities. */
+    suspend fun testPath(path: File): TestResult = withContext(Dispatchers.IO) {
+        val scratch = File(context.cacheDir, "plugin-test-${java.util.UUID.randomUUID()}")
+        try {
+            check(scratch.mkdirs()) { "建不了试运行目录" }
+            val archive = if (path.isDirectory) File(scratch, "package.zip").also { PluginDevPackage.pack(path, it) } else path
+            val read = PluginPackage.read(archive)
+            if (read is ArchiveRead.Failed) return@withContext TestResult(false, read.error)
+            val parsed = PluginPackage.parse((read as ArchiveRead.Ok).files)
+            if (parsed is PackageParse.Failed) return@withContext TestResult(false, parsed.error)
+            parsed as PackageParse.Ok
+            val dir = File(scratch, "package").apply { check(mkdir()) }
+            writeFiles(dir, wrappedFiles(parsed))
+            val manifest = parsed.manifest
+            val run = dryRunForConfig(
+                File(dir, manifest.main), manifest.main, manifest.format.label, dir.absolutePath,
+                "{}", manifest.configDefaults?.toString() ?: "{}",
+                manifestSchema = manifest.configSchema?.let { PluginSchema.normalize(it)?.toString() },
+            )
+            TestResult(run.error == null && run.configError == null,
+                run.error ?: run.configError ?: "试运行通过：${manifest.name}", manifest.id, run)
+        } catch (e: Exception) {
+            TestResult(false, "试运行失败：${e.message}")
+        } finally {
+            // UUID direct child created by this invocation; never the source/user directory.
+            require(scratch.canonicalFile.parentFile == context.cacheDir.canonicalFile)
+            scratch.deleteRecursively()
+        }
+    }
+
+    /** Directory installation still uses installFile, preserving schema/config/grant rules. */
+    suspend fun installDirectory(directory: File): Result = withContext(Dispatchers.IO) {
+        val archive = File(context.cacheDir, "plugin-directory-${java.util.UUID.randomUUID()}.zip")
+        try {
+            PluginDevPackage.pack(directory, archive)
+            installFile(archive)
+        } catch (e: Exception) {
+            Result(false, "目录安装失败：${e.message}")
+        } finally {
+            require(archive.canonicalFile.parentFile == context.cacheDir.canonicalFile)
+            archive.delete()
+        }
+    }
+
+    /** Parse and trial in staging before replacing the installed package. */
+    @Synchronized
+    private fun installFrom(archive: File): Result = try {
+        installValidated(archive)
+    } catch (e: Exception) {
+        Result(false, "安装失败：${e.message ?: e.javaClass.simpleName}")
+    }
+
+    private fun installValidated(archive: File): Result {
         val read = PluginPackage.read(archive)
         if (read is ArchiveRead.Failed) return Result(false, read.error)
 
@@ -240,30 +374,18 @@ class PluginStore(private val context: Context) {
         parsed as PackageParse.Ok
 
         val manifest = parsed.manifest
-        val dir = File(root, dirName(manifest.id))
-        dir.deleteRecursively()
-        if (!dir.mkdirs()) return Result(false, "建不了插件目录（存储满了/没权限）")
-
-        // M63：Operit 自带包（METADATA + exports）在这里包成 DSH 插件；原文件留档 toolpkg-original.js。
-        val files = parsed.files.toMutableList()
-        val mainIndex = files.indexOfFirst { it.path == manifest.main }
-        if (mainIndex >= 0) {
-            val original = files[mainIndex].bytes
-            val source = original.toString(Charsets.UTF_8)
-            if (ToolPkg.isToolPkg(source)) {
-                files[mainIndex] = PluginFile(manifest.main, ToolPkg.wrap(source).toByteArray(Charsets.UTF_8))
-                if (files.none { it.path == "toolpkg-original.js" }) {
-                    files.add(PluginFile("toolpkg-original.js", original))
-                }
-                Log.i("DshPlugin", "toolpkg wrapped id=${manifest.id}")
-            }
+        val target = File(root, dirName(manifest.id))
+        val previous = registry.find(manifest.id)
+        require(registry.list().none { it.id != manifest.id && File(it.path).canonicalFile == target.canonicalFile }) {
+            "插件 id 与另一个已安装插件的目录冲突"
         }
-
-        val writeError = runCatching { writeFiles(dir, files) }.exceptionOrNull()
-        if (writeError != null) {
-            dir.deleteRecursively()
-            return Result(false, "写文件失败：${writeError.message ?: writeError.javaClass.simpleName}")
+        require(previous == null || File(previous.path).canonicalFile == target.canonicalFile) {
+            "已安装插件路径不属于预期目录，拒绝替换"
         }
+        require(!target.exists() || previous != null) { "目标目录已有未登记内容，拒绝覆盖" }
+        PluginInstallTransaction(root, dirName(manifest.id)).use { transaction ->
+        val dir = transaction.staging
+        writeFiles(dir, wrappedFiles(parsed))
 
         // M61：组合包补丁只读解析（cordis.patch.yml 的 insert 行）。鲸歌没有 npm 安装环境，
         // 不按 name 装子插件，只在详情里列出组合包的组成和未执行的条目。
@@ -278,15 +400,19 @@ class PluginStore(private val context: Context) {
             manifest.main,
             manifest.format.label,
             dir.absolutePath,
-            "{}",
+            previous?.config ?: "{}",
             manifest.configDefaults?.toString() ?: "{}",
+            manifestSchema = manifest.configSchema?.let { PluginSchema.normalize(it)?.toString() },
+            services = xin.dshaa.core.plugins.PluginServices.snapshot(registry.list(), excludingOwner = manifest.id),
         )
+        if (run.error != null || run.configError != null) {
+            return Result(false, "${manifest.name}：试运行失败：${run.error ?: run.configError}")
+        }
         // 配置来源：插件导出的 Config 优先；没有就用清单里的 config.schema（ToolPkg 风格）。
         val manifestSchema = manifest.configSchema?.let { PluginSchema.normalize(it)?.toString() }
         val configSchema = run.configSchema ?: manifestSchema
         val configDefaults = PluginSchema.effectiveText(configSchema, "{}", manifest.configDefaults?.toString())
         // 覆盖安装/升级：同 id 的老配置能对上新的 Config schema 就保留，不因为重装丢用户配置。
-        val previous = registry.find(manifest.id)
         val config = if (previous != null && configSchema != null) {
             PluginSchema.prune(configSchema, previous.config)
         } else {
@@ -297,7 +423,7 @@ class PluginStore(private val context: Context) {
             name = manifest.name,
             version = manifest.version,
             description = manifest.description,
-            path = dir.absolutePath,
+            path = transaction.target.absolutePath,
             main = manifest.main,
             format = manifest.format.label,
             enabled = true,
@@ -323,10 +449,40 @@ class PluginStore(private val context: Context) {
             promptSections = run.promptSections,
             contexts = run.contexts,
             promptVariables = run.promptVariables,
+            suppressRuntimeContext = run.suppressRuntimeContext,
             commands = run.commands,
+            llmProviders = run.llmProviders,
+            routes = run.routes,
+            projections = run.projections,
+            shells = run.shells,
+            loadings = run.loadings,
+            agents = run.agents,
+            storages = run.storages,
+            prompts = run.prompts,
+            capabilities = run.capabilities,
             unsupported = run.unsupported,
+            provides = run.provides,
+            injects = run.injects,
+            missingServices = run.missingServices,
+            effects = run.effects,
+            subscriptions = run.subscriptions,
         )
-        registry.upsert(record)
+        require(registryFile.canonicalFile.parentFile == context.filesDir.canonicalFile && registryFile.canonicalFile.name == "plugins.json") {
+            "插件清单路径异常"
+        }
+        val registryBefore = registryFile.takeIf { it.exists() }?.readBytes()
+        transaction.commit {
+            try {
+                registry.upsert(record)
+                // Registry save currently swallows IO errors, so verify persisted metadata.
+                check(registry.find(record.id) == record) { "插件清单写入失败" }
+            } catch (failure: Exception) {
+                // Restore metadata before the transaction rolls the package directory back.
+                if (registryBefore != null) registryFile.writeBytes(registryBefore)
+                else if (registryFile.exists()) check(registryFile.delete()) { "插件清单回滚失败" }
+                throw failure
+            }
+        }
         val suffix = when {
             run.error != null -> "；试运行报错（见详情）"
             run.tools.isEmpty() -> "；没有注册工具（可能只是 hook 插件）"
@@ -337,6 +493,22 @@ class PluginStore(private val context: Context) {
             ""
         }
         return Result(true, "已导入 ${manifest.name} ${manifest.version}$suffix")
+        }
+    }
+
+    private fun wrappedFiles(parsed: PackageParse.Ok): List<PluginFile> {
+        val files = parsed.files.toMutableList()
+        val main = parsed.manifest.main
+        val index = files.indexOfFirst { it.path == main }
+        if (index >= 0) {
+            val original = files[index].bytes
+            val source = original.toString(Charsets.UTF_8)
+            if (ToolPkg.isToolPkg(source)) {
+                files[index] = PluginFile(main, ToolPkg.wrap(source).toByteArray(Charsets.UTF_8))
+                if (files.none { it.path == "toolpkg-original.js" }) files.add(PluginFile("toolpkg-original.js", original))
+            }
+        }
+        return files
     }
 
     // ---- 内部 ----
@@ -387,16 +559,10 @@ class PluginStore(private val context: Context) {
         cwd: String?,
         configJson: String,
         defaultsJson: String = "{}",
-    ): PluginDryRun {
-        val first = dryRun(main, mainPath, format, cwd, "{}")
-        val schema = first.configSchema ?: return first
-        val effective = PluginSchema.effectiveText(schema, configJson, defaultsJson)
-        if (effective == "{}") return first
-        val second = dryRun(main, mainPath, format, cwd, effective)
-        return second.copy(
-            configSchema = second.configSchema ?: schema,
-            configError = second.configError ?: first.configError,
-        )
+        manifestSchema: String? = null,
+        services: Map<String, String> = emptyMap(),
+    ): PluginDryRun = configuredDryRun(configJson, defaultsJson, manifestSchema) { effective ->
+        dryRun(main, mainPath, format, cwd, effective, services)
     }
 
     /** 在 QuickJS 里跑一次插件模块；任何失败都归一成 [PluginDryRun.error]。 */
@@ -406,6 +572,7 @@ class PluginStore(private val context: Context) {
         format: String,
         cwd: String? = null,
         configJson: String = "{}",
+        services: Map<String, String> = emptyMap(),
     ): PluginDryRun {
         if (!main.isFile) return PluginDryRun(error = "入口文件不存在：$mainPath")
         val source = runCatching { main.readText(Charsets.UTF_8) }
@@ -413,9 +580,12 @@ class PluginStore(private val context: Context) {
         val module = runCatching { PluginModule.transform(source) }
             .getOrElse { return PluginDryRun(error = "解析模块失败：${it.message}") }
         val warnings = module.warnings
+        // M83：把「其他已启用插件提供的服务快照」交给这一次 apply，ctx.inject 才有值可用。
+        val serviceHost = xin.dshaa.core.plugins.PluginServiceHost(initial = services)
         val js = runCatching {
             QuickJs(object : JsHost {
-                override fun callSync(method: String, payloadJson: String): String? = null
+                override fun callSync(method: String, payloadJson: String): String? =
+                    serviceHost.callSync(method, payloadJson)
 
                 override fun callAsync(method: String, payloadJson: String, callId: Int) = Unit
             })
@@ -487,6 +657,25 @@ class PluginStore(private val context: Context) {
             .ifBlank { "plugin" }
 
     companion object {
+        /** Shared by test/reload/install; [evaluate] stays replaceable for JVM config regressions. */
+        internal fun configuredDryRun(
+            configJson: String,
+            defaultsJson: String = "{}",
+            manifestSchema: String? = null,
+            evaluate: (String) -> PluginDryRun,
+        ): PluginDryRun {
+            val first = evaluate("{}")
+            val schema = first.configSchema ?: manifestSchema ?: return first
+            val pruned = PluginSchema.prune(schema, configJson)
+            val effective = PluginSchema.effectiveText(schema, pruned, defaultsJson)
+            if (effective == "{}") return first.copy(configSchema = schema)
+            val second = evaluate(effective)
+            return second.copy(
+                configSchema = second.configSchema ?: schema,
+                configError = second.configError ?: first.configError,
+            )
+        }
+
         private const val MAX_IMPORT_BYTES = 64L * 1024 * 1024
         /** 试运行上限：async apply 挂住/死循环时中断，别让导入页一直转圈。 */
         private const val DRY_RUN_TIMEOUT_MS = 12_000L

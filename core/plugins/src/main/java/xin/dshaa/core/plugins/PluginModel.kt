@@ -58,6 +58,266 @@ data class PluginPromptSection(
 /** 插件注册的斜杠命令（DSH `ctx.commands.register`）。 */
 data class PluginCommand(val name: String, val description: String = "")
 
+/**
+ * M84-E2：插件通过 `ctx.llm.register({...})` 注册的**配置式供应商**。
+ *
+ * 手机端没有常驻 JS 运行时，接不了 DSH 里「插件实现 `stream()` 回调」的完整形态；
+ * 这里只接受配置（id / 协议 / 端点 / key / 模型），宿主包装成 [xin.dshaa.core.llm.LlmProvider]，
+ * 走内置的 Anthropic Messages 或 OpenAI 兼容通道。插件只能登记，**用哪个由宿主/用户选**。
+ */
+data class PluginLlmProvider(
+    /** 稳定 id（`--es dsh_llm_provider <id>` / 以后的选择器用它）。 */
+    val id: String,
+    val label: String = "",
+    /** `anthropic` / `openai`；空 = 跟随宿主当前协议（推荐，插件不猜端点形状）。 */
+    val protocol: String = "",
+    /** 空 = 跟随宿主当前端点（此时 apiKey 也跟随宿主）。 */
+    val baseUrl: String = "",
+    /** 空 = 跟随宿主当前模型。 */
+    val model: String = "",
+    /** 空 = 端点为空时跟随宿主 key；端点自定义时必须自带 key（否则报未配置）。 */
+    val apiKey: String = "",
+    /** M84-J：插件带 `stream(request)` 回调（常驻运行时里执行，模型真的由插件产出）。 */
+    val hasStream: Boolean = false,
+)
+
+/** M84-E2：`ctx.ui.registerRoute` 登记的页面入口。最小版只登记元数据 + 打开插件自己的 dsh.client。 */
+data class PluginRoute(
+    val id: String,
+    val title: String,
+    val description: String = "",
+    /** M84-G：`page: true` = 作为整页内容提供（可替换同 id 的宿主内置页）。 */
+    val page: Boolean = false,
+)
+
+/**
+ * M84-H：`ctx.sessionProjections.register({key, stateVersion, ...})` 登记的会话投影。
+ *
+ * 定义本身留在插件的常驻 JS 运行时里（`init` / `apply` / `wire.view` 是闭包）；
+ * 这里只持久化元数据，插件页展示「投影：key（vN，有视图）」。
+ */
+data class PluginProjection(
+    val key: String,
+    val stateVersion: Int = 1,
+    /** 有 `wire.view` 时宿主拿到的是视图；否则是投影 state 本身。 */
+    val hasView: Boolean = false,
+    val hasApply: Boolean = true,
+)
+
+/**
+ * M85-A：`ctx.ui.registerShell({id, label, mount, onState, onAction})` 登记的一个**整壳**。
+ *
+ * 定义（mount/onState/onAction 闭包）留在插件常驻 JS 运行时里；这里只持久化元数据。
+ * 一个插件可以带多个壳，`dsh_shell` 用 `插件id` 或 `插件id#壳id` 选择。
+ */
+data class PluginShell(
+    val id: String,
+    val label: String,
+    /**
+     * M85-F：壳后端。`surface`（默认）= 插件返回 Surface 树，宿主 Compose 渲染；
+     * `webview` = 插件返回整屏 HTML 片段，宿主用 WebView 渲染；两种后端共用
+     * `shell.mount/state/action/event` 与 `surface.command`。
+     */
+    val backend: String = "surface",
+    /** mount 是必需的；其余回调决定宿主能不能发对应 dispatch。 */
+    val hasState: Boolean = false,
+    val hasAction: Boolean = false,
+    val hasEvent: Boolean = false,
+)
+
+/**
+ * M85-D：`ctx.agent.register({id, label, run})` 登记的一个**回合实现**（`agent/v1`）。
+ *
+ * 定义（run 闭包）留在插件常驻 JS 运行时里；这里只持久化元数据，供宿主解析
+ * 「当前用哪个回合插件」和插件页展示。内置 `builtin.agent.dsh` 不在这里登记
+ * （它是宿主编译期的 native 实现，但走同一套开关/授权/同 id 覆盖规则）。
+ */
+data class PluginAgent(
+    val id: String,
+    val label: String,
+)
+
+/**
+ * M85-E：`ctx.storage.register({id, label, readOnly, list, load})` 登记的一个**存储实现**
+ * （`storage/v1`）。
+ *
+ * 定义（list/load 闭包）留在插件常驻 JS 运行时里；这里只持久化元数据，供宿主解析
+ * 「当前用哪个存储插件」和插件页展示。v1 第三方存储只开放只读导出（list/load），
+ * 新建/写入仍由内置 `builtin.storage.jsonl` 的 native 实现负责。
+ */
+data class PluginStorage(
+    val id: String,
+    val label: String,
+    val readOnly: Boolean = true,
+    val hasList: Boolean = true,
+    val hasLoad: Boolean = true,
+)
+
+/**
+ * M85-E：`ctx.systemPrompt.register({id, label, assemble})` 登记的一个**提示词实现**
+ * （`prompt/v1`）。定义留在常驻 JS 里；宿主把内置拼装结果作为 base 传进去，
+ * 插件可以整体替换/包一层（同 id 覆盖内置 `builtin.prompt.dsh`）。
+ */
+data class PluginPrompt(
+    val id: String,
+    val label: String,
+)
+
+/**
+ * M85-F：`ctx.capability.register({id, label, description, kind, invoke})` 登记的一个**能力提供方**
+ * （`capability/v1`）。
+ *
+ * 定义（invoke 闭包）留在插件常驻 JS 运行时里；这里只持久化元数据，供宿主解析
+ * 「这个能力由谁提供」和插件页展示。root/NFC/Shizuku/adb-shell 等特权能力只能通过它登记，
+ * 宿主不写死；同一 id 的插件提供方优先于内置平台能力（同 id 覆盖）。
+ */
+data class PluginCapabilityProvider(
+    val id: String,
+    val label: String = "",
+    val description: String = "",
+    /** 展示用分类（`device` / `privileged` / `system` …）；宿主不解释。 */
+    val kind: String = "",
+)
+
+/** 声明字段的规范化/校验：JS 试运行和 `plugins.json` 读盘走同一套，坏值直接丢。 */
+internal object PluginDecl {
+    private val PROVIDER_ID = Regex("""^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$""")
+
+    fun providerId(raw: String?): String? =
+        raw?.trim()?.takeIf { PROVIDER_ID.matches(it) }
+
+    fun protocol(raw: String?): String = when (raw?.trim()?.lowercase()) {
+        "openai", "openai-completions", "openai-compatible", "chat" -> "openai"
+        "anthropic", "anthropic-messages", "messages", "claude" -> "anthropic"
+        // 空/auto/host/认不出 = 跟随宿主当前协议（不猜，避免把请求发到错误端点）
+        else -> ""
+    }
+
+    fun provider(
+        id: String?,
+        label: String?,
+        protocol: String?,
+        baseUrl: String?,
+        model: String?,
+        apiKey: String?,
+        hasStream: Boolean? = null,
+    ): PluginLlmProvider? {
+        val cleanId = providerId(id) ?: return null
+        return PluginLlmProvider(
+            id = cleanId,
+            label = label?.trim()?.take(120).orEmpty().ifBlank { cleanId },
+            protocol = protocol(protocol),
+            baseUrl = baseUrl?.trim()?.take(400).orEmpty(),
+            model = model?.trim()?.take(200).orEmpty(),
+            apiKey = apiKey?.trim()?.take(500).orEmpty(),
+            hasStream = hasStream == true,
+        )
+    }
+
+    fun route(id: String?, title: String?, description: String?, page: Boolean = false): PluginRoute? {
+        val clean = id?.trim()?.take(160)?.takeIf { it.isNotBlank() } ?: return null
+        if (clean.any { it.isISOControl() }) return null
+        return PluginRoute(
+            id = clean,
+            title = title?.trim()?.take(120).orEmpty().ifBlank { clean },
+            description = description?.trim()?.take(300).orEmpty(),
+            page = page,
+        )
+    }
+
+    /** M84-H：投影 key 的长度/字符门（和 DSH 的 key 用法对齐：短、可读、无控制字符）。 */
+    fun projection(key: String?, stateVersion: Int?, hasView: Boolean?, hasApply: Boolean?): PluginProjection? {
+        val clean = key?.trim()?.take(80)?.takeIf { it.isNotBlank() } ?: return null
+        if (clean.any { it.isISOControl() }) return null
+        return PluginProjection(
+            key = clean,
+            stateVersion = (stateVersion ?: 1).coerceAtLeast(0),
+            hasView = hasView == true,
+            hasApply = hasApply != false,
+        )
+    }
+
+    /** M85-A：整壳 id + 展示名 + 回调能力。id 和 route 同一档长度/字符限制。 */
+    fun shell(
+        id: String?,
+        label: String?,
+        backend: String?,
+        hasState: Boolean?,
+        hasAction: Boolean?,
+        hasEvent: Boolean?,
+    ): PluginShell? {
+        val clean = id?.trim()?.take(80)?.takeIf { it.isNotBlank() } ?: return null
+        if (clean.any { it.isISOControl() }) return null
+        return PluginShell(
+            id = clean,
+            label = label?.trim()?.take(120).orEmpty().ifBlank { clean },
+            // M85-F：未知后端按 surface 处理（不猜新协议）；webview 是唯一新增后端。
+            backend = if (backend?.trim()?.equals("webview", true) == true) "webview" else "surface",
+            hasState = hasState == true,
+            hasAction = hasAction == true,
+            hasEvent = hasEvent == true,
+        )
+    }
+
+    /** M85-D：回合实现 id + 展示名（同一档长度/字符限制；run 闭包不进清单）。 */
+    fun agent(id: String?, label: String?): PluginAgent? {
+        val clean = id?.trim()?.take(80)?.takeIf { it.isNotBlank() } ?: return null
+        if (clean.any { it.isISOControl() }) return null
+        return PluginAgent(
+            id = clean,
+            label = label?.trim()?.take(120).orEmpty().ifBlank { clean },
+        )
+    }
+
+    /** M85-E：存储实现 id + 展示名 + 只读/回调能力（list/load 闭包留在常驻 JS 里）。 */
+    fun storage(
+        id: String?,
+        label: String?,
+        readOnly: Boolean?,
+        hasList: Boolean?,
+        hasLoad: Boolean?,
+    ): PluginStorage? {
+        val clean = id?.trim()?.take(80)?.takeIf { it.isNotBlank() } ?: return null
+        if (clean.any { it.isISOControl() }) return null
+        return PluginStorage(
+            id = clean,
+            label = label?.trim()?.take(120).orEmpty().ifBlank { clean },
+            // v1 只支持只读导出：插件显式写 readOnly=false 也不放手（写入路径未定义）。
+            readOnly = true,
+            hasList = hasList != false,
+            hasLoad = hasLoad != false,
+        )
+    }
+
+    /** M85-E：提示词实现 id + 展示名（assemble 闭包留在常驻 JS 里）。 */
+    fun prompt(id: String?, label: String?): PluginPrompt? {
+        val clean = id?.trim()?.take(80)?.takeIf { it.isNotBlank() } ?: return null
+        if (clean.any { it.isISOControl() }) return null
+        return PluginPrompt(
+            id = clean,
+            label = label?.trim()?.take(120).orEmpty().ifBlank { clean },
+        )
+    }
+
+    /** M85-F：能力提供方 id/说明/分类（invoke 闭包留在常驻 JS 里；id 规则与其它角色同一档）。 */
+    fun capability(
+        id: String?,
+        label: String?,
+        description: String?,
+        kind: String?,
+    ): PluginCapabilityProvider? {
+        val clean = id?.trim()?.take(80)?.takeIf { it.isNotBlank() } ?: return null
+        if (clean.any { it.isISOControl() }) return null
+        val cleanKind = kind?.trim()?.take(32).orEmpty().filter { it.isLetterOrDigit() || it == '.' || it == '_' }
+        return PluginCapabilityProvider(
+            id = clean,
+            label = label?.trim()?.take(120).orEmpty().ifBlank { clean },
+            description = description?.trim()?.take(300).orEmpty(),
+            kind = cleanKind,
+        )
+    }
+}
+
 /** 包里的一个文件（路径已归一化成 `/` 分隔、已去掉公共顶层目录）。 */
 class PluginFile(val path: String, val bytes: ByteArray)
 
@@ -115,13 +375,46 @@ data class PluginDryRun(
     val contexts: List<PluginPromptSection> = emptyList(),
     /** 插件 `ctx.systemPrompt.variable(name, fn)` 在 apply 时求值出的快照（M74）。 */
     val promptVariables: Map<String, String> = emptyMap(),
+    /**
+     * M84-E1：插件调用了 `ctx.systemPrompt.suppressRuntimeContext()`。
+     * 启用期间宿主的运行时上下文快照不再注入（其它 `ctx.systemPrompt.context` 仍注入）。
+     */
+    val suppressRuntimeContext: Boolean = false,
     /** 插件注册的斜杠命令（`ctx.commands.register`）。 */
     val commands: List<PluginCommand> = emptyList(),
+    /** M84-E2：`ctx.llm.register({...})` 登记的配置式供应商。 */
+    val llmProviders: List<PluginLlmProvider> = emptyList(),
+    /** M84-E2：`ctx.ui.registerRoute(...)` 登记的页面入口（元数据）。 */
+    val routes: List<PluginRoute> = emptyList(),
+    /** M84-H：`ctx.sessionProjections.register(...)` 登记的会话投影（元数据）。 */
+    val projections: List<PluginProjection> = emptyList(),
+    /** M85-A：`ctx.ui.registerShell(...)` 登记的整壳（元数据，定义留在常驻 JS 里）。 */
+    val shells: List<PluginShell> = emptyList(),
+    /** Static loading/v1 declarations; usable before any plugin runtime starts. */
+    val loadings: List<PluginLoading> = emptyList(),
+    /** M85-D：`ctx.agent.register(...)` 登记的回合实现（agent/v1，定义留在常驻 JS 里）。 */
+    val agents: List<PluginAgent> = emptyList(),
+    /** M85-E：`ctx.storage.register(...)` 登记的存储实现（storage/v1，定义留在常驻 JS 里）。 */
+    val storages: List<PluginStorage> = emptyList(),
+    /** M85-E：`ctx.systemPrompt.register(...)` 登记的提示词实现（prompt/v1）。 */
+    val prompts: List<PluginPrompt> = emptyList(),
+    /** M85-F：`ctx.capability.register(...)` 登记的能力提供方（capability/v1，invoke 闭包留在常驻 JS 里）。 */
+    val capabilities: List<PluginCapabilityProvider> = emptyList(),
     /**
      * 插件用到、但鲸歌未实现的宿主能力（`sessionProjections` / `llm.register` /
      * `ui.register*` / `ctx.on` 等）。插件页明确展示，不再静默吞掉。
      */
     val unsupported: List<String> = emptyList(),
+    /** M83：`ctx.provide` 的服务快照。 */
+    val provides: Map<String, String> = emptyMap(),
+    /** M83：`ctx.inject` 声明的依赖。 */
+    val injects: List<PluginDependencyRef> = emptyList(),
+    /** M83：本次 apply 缺的服务（非 optional 且没人提供）。 */
+    val missingServices: List<String> = emptyList(),
+    /** M83：`ctx.effect` 登记的清理器标签。 */
+    val effects: List<String> = emptyList(),
+    /** M83：`ctx.on` 登记的事件名。 */
+    val subscriptions: List<String> = emptyList(),
 )
 
 /**
@@ -191,10 +484,40 @@ data class PluginRecord(
     val contexts: List<PluginPromptSection> = emptyList(),
     /** 插件 `ctx.systemPrompt.variable` 求值出的变量快照（M74；段文本里的 `{{name}}` 用它替换）。 */
     val promptVariables: Map<String, String> = emptyMap(),
+    /** M84-E1：本插件要求抑制宿主的运行时上下文快照（`ctx.systemPrompt.suppressRuntimeContext`）。 */
+    val suppressRuntimeContext: Boolean = false,
     /** 插件注册的斜杠命令。 */
     val commands: List<PluginCommand> = emptyList(),
+    /** M84-E2：`ctx.llm.register({...})` 登记的配置式供应商。 */
+    val llmProviders: List<PluginLlmProvider> = emptyList(),
+    /** M84-E2：`ctx.ui.registerRoute(...)` 登记的页面入口（元数据）。 */
+    val routes: List<PluginRoute> = emptyList(),
+    /** M84-H：本插件注册的会话投影（key → 版本/是否有 wire.view）。 */
+    val projections: List<PluginProjection> = emptyList(),
+    /** M85-A：本插件注册的整壳（`ctx.ui.registerShell`）。 */
+    val shells: List<PluginShell> = emptyList(),
+    /** Static loading/v1 declarations; usable before any plugin runtime starts. */
+    val loadings: List<PluginLoading> = emptyList(),
+    /** M85-D：本插件注册的回合实现（`ctx.agent.register`，agent/v1）。 */
+    val agents: List<PluginAgent> = emptyList(),
+    /** M85-E：本插件注册的存储实现（`ctx.storage.register`，storage/v1）。 */
+    val storages: List<PluginStorage> = emptyList(),
+    /** M85-E：本插件注册的提示词实现（`ctx.systemPrompt.register`，prompt/v1）。 */
+    val prompts: List<PluginPrompt> = emptyList(),
+    /** M85-F：本插件注册的能力提供方（`ctx.capability.register`，capability/v1）。 */
+    val capabilities: List<PluginCapabilityProvider> = emptyList(),
     /** 插件用到但鲸歌未实现的宿主能力。 */
     val unsupported: List<String> = emptyList(),
+    /** M83 服务容器：本插件 `ctx.provide(name, value)` 的服务名 → 值 JSON 快照。 */
+    val provides: Map<String, String> = emptyMap(),
+    /** M83：本插件 `ctx.inject([...])` 声明的依赖。 */
+    val injects: List<PluginDependencyRef> = emptyList(),
+    /** M83：按当前启用集合解析出的缺失服务（插件页标红「缺少服务 X」）。 */
+    val missingServices: List<String> = emptyList(),
+    /** M83：`ctx.effect` 登记的清理器标签（M84-I 起：插件停用时真的回调 cleanup）。 */
+    val effects: List<String> = emptyList(),
+    /** M83：`ctx.on` 登记的事件名。 */
+    val subscriptions: List<String> = emptyList(),
 )
 
 /**
@@ -329,8 +652,101 @@ class PluginRegistryFile(private val file: File) {
                     promptSections = obj.sections("promptSections"),
                     contexts = obj.sections("contexts"),
                     promptVariables = obj.stringMap("promptVariables"),
+                    suppressRuntimeContext = obj.boolean("suppressRuntimeContext") ?: false,
                     commands = obj.commands("commands"),
+                    llmProviders = (obj["llmProviders"] as? kotlinx.serialization.json.JsonArray)
+                        ?.mapNotNull { element ->
+                            val provider = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                            PluginDecl.provider(
+                                id = provider.string("id"),
+                                label = provider.string("label"),
+                                protocol = provider.string("protocol"),
+                                baseUrl = provider.string("baseUrl"),
+                                model = provider.string("model"),
+                                apiKey = provider.string("apiKey"),
+                                hasStream = provider.boolean("hasStream"),
+                            )
+                        }.orEmpty(),
+                    routes = (obj["routes"] as? kotlinx.serialization.json.JsonArray)
+                        ?.mapNotNull { element ->
+                            val route = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                            PluginDecl.route(
+                                id = route.string("id"),
+                                title = route.string("title"),
+                                description = route.string("description"),
+                                page = route.boolean("page") ?: false,
+                            )
+                        }.orEmpty(),
+                    projections = (obj["projections"] as? kotlinx.serialization.json.JsonArray)
+                        ?.mapNotNull { element ->
+                            val projection = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                            PluginDecl.projection(
+                                key = projection.string("key"),
+                                stateVersion = projection.long("stateVersion")?.toInt(),
+                                hasView = projection.boolean("hasView"),
+                                hasApply = projection.boolean("hasApply"),
+                            )
+                        }.orEmpty(),
+                    shells = (obj["shells"] as? kotlinx.serialization.json.JsonArray)
+                        ?.mapNotNull { element ->
+                            val shell = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                            PluginDecl.shell(
+                                id = shell.string("id"),
+                                label = shell.string("label"),
+                                backend = shell.string("backend"),
+                                hasState = shell.boolean("hasState"),
+                                hasAction = shell.boolean("hasAction"),
+                                hasEvent = shell.boolean("hasEvent"),
+                            )
+                        }.orEmpty(),
+                    loadings = LoadingSpec.parseAll(obj["loadings"]),
+                    agents = (obj["agents"] as? kotlinx.serialization.json.JsonArray)
+                        ?.mapNotNull { element ->
+                            val agent = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                            PluginDecl.agent(
+                                id = agent.string("id"),
+                                label = agent.string("label"),
+                            )
+                        }.orEmpty(),
+                    storages = (obj["storages"] as? kotlinx.serialization.json.JsonArray)
+                        ?.mapNotNull { element ->
+                            val storage = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                            PluginDecl.storage(
+                                id = storage.string("id"),
+                                label = storage.string("label"),
+                                readOnly = storage.boolean("readOnly"),
+                                hasList = storage.boolean("hasList"),
+                                hasLoad = storage.boolean("hasLoad"),
+                            )
+                        }.orEmpty(),
+                    prompts = (obj["prompts"] as? kotlinx.serialization.json.JsonArray)
+                        ?.mapNotNull { element ->
+                            val prompt = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                            PluginDecl.prompt(
+                                id = prompt.string("id"),
+                                label = prompt.string("label"),
+                            )
+                        }.orEmpty(),
+                    capabilities = (obj["capabilities"] as? kotlinx.serialization.json.JsonArray)
+                        ?.mapNotNull { element ->
+                            val capability = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                            PluginDecl.capability(
+                                id = capability.string("id"),
+                                label = capability.string("label"),
+                                description = capability.string("description"),
+                                kind = capability.string("kind"),
+                            )
+                        }.orEmpty(),
                     unsupported = obj.stringList("unsupported"),
+                    provides = obj.stringMap("provides"),
+                    injects = (obj["injects"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { element ->
+                        val dep = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                        val name = dep.string("name")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                        PluginDependencyRef(name = name, optional = dep.boolean("optional") ?: false)
+                    }.orEmpty(),
+                    missingServices = obj.stringList("missingServices"),
+                    effects = obj.stringList("effects"),
+                    subscriptions = obj.stringList("subscriptions"),
                 )
             }.orEmpty()
         }.getOrDefault(emptyList())
@@ -453,6 +869,7 @@ class PluginRegistryFile(private val file: File) {
                                             },
                                         )
                                     }
+                                    if (record.suppressRuntimeContext) put("suppressRuntimeContext", true)
                                     if (record.commands.isNotEmpty()) {
                                         put(
                                             "commands",
@@ -468,8 +885,186 @@ class PluginRegistryFile(private val file: File) {
                                             },
                                         )
                                     }
+                                    if (record.llmProviders.isNotEmpty()) {
+                                        put(
+                                            "llmProviders",
+                                            buildJsonArray {
+                                                record.llmProviders.forEach { provider ->
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("id", provider.id)
+                                                            if (provider.label.isNotBlank()) put("label", provider.label)
+                                                            put("protocol", provider.protocol)
+                                                            if (provider.baseUrl.isNotBlank()) put("baseUrl", provider.baseUrl)
+                                                            if (provider.model.isNotBlank()) put("model", provider.model)
+                                                            if (provider.apiKey.isNotBlank()) put("apiKey", provider.apiKey)
+                                                            if (provider.hasStream) put("hasStream", true)
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                    if (record.routes.isNotEmpty()) {
+                                        put(
+                                            "routes",
+                                            buildJsonArray {
+                                                record.routes.forEach { route ->
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("id", route.id)
+                                                            put("title", route.title)
+                                                            if (route.description.isNotBlank()) put("description", route.description)
+                                                            if (route.page) put("page", true)
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                    if (record.projections.isNotEmpty()) {
+                                        put(
+                                            "projections",
+                                            buildJsonArray {
+                                                record.projections.forEach { projection ->
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("key", projection.key)
+                                                            put("stateVersion", projection.stateVersion)
+                                                            if (projection.hasView) put("hasView", true)
+                                                            if (!projection.hasApply) put("hasApply", false)
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                    if (record.shells.isNotEmpty()) {
+                                        put(
+                                            "shells",
+                                            buildJsonArray {
+                                                record.shells.forEach { shell ->
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("id", shell.id)
+                                                            put("label", shell.label)
+                                                            if (shell.backend != "surface") put("backend", shell.backend)
+                                                            if (shell.hasState) put("hasState", true)
+                                                            if (shell.hasAction) put("hasAction", true)
+                                                            if (shell.hasEvent) put("hasEvent", true)
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                    if (record.loadings.isNotEmpty()) {
+                                        put("loadings", buildJsonArray {
+                                            record.loadings.forEach { add(LoadingSpec.declaration(it)) }
+                                        })
+                                    }
+                                    if (record.agents.isNotEmpty()) {
+                                        put(
+                                            "agents",
+                                            buildJsonArray {
+                                                record.agents.forEach { agent ->
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("id", agent.id)
+                                                            put("label", agent.label)
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                    if (record.storages.isNotEmpty()) {
+                                        put(
+                                            "storages",
+                                            buildJsonArray {
+                                                record.storages.forEach { storage ->
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("id", storage.id)
+                                                            put("label", storage.label)
+                                                            put("readOnly", storage.readOnly)
+                                                            put("hasList", storage.hasList)
+                                                            put("hasLoad", storage.hasLoad)
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                    if (record.prompts.isNotEmpty()) {
+                                        put(
+                                            "prompts",
+                                            buildJsonArray {
+                                                record.prompts.forEach { prompt ->
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("id", prompt.id)
+                                                            put("label", prompt.label)
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                    if (record.capabilities.isNotEmpty()) {
+                                        put(
+                                            "capabilities",
+                                            buildJsonArray {
+                                                record.capabilities.forEach { capability ->
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("id", capability.id)
+                                                            put("label", capability.label)
+                                                            if (capability.description.isNotBlank()) {
+                                                                put("description", capability.description)
+                                                            }
+                                                            if (capability.kind.isNotBlank()) put("kind", capability.kind)
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
                                     if (record.unsupported.isNotEmpty()) {
                                         put("unsupported", buildJsonArray { record.unsupported.forEach { add(JsonPrimitive(it)) } })
+                                    }
+                                    // M83 服务容器（provide/inject/effect/on 的登记结果）
+                                    if (record.provides.isNotEmpty()) {
+                                        put(
+                                            "provides",
+                                            buildJsonObject {
+                                                record.provides.forEach { (name, value) -> put(name, value) }
+                                            },
+                                        )
+                                    }
+                                    if (record.injects.isNotEmpty()) {
+                                        put(
+                                            "injects",
+                                            buildJsonArray {
+                                                record.injects.forEach { dep ->
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("name", dep.name)
+                                                            put("optional", dep.optional)
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                    if (record.missingServices.isNotEmpty()) {
+                                        put("missingServices", buildJsonArray { record.missingServices.forEach { add(JsonPrimitive(it)) } })
+                                    }
+                                    if (record.effects.isNotEmpty()) {
+                                        put("effects", buildJsonArray { record.effects.forEach { add(JsonPrimitive(it)) } })
+                                    }
+                                    if (record.subscriptions.isNotEmpty()) {
+                                        put("subscriptions", buildJsonArray { record.subscriptions.forEach { add(JsonPrimitive(it)) } })
                                     }
                                     record.error?.let { put("error", it) }
                                     put("installedAt", record.installedAt)

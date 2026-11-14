@@ -1,0 +1,124 @@
+[
+  {
+    "sessionId": "80dfaed4-ddb3-4ee4-aedc-3afcce098909",
+    "current": {
+      "requestNo": 1,
+      "model": "deepseek-flash",
+      "protocol": "openai",
+      "window": 1048576,
+      "status": "completed",
+      "inputTokens": 12000,
+      "outputTokens": 7,
+      "cacheReadTokens": 10000,
+      "cacheCreationTokens": null,
+      "estimatedSystem": 1304,
+      "estimatedTools": 16769,
+      "estimatedMessages": 512,
+      "imageCount": 0,
+      "startedAt": 1794628515430,
+      "updatedAt": 1794628515557
+    },
+    "invalidationReason": null,
+    "history": [],
+    "changes": []
+  },
+  {
+    "sessionId": "80dfaed4-ddb3-4ee4-aedc-3afcce098909",
+    "current": {
+      "requestNo": 2,
+      "model": "deepseek-flash",
+      "protocol": "openai",
+      "window": 1048576,
+      "status": "completed",
+      "inputTokens": 8000,
+      "outputTokens": 7,
+      "cacheReadTokens": 6000,
+      "cacheCreationTokens": null,
+      "estimatedSystem": 1304,
+      "estimatedTools": 16769,
+      "estimatedMessages": 525,
+      "imageCount": 0,
+      "startedAt": 1794628657013,
+      "updatedAt": 1794628657182
+    },
+    "invalidationReason": null,
+    "history": [
+      {
+        "requestNo": 1,
+        "model": "deepseek-flash",
+        "protocol": "openai",
+        "window": 1048576,
+        "status": "completed",
+        "inputTokens": 12000,
+        "outputTokens": 7,
+        "cacheReadTokens": 10000,
+        "cacheCreationTokens": null,
+        "estimatedSystem": 1304,
+        "estimatedTools": 16769,
+        "estimatedMessages": 512,
+        "imageCount": 0,
+        "startedAt": 1794628515430,
+        "updatedAt": 1794628515557
+      }
+    ],
+    "changes": []
+  },
+  {
+    "sessionId": "80dfaed4-ddb3-4ee4-aedc-3afcce098909",
+    "current": {
+      "requestNo": 3,
+      "model": "deepseek-flash",
+      "protocol": "openai",
+      "window": 1048576,
+      "status": "completed",
+      "inputTokens": 0,
+      "outputTokens": 7,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": null,
+      "estimatedSystem": 1304,
+      "estimatedTools": 16769,
+      "estimatedMessages": 538,
+      "imageCount": 0,
+      "startedAt": 1794628672307,
+      "updatedAt": 1794628672417
+    },
+    "invalidationReason": null,
+    "history": [
+      {
+        "requestNo": 1,
+        "model": "deepseek-flash",
+        "protocol": "openai",
+        "window": 1048576,
+        "status": "completed",
+        "inputTokens": 12000,
+        "outputTokens": 7,
+        "cacheReadTokens": 10000,
+        "cacheCreationTokens": null,
+        "estimatedSystem": 1304,
+        "estimatedTools": 16769,
+        "estimatedMessages": 512,
+        "imageCount": 0,
+        "startedAt": 1794628515430,
+        "updatedAt": 1794628515557
+      },
+      {
+        "requestNo": 2,
+        "model": "deepseek-flash",
+        "protocol": "openai",
+        "window": 1048576,
+        "status": "completed",
+        "inputTokens": 8000,
+        "outputTokens": 7,
+        "cacheReadTokens": 6000,
+        "cacheCreationTokens": null,
+        "estimatedSystem": 1304,
+        "estimatedTools": 16769,
+        "estimatedMessages": 525,
+        "imageCount": 0,
+        "startedAt": 1794628657013,
+        "updatedAt": 1794628657182
+      }
+    ],
+    "changes": []
+  }
+]

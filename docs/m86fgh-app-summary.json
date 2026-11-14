@@ -1,0 +1,72 @@
+﻿[
+    {
+        "suite":  "xin.dshaa.nativeapp.chat.PromptQueueDeviceProbeTest",
+        "tests":  4,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0
+    },
+    {
+        "suite":  "xin.dshaa.nativeapp.data.LoadingSnapshotStoreTest",
+        "tests":  4,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0
+    },
+    {
+        "suite":  "xin.dshaa.nativeapp.data.PluginDevelopmentTest",
+        "tests":  12,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0
+    },
+    {
+        "suite":  "xin.dshaa.nativeapp.data.PluginDevProbeTest",
+        "tests":  7,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0
+    },
+    {
+        "suite":  "xin.dshaa.nativeapp.data.PluginLoadingDevelopmentTest",
+        "tests":  2,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0
+    },
+    {
+        "suite":  "xin.dshaa.nativeapp.remote.ConversationAdapterTest",
+        "tests":  13,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0
+    },
+    {
+        "suite":  "xin.dshaa.nativeapp.remote.RemoteProfileRecoveryTest",
+        "tests":  2,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0
+    },
+    {
+        "suite":  "xin.dshaa.nativeapp.remote.RemotePromptDraftsTest",
+        "tests":  8,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0
+    },
+    {
+        "suite":  "xin.dshaa.nativeapp.remote.RemoteQuestionProtocolTest",
+        "tests":  2,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0
+    },
+    {
+        "suite":  "xin.dshaa.nativeapp.remote.RemoteTransportTest",
+        "tests":  10,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0
+    }
+]

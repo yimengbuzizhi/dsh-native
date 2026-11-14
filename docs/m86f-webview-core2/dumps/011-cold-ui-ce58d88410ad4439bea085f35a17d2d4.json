@@ -1,0 +1,17 @@
+{
+  "observedAt": 1794653724701,
+  "activeTurnCount": 0,
+  "writerCount": 0,
+  "streamingCount": 0,
+  "sessionId": "",
+  "streaming": false,
+  "stopping": false,
+  "shell": "m86.selftest.webcold.5acf56d017da4b568775b38cda6e5d29#m86.webcold.5acf56d017da4b568775b38cda6e5d29",
+  "sendMode": "queue",
+  "errorPresent": false,
+  "hasDraft": false,
+  "pendingImageCount": 0,
+  "pendingFileCount": 0,
+  "fixtureSession": false,
+  "turnEnds": []
+}

@@ -1,0 +1,49 @@
+{
+  "batch": "M84-D",
+  "device": "192.0.2.10:45111 (OPPO A55 5G, PEMM00, Android 13)",
+  "time": "2026-11-13 19:47 (Asia/Shanghai)",
+  "slots": ["BALL", "BUBBLE", "PANEL", "FULLSCREEN"],
+  "demo_plugin": {
+    "plugin_id": "builtin.floating.demo",
+    "slot_plugin_id": "demo.floating",
+    "default_enabled": false,
+    "builtin_plugin_count": 23,
+    "ui_section": "悬浮窗插件（1）"
+  },
+  "log": {
+    "tag": "DshFloatingSlot",
+    "file": "docs/m84d-floating.txt",
+    "lines": [
+      "19:46:46.767 sync demo=false plugins=[]",
+      "19:46:46.798 registered demo.floating",
+      "19:46:46.798 sync demo=true plugins=[demo.floating]",
+      "19:46:50.403 show slot=BALL plugin=demo.floating",
+      "19:46:57.631 click slot=BALL plugin=demo.floating (default action kept)",
+      "19:46:57.782 show slot=PANEL plugin=demo.floating",
+      "19:47:00.832 unregistered demo.floating",
+      "19:47:00.832 sync demo=false plugins=[]"
+    ]
+  },
+  "ui": {
+    "ball_badge": "红色角标「1」在球右上角（126-02/126-02b）",
+    "ball_default_after_off": "同一位置无角标（126-07/126-07b）",
+    "bubble": "粉底深红字 18dp 圆角，正文前缀【demo.floating】，内容「慢速回复：悬浮窗气泡插口验收（M84-D）」（126-03）",
+    "panel_banner": "悬浮窗插件 demo：面板插口（内容来自 FloatingSlots）（126-04）",
+    "fullscreen_banner": "悬浮窗插件 demo：全屏页插口（126-05）",
+    "plugin_switch_on": "126-01",
+    "plugin_switch_off": "126-06"
+  },
+  "bubble_trigger": {
+    "provider": "debug.slow（2.5 秒后收口）",
+    "flow": "冷启 + dsh_send → 1.2s 后回桌面 → 流式结束在 BALL → show slot=BUBBLE",
+    "auto_return": "3 秒回球（原行为）"
+  },
+  "fixed_bug": "BuiltinPluginStore 对 defaultEnabled=false 的插件：setEnabled(true) 现在会写入「显式打开」，此前永远打不开",
+  "reset": {
+    "builtin.floating.demo": "off（默认关，不写 disabled 集合）",
+    "floating_service": "已停（dsh_floating_stop）",
+    "debug_provider": "无（本批未设置持久调试 provider）",
+    "accessibility": "已重发并 Bound（装机后恢复）"
+  },
+  "no_tests": "app 模块无 JVM 测试；D 改动靠真机截图 + logcat 验收"
+}

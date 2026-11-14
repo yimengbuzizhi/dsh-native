@@ -120,9 +120,22 @@ data class StreamMessage(
 
 @Serializable
 data class StreamUsage(
-    @SerialName("input_tokens") val inputTokens: Int = 0,
-    @SerialName("output_tokens") val outputTokens: Int = 0,
-)
+    @SerialName("input_tokens") val inputTokens: Int? = null,
+    @SerialName("output_tokens") val outputTokens: Int? = null,
+    @SerialName("cache_read_input_tokens") val cacheReadInputTokens: Int? = null,
+    @SerialName("cache_creation_input_tokens") val cacheCreationInputTokens: Int? = null,
+) {
+    /** Anthropic input_tokens excludes the two cache categories; absent cache fields mean no split. */
+    fun normalized(): TokenUsage = TokenUsage(
+        inputTokens = inputTokens?.let { input ->
+            (input.toLong() + (cacheReadInputTokens ?: 0) + (cacheCreationInputTokens ?: 0))
+                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        },
+        outputTokens = outputTokens,
+        cacheReadInputTokens = cacheReadInputTokens,
+        cacheCreationInputTokens = cacheCreationInputTokens,
+    )
+}
 
 @Serializable
 data class ContentBlockStartPayload(

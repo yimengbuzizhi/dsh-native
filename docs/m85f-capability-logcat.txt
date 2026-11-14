@@ -1,0 +1,23 @@
+﻿
+11-14 09:18:21.851  1917  1917 W DshCapability: invoke id=nfc unavailable: 能力 nfc 的提供方插件 m85f.capability-demo 已停用。
+11-14 09:18:21.852  1917  1917 W DshCapability: invoke id=adb-shell unavailable: 能力 adb-shell 的提供方插件 m85f.capability-de
+mo 已停用。
+11-14 09:18:21.852  1917  1917 W DshCapability: invoke id=m85f.missing unavailable: 能力 m85f.missing 不可用：没有提供方（没有启用且具备 c
+apability 授权的插件，也不是内置能力）。
+11-14 09:18:21.867  1917  1917 I DshCapability: capability test -> /sdcard/Download/m85f-caps-test-final-off.json cases
+=6
+
+
+
+11-14 09:18:40.369  1917  1917 I DshCapability: invoke id=notify plugin=m85f.capability-demo
+11-14 09:18:40.378  1917  1917 I DshCapability: invoke ok id=notify plugin=m85f.capability-demo elapsed=8ms
+11-14 09:18:40.396  1917  1917 I DshCapability: invoke id=nfc plugin=m85f.capability-demo
+11-14 09:18:40.400  1917  1917 I DshCapability: invoke ok id=nfc plugin=m85f.capability-demo elapsed=3ms
+11-14 09:18:40.401  1917  1917 I DshCapability: invoke id=adb-shell plugin=m85f.capability-demo
+11-14 09:18:40.406  1917  1917 I DshCapability: invoke ok id=adb-shell plugin=m85f.capability-demo elapsed=5ms
+11-14 09:18:40.408  1917  1917 W DshCapability: invoke id=m85f.missing unavailable: 能力 m85f.missing 不可用：没有提供方（没有启用且具备 c
+apability 授权的插件，也不是内置能力）。
+11-14 09:18:40.447  1917  1917 I DshCapability: capability test -> /sdcard/Download/m85f-caps-test-final-on.json cases=
+6
+
+

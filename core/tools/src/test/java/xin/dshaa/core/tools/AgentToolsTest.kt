@@ -186,7 +186,7 @@ class AgentToolsTest {
 
     @Test
     fun registryContainsAllFiveDelegationTools() {
-        val names = DefaultTools.registry().names
+        val names = BuiltinToolCatalog.allTools().map { it.name }
         listOf("subagent", "subagent_fork", "list_agents", "send_message", "interrupt_agent").forEach {
             assertTrue(it in names, "missing $it")
         }

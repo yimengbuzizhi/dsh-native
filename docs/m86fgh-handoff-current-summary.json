@@ -1,0 +1,27 @@
+{
+  "engine": {
+    "totals": {
+      "tests": 102,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "reportFiles": 5,
+    "newCancellationRegression": [
+      {
+        "name": "stoppingDuringSteeringReplyPreservesPartialAssistantAfterDiskReload",
+        "passed": true
+      }
+    ]
+  },
+  "app": {
+    "totals": {
+      "tests": 64,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "reportFiles": 10,
+    "newCancellationRegression": []
+  }
+}

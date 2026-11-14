@@ -1,0 +1,95 @@
+{
+  "owner": "m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2",
+  "selection": "m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#startup",
+  "times": {
+    "loadingFirstDraw": 704,
+    "coreReady": 1013,
+    "shellFirstDraw": 1611,
+    "reportFullyDrawn": 1612
+  },
+  "lines": [
+    "11-14 13:23:14.960 15478 15478 I DshBoot : loadingSnapshot owner=m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2 selection=m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#startup revision=0e38dff4c147",
+    "11-14 13:23:14.984 15478 15478 I DshBoot : loading:0e38dff4c14720a7576bb91922ac94e6479b89869332f1160082b313d469dc0a:0 drawCallback=frameCommit elapsedMs=703 presentationConfirmed=false",
+    "11-14 13:23:14.985 15478 15478 I DshBoot : loadingFirstDraw elapsedMs=704",
+    "11-14 13:23:15.294 15478 15478 I DshBoot : coreReady elapsedMs=1013",
+    "11-14 13:23:15.892 15478 15478 I DshBoot : shell drawCallback=frameCommit elapsedMs=1611 presentationConfirmed=false",
+    "11-14 13:23:15.892 15478 15478 I DshBoot : shellFirstDraw elapsedMs=1611",
+    "11-14 13:23:15.892 15478 15478 I DshBoot : firstInteractive mode=shell elapsedMs=1611 presentationConfirmed=false",
+    "11-14 13:23:15.893 15478 15478 I DshBoot : reportFullyDrawn elapsedMs=1612"
+  ],
+  "ordered": true,
+  "crash": false,
+  "frames": [
+    {
+      "path": "startup\\burst\\frame-000.png",
+      "hostStartMs": 0,
+      "hostEndMs": 516
+    },
+    {
+      "path": "startup\\burst\\frame-001.png",
+      "hostStartMs": 625,
+      "hostEndMs": 922
+    },
+    {
+      "path": "startup\\burst\\frame-002.png",
+      "hostStartMs": 1032,
+      "hostEndMs": 1375
+    },
+    {
+      "path": "startup\\burst\\frame-003.png",
+      "hostStartMs": 1500,
+      "hostEndMs": 1828
+    },
+    {
+      "path": "startup\\burst\\frame-004.png",
+      "hostStartMs": 1922,
+      "hostEndMs": 2375
+    },
+    {
+      "path": "startup\\burst\\frame-005.png",
+      "hostStartMs": 2485,
+      "hostEndMs": 2828
+    },
+    {
+      "path": "startup\\burst\\frame-006.png",
+      "hostStartMs": 2938,
+      "hostEndMs": 3219
+    },
+    {
+      "path": "startup\\burst\\frame-007.png",
+      "hostStartMs": 3328,
+      "hostEndMs": 3688
+    },
+    {
+      "path": "startup\\burst\\frame-008.png",
+      "hostStartMs": 3797,
+      "hostEndMs": 4078
+    },
+    {
+      "path": "startup\\burst\\frame-009.png",
+      "hostStartMs": 4188,
+      "hostEndMs": 4500
+    },
+    {
+      "path": "startup\\burst\\frame-010.png",
+      "hostStartMs": 4610,
+      "hostEndMs": 4891
+    },
+    {
+      "path": "startup\\burst\\frame-011.png",
+      "hostStartMs": 5000,
+      "hostEndMs": 5282
+    },
+    {
+      "path": "startup\\burst\\frame-012.png",
+      "hostStartMs": 5375,
+      "hostEndMs": 5672
+    },
+    {
+      "path": "startup\\burst\\frame-013.png",
+      "hostStartMs": 5766,
+      "hostEndMs": 6172
+    }
+  ],
+  "videoAvailable": false
+}

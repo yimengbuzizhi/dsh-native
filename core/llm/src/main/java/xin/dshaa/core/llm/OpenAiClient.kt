@@ -29,6 +29,7 @@ import xin.dshaa.core.protocol.ApiRequest
 import xin.dshaa.core.protocol.ContentBlock
 import xin.dshaa.core.protocol.ProtocolJson
 import xin.dshaa.core.protocol.SseReader
+import xin.dshaa.core.protocol.TokenUsage
 import java.util.concurrent.TimeUnit
 
 /**
@@ -97,13 +98,12 @@ class OpenAiClient(
                 var textBlock = -1
                 var thinkingBlock = -1
                 val toolBlocks = LinkedHashMap<Int, Int>()
-                var outputTokens = 0
-                var promptTokens = 0
-                var reportedInputTokens = 0
+                var usage = TokenUsage()
+                var reportedInputTokens: Int? = null
                 var stopReason: String? = null
-                var finished = false
 
-                while (!finished) {
+                // finish_reason ends content, not the SSE stream: usage may follow in choices=[].
+                while (true) {
                     parent.ensureActive()
                     val sse = reader.next() ?: break
                     when (sse) {
@@ -113,28 +113,21 @@ class OpenAiClient(
                             val obj = runCatching {
                                 ProtocolJson.json.parseToJsonElement(sse.payload).jsonObject
                             }.getOrNull() ?: continue
+                            val update = parseUsage(obj)
+                            usage = usage.merge(update)
                             if (!started) {
                                 started = true
-                                val usage = obj["usage"]?.let { runCatching { it.jsonObject }.getOrNull() }
-                                reportedInputTokens = usage?.get("prompt_tokens")?.jsonPrimitive?.intOrNull ?: 0
+                                reportedInputTokens = usage.inputTokens
                                 emit(
                                     LlmEvent.MessageStart(
                                         id = obj["id"]?.jsonPrimitive?.contentOrNull,
                                         model = obj["model"]?.jsonPrimitive?.contentOrNull,
-                                        inputTokens = reportedInputTokens,
+                                        inputTokens = usage.inputTokens ?: 0,
+                                        usage = usage,
                                     ),
                                 )
-                            }
-                            // 有些兼容实现会在最后一个 chunk 只带 usage、choices 为空；
-                            // 流式下 prompt_tokens 往往也只在这里出现（M72：之前只读第一个 chunk，
-                            // 结果 inputTokens 恒 0，鲸鱼娘挂件的「投喂 token」少算一大截）。
-                            obj["usage"]?.let { usage ->
-                                runCatching { usage.jsonObject }.getOrNull()?.let { usageObject ->
-                                    usageObject["prompt_tokens"]?.jsonPrimitive?.intOrNull
-                                        ?.let { if (it > 0) promptTokens = it }
-                                    usageObject["completion_tokens"]?.jsonPrimitive?.intOrNull
-                                        ?.let { if (it > 0) outputTokens = it }
-                                }
+                            } else if (update.hasReportedTokens) {
+                                emit(LlmEvent.MessageDelta(null, usage.outputTokens ?: 0, usage))
                             }
                             val choices = runCatching { obj["choices"]?.jsonArray }.getOrNull()
                             val choice = choices?.firstOrNull()?.let { runCatching { it.jsonObject }.getOrNull() }
@@ -198,8 +191,7 @@ class OpenAiClient(
                             val finish = choice["finish_reason"]?.jsonPrimitive?.contentOrNull
                             if (!finish.isNullOrBlank()) {
                                 stopReason = mapFinishReason(finish)
-                                emit(LlmEvent.MessageDelta(stopReason, outputTokens))
-                                finished = true
+                                emit(LlmEvent.MessageDelta(stopReason, usage.outputTokens ?: 0, usage))
                             }
                         }
                     }
@@ -207,11 +199,11 @@ class OpenAiClient(
                 if (!started) {
                     emit(LlmEvent.Failed("响应里没有收到任何 SSE 数据", status = response.code))
                 } else {
-                    // 流式用量常常最后才补齐：补一条 MessageStart 纠正 inputTokens
-                    // （引擎对 MessageStart 是赋值语义，重复发只是更新计数）。
-                    if (promptTokens > reportedInputTokens) {
-                        emit(LlmEvent.MessageStart(id = null, model = null, inputTokens = promptTokens))
+                    // Keep the legacy input notification while carrying the full nullable snapshot.
+                    if (usage.inputTokens != null && usage.inputTokens != reportedInputTokens) {
+                        emit(LlmEvent.MessageStart(null, null, usage.inputTokens ?: 0, usage))
                     }
+                    emit(LlmEvent.MessageDelta(stopReason, usage.outputTokens ?: 0, usage))
                     emit(LlmEvent.MessageStop)
                 }
             }
@@ -238,6 +230,7 @@ class OpenAiClient(
         return buildJsonObject {
             put("model", config.model)
             put("stream", true)
+            put("stream_options", buildJsonObject { put("include_usage", true) })
             put("messages", messages)
             put("max_tokens", config.maxTokens)
             config.temperature?.let { put("temperature", it) }
@@ -352,6 +345,20 @@ class OpenAiClient(
                 is ContentBlock.Thinking -> ""
             }
         }.trim()
+    }
+
+    private fun parseUsage(chunk: JsonObject): TokenUsage {
+        val usage = runCatching { chunk["usage"]?.jsonObject }.getOrNull() ?: return TokenUsage()
+        fun JsonObject.tokens(key: String): Int? = runCatching {
+            this[key]?.jsonPrimitive?.intOrNull?.takeIf { it >= 0 }
+        }.getOrNull()
+        val details = runCatching { usage["prompt_tokens_details"]?.jsonObject }.getOrNull()
+        return TokenUsage(
+            // OpenAI prompt_tokens already includes cached_tokens. DeepSeek uses the flat hit field.
+            inputTokens = usage.tokens("prompt_tokens"),
+            outputTokens = usage.tokens("completion_tokens"),
+            cacheReadInputTokens = details?.tokens("cached_tokens") ?: usage.tokens("prompt_cache_hit_tokens"),
+        )
     }
 
     private fun mapFinishReason(reason: String): String = when (reason) {

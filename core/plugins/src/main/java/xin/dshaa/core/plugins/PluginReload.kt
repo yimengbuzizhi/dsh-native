@@ -49,8 +49,24 @@ object PluginReload {
             promptSections = run.promptSections,
             contexts = run.contexts,
             promptVariables = run.promptVariables,
+            suppressRuntimeContext = run.suppressRuntimeContext,
             commands = run.commands,
+            llmProviders = run.llmProviders,
+            routes = run.routes,
+            projections = run.projections,
+            shells = run.shells,
+            loadings = run.loadings,
+            agents = run.agents,
+            storages = run.storages,
+            prompts = run.prompts,
+            capabilities = run.capabilities,
             unsupported = run.unsupported,
+            // M83 服务容器：provide 快照 / inject 依赖 / 缺依赖 都跟这次 apply 走
+            provides = run.provides,
+            injects = run.injects,
+            missingServices = run.missingServices,
+            effects = run.effects,
+            subscriptions = run.subscriptions,
         )
     }
 }

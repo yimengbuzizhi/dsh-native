@@ -1,0 +1,34 @@
+--------- beginning of main
+工具名冲突，跳过 operit-env-demo 的 toolpkg_status
+工具名冲突，跳过 operit-extended-http 的 toolpkg_status
+工具名冲突，跳过 operit-system-tools 的 toolpkg_status
+工具名冲突，跳过 operit-extended-file-tools 的 toolpkg_status
+工具名冲突，跳过 operit-time 的 toolpkg_status
+工具名冲突，跳过 operit-env-demo 的 toolpkg_status
+工具名冲突，跳过 operit-extended-http 的 toolpkg_status
+工具名冲突，跳过 operit-system-tools 的 toolpkg_status
+工具名冲突，跳过 operit-extended-file-tools 的 toolpkg_status
+工具名冲突，跳过 operit-time 的 toolpkg_status
+debug call name=m84p_node_matrix args= isError=false text=M84P_NODE_MATRIX 22/22
+PASS path.join :: a/b/c.txt
+PASS path.basename :: z.md
+PASS path.dirname :: /x/y
+PASS path.sep :: /
+PASS fs.writeFileSync/readFileSync :: matrix-矩阵-123
+PASS fs.existsSync :: true
+PASS fs.statSync :: size=17
+PASS fs.readdirSync :: entries=7
+PASS fs.promises :: async-ok
+PASS os.platform :: android
+PASS os.homedir :: /data/user/0/xin.dshaa.nativeapp/files/workspace
+PASS os.EOL :: "\n"
+PASS Buffer.from utf8→hex :: e9b2b8e6ad8c
+PASS Buffer.from hex→utf8 :: 鲸歌
+PASS Buffer base64 往返 :: 鲸歌
+PASS Buffer.byteLength :: 6
+PASS Buffer.alloc/concat/equals :: a=AAA joined=AAAAA
+PASS 全局 Buffer :: 78
+PASS EventEmitter :: on:1|once:1|on:2 count=1
+PASS node:timers setTimeout :: elapsed=32ms
+PASS child_process.execSync :: m84p-node
+PASS fetch https://example.com :: status=200 bytes=577

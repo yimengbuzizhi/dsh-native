@@ -1,0 +1,91 @@
+﻿11-14 08:59:38.651 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:38.651 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:38.651 I/DshProvider(27874): plugin providers=[m84j.echo, m84m.agent] active=null
+11-14 08:59:38.658 I/DshStorage(27874): bind store=plugin:m85e.readonly-storage#builtin.storage.jsonl readOnly=true reason=-
+11-14 08:59:38.658 I/DshStorage(27874): resolved active=m85e.readonly-storage:builtin.storage.jsonl readOnly=true pref=-
+11-14 08:59:38.659 I/DshPrompt(27874): resolved active=builtin:builtin.prompt.dsh pref=-
+11-14 08:59:38.659 I/DshModel(27874): resolved active=openai plugin=builtin pref=- protocol=openai
+11-14 08:59:38.691 I/DshStorage(27874): resident started plugin=m85e.readonly-storage -> refresh sessions
+11-14 08:59:38.861 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:38.861 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:38.861 I/DshProvider(27874): plugin providers=[m84j.echo, m84m.agent] active=null
+11-14 08:59:38.863 I/DshStorage(27874): bind store=plugin:m85e.readonly-storage#builtin.storage.jsonl readOnly=true reason=-
+11-14 08:59:38.863 I/DshStorage(27874): resolved active=m85e.readonly-storage:builtin.storage.jsonl readOnly=true pref=-
+11-14 08:59:38.863 I/DshPrompt(27874): resolved active=builtin:builtin.prompt.dsh pref=-
+11-14 08:59:38.863 I/DshModel(27874): resolved active=openai plugin=builtin pref=- protocol=openai
+11-14 08:59:41.750 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:41.750 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:41.750 I/DshProvider(27874): plugin providers=[m84j.echo, m84m.agent] active=null
+11-14 08:59:41.753 I/DshStorage(27874): bind store=file readOnly=false reason=-
+11-14 08:59:41.753 I/DshStorage(27874): resolved active=builtin:builtin.storage.jsonl readOnly=false pref=-
+11-14 08:59:41.753 I/DshPrompt(27874): resolved active=builtin:builtin.prompt.dsh pref=-
+11-14 08:59:41.754 I/DshModel(27874): resolved active=openai plugin=builtin pref=- protocol=openai
+11-14 08:59:41.862 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:41.862 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:41.862 I/DshProvider(27874): plugin providers=[m84j.echo, m84m.agent] active=null
+11-14 08:59:41.863 I/DshStorage(27874): bind store=file readOnly=false reason=-
+11-14 08:59:41.863 I/DshStorage(27874): resolved active=builtin:builtin.storage.jsonl readOnly=false pref=-
+11-14 08:59:41.863 I/DshPrompt(27874): resolved active=builtin:builtin.prompt.dsh pref=-
+11-14 08:59:41.863 I/DshModel(27874): resolved active=openai plugin=builtin pref=- protocol=openai
+11-14 08:59:43.899 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:43.899 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:43.900 I/DshProvider(27874): plugin providers=[m84j.echo, m84m.agent] active=null
+11-14 08:59:43.902 I/DshStorage(27874): bind store=file readOnly=false reason=-
+11-14 08:59:43.902 I/DshStorage(27874): resolved active=builtin:builtin.storage.jsonl readOnly=false pref=-
+11-14 08:59:43.902 I/DshPrompt(27874): resolved active=m85e.mark-prompt:builtin.prompt.dsh pref=-
+11-14 08:59:43.903 I/DshModel(27874): resolved active=openai plugin=builtin pref=- protocol=openai
+11-14 08:59:43.916 I/DshStorage(27874): resident started plugin=m85e.mark-prompt -> refresh sessions
+11-14 08:59:44.116 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:44.116 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:44.116 I/DshProvider(27874): plugin providers=[m84j.echo, m84m.agent] active=null
+11-14 08:59:44.117 I/DshStorage(27874): bind store=file readOnly=false reason=-
+11-14 08:59:44.117 I/DshStorage(27874): resolved active=builtin:builtin.storage.jsonl readOnly=false pref=-
+11-14 08:59:44.117 I/DshPrompt(27874): resolved active=m85e.mark-prompt:builtin.prompt.dsh pref=-
+11-14 08:59:44.117 I/DshModel(27874): resolved active=openai plugin=builtin pref=- protocol=openai
+11-14 08:59:46.969 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:46.969 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:46.970 I/DshProvider(27874): plugin providers=[m84j.echo, m84m.agent] active=null
+11-14 08:59:46.971 I/DshStorage(27874): bind store=file readOnly=false reason=-
+11-14 08:59:46.971 I/DshStorage(27874): resolved active=builtin:builtin.storage.jsonl readOnly=false pref=-
+11-14 08:59:46.971 I/DshPrompt(27874): resolved active=builtin:builtin.prompt.dsh pref=-
+11-14 08:59:46.971 I/DshModel(27874): resolved active=openai plugin=builtin pref=- protocol=openai
+11-14 08:59:47.140 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:47.141 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:47.141 I/DshProvider(27874): plugin providers=[m84j.echo, m84m.agent] active=null
+11-14 08:59:47.144 I/DshStorage(27874): bind store=file readOnly=false reason=-
+11-14 08:59:47.144 I/DshStorage(27874): resolved active=builtin:builtin.storage.jsonl readOnly=false pref=-
+11-14 08:59:47.144 I/DshPrompt(27874): resolved active=builtin:builtin.prompt.dsh pref=-
+11-14 08:59:47.144 I/DshModel(27874): resolved active=openai plugin=builtin pref=- protocol=openai
+11-14 08:59:49.123 I/DshProvider(27874): plugin stream provider id=deepseek plugin=m85e.model-override
+11-14 08:59:49.123 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:49.123 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:49.123 I/DshProvider(27874): plugin providers=[deepseek, m84j.echo, m84m.agent] active=null
+11-14 08:59:49.125 I/DshStorage(27874): bind store=file readOnly=false reason=-
+11-14 08:59:49.125 I/DshStorage(27874): resolved active=builtin:builtin.storage.jsonl readOnly=false pref=-
+11-14 08:59:49.125 I/DshPrompt(27874): resolved active=builtin:builtin.prompt.dsh pref=-
+11-14 08:59:49.125 I/DshModel(27874): resolved active=openai plugin=builtin pref=- protocol=openai
+11-14 08:59:49.126 I/DshModel(27874): set active=deepseek plugin=m85e.model-override
+11-14 08:59:49.161 I/DshStorage(27874): resident started plugin=m85e.model-override -> refresh sessions
+11-14 08:59:49.232 I/DshProvider(27874): plugin stream provider id=deepseek plugin=m85e.model-override
+11-14 08:59:49.232 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:49.232 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:49.232 I/DshProvider(27874): plugin providers=[deepseek, m84j.echo, m84m.agent] active=null
+11-14 08:59:49.233 I/DshStorage(27874): bind store=file readOnly=false reason=-
+11-14 08:59:49.233 I/DshStorage(27874): resolved active=builtin:builtin.storage.jsonl readOnly=false pref=-
+11-14 08:59:49.233 I/DshPrompt(27874): resolved active=builtin:builtin.prompt.dsh pref=-
+11-14 08:59:49.233 I/DshModel(27874): resolved active=deepseek plugin=m85e.model-override pref=deepseek protocol=openai
+11-14 08:59:52.297 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:52.297 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:52.297 I/DshProvider(27874): plugin providers=[m84j.echo, m84m.agent] active=null
+11-14 08:59:52.298 I/DshStorage(27874): bind store=file readOnly=false reason=-
+11-14 08:59:52.298 I/DshStorage(27874): resolved active=builtin:builtin.storage.jsonl readOnly=false pref=-
+11-14 08:59:52.299 I/DshPrompt(27874): resolved active=builtin:builtin.prompt.dsh pref=-
+11-14 08:59:52.299 I/DshModel(27874): resolved active=deepseek plugin=builtin pref=deepseek protocol=openai
+11-14 08:59:52.299 I/DshModel(27874): set active=openai plugin=-
+11-14 08:59:52.413 I/DshProvider(27874): plugin stream provider id=m84m.agent plugin=m84m-demo
+11-14 08:59:52.413 I/DshProvider(27874): plugin stream provider id=m84j.echo plugin=m84j-demo
+11-14 08:59:52.413 I/DshProvider(27874): plugin providers=[m84j.echo, m84m.agent] active=null
+11-14 08:59:52.414 I/DshStorage(27874): bind store=file readOnly=false reason=-
+11-14 08:59:52.414 I/DshStorage(27874): resolved active=builtin:builtin.storage.jsonl readOnly=false pref=-
+11-14 08:59:52.414 I/DshPrompt(27874): resolved active=builtin:builtin.prompt.dsh pref=-
+11-14 08:59:52.414 I/DshModel(27874): resolved active=openai plugin=builtin pref=openai protocol=openai

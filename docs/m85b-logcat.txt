@@ -1,0 +1,27 @@
+--------- beginning of main
+11-13 22:43:58.112  7381  7381 I DshShell: shell resolved=builtin.shell.whale:builtin.shell.whale pref=builtin.shell.whale
+11-13 22:43:58.112  7381  7381 I DshShell: active=builtin.shell.whale:builtin.shell.whale pref=builtin.shell.whale
+11-13 22:43:58.353  7381  7381 I DshShell: dispatch=shell.mount plugin=builtin.shell.whale elapsed=11ms status=COMPLETED bytes=3162
+11-13 22:43:58.661  7381  7381 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=8ms status=COMPLETED bytes=3162
+11-13 22:44:02.815  7381  7381 I DshShell: tap action=newSession
+11-13 22:44:02.815  7381  7381 I DshShell: action=newSession row=null index=-1
+11-13 22:44:02.839  7381  7381 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=10ms status=COMPLETED bytes=3162
+11-13 22:44:07.407  7381  7381 I DshShell: tap action=send
+11-13 22:44:07.407  7381  7381 I DshShell: action=send row=null index=-1
+11-13 22:44:07.436  7381  7381 I DshTurn : turn start session=- foreground=true model=deepseek-flash
+11-13 22:44:07.508  7381  7381 I DshTurn : foreground start
+11-13 22:44:07.548  7381  7381 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=122ms status=COMPLETED bytes=3162
+11-13 22:44:07.616  7381  7381 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=20ms status=COMPLETED bytes=3162
+11-13 22:44:07.859  7381  7381 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=11ms status=COMPLETED bytes=3162
+11-13 22:44:07.966  7381  7381 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=9ms status=COMPLETED bytes=3162
+11-13 22:44:10.372  7381  7381 I DshApproval: ask session=83ab80cf-34c8-4376-adcd-c9127c654421 tool=bash foreground=true
+11-13 22:44:10.478  7381  7381 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=38ms status=COMPLETED bytes=3162
+11-13 22:44:18.482  7381  7381 I DshShell: tap action=approvalAllow
+11-13 22:44:18.482  7381  7381 I DshShell: action=approvalAllow row=null index=-1
+11-13 22:44:18.507  7381  7381 I DshApproval: resolve session=83ab80cf-34c8-4376-adcd-c9127c654421 allow=true always=false
+11-13 22:44:18.526  7381  7381 I DshShell: dispatch=shell.action plugin=builtin.shell.whale elapsed=28ms status=COMPLETED bytes=3162
+11-13 22:44:18.732  7381  7381 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=27ms status=COMPLETED bytes=3162
+11-13 22:44:21.008  7381  7381 I DshTurn : turn end after 13572ms
+11-13 22:44:21.061  7381  7381 I DshTurn : foreground stop
+11-13 22:44:21.108  7381  7381 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=13ms status=COMPLETED bytes=3162
+11-13 22:44:21.484  7381  7381 I DshShell: dispatch=shell.state plugin=builtin.shell.whale elapsed=53ms status=COMPLETED bytes=3162

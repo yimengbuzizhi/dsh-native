@@ -17,21 +17,31 @@ import androidx.compose.ui.unit.sp
 import xin.dshaa.core.model.BlockType
 import xin.dshaa.core.model.MessageRole
 import xin.dshaa.nativeapp.chat.ChatMirror
+import xin.dshaa.nativeapp.device.floating.BubbleStyle
+import xin.dshaa.nativeapp.device.floating.FloatingSlots
 
 /**
  * Operit `FloatingResultDisplay.kt:24-56` 的移植：
  * 最后一条 AI 纯文本 → 白底 12dp 圆角气泡；点击回 BALL。没有则显示「你好」。
+ *
+ * M84-D 气泡插口：样式由 [style]（插件提供）覆盖；正文可被 `FloatingSlots.bubbleText` 覆盖；
+ * 点击是否消费由 [FloatingChatWindow] 的 `FloatingSlots.handleClick(BUBBLE)` 决定。
  */
 @Composable
-fun FloatingResultDisplay(onBackToBall: () -> Unit) {
+fun FloatingResultDisplay(
+    onBackToBall: () -> Unit,
+    style: BubbleStyle? = null,
+) {
     val messages = ChatMirror.state?.messages.orEmpty()
     val lastAi = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
-    val text = lastAi?.content
+    val defaultText = lastAi?.content
         ?.filter { it.type == BlockType.TEXT }
         ?.joinToString("\n") { it.text }
         ?.trim()
         ?.takeIf { it.isNotBlank() }
         ?: "你好"
+    val text = FloatingSlots.bubbleText(defaultText) ?: defaultText
+    val look = style ?: BubbleStyle()
 
     Box(
         modifier = Modifier
@@ -42,13 +52,13 @@ fun FloatingResultDisplay(onBackToBall: () -> Unit) {
         Box(
             modifier = Modifier
                 .widthIn(max = 280.dp)
-                .background(Color.White, RoundedCornerShape(12.dp))
+                .background(look.container, RoundedCornerShape(look.cornerDp.dp))
                 .clickable { onBackToBall() }
                 .padding(horizontal = 16.dp, vertical = 10.dp),
         ) {
             Text(
                 text,
-                color = Color.Black,
+                color = look.content,
                 fontSize = 16.sp,
                 maxLines = 6,
                 overflow = TextOverflow.Ellipsis,

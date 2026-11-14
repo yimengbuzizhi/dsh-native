@@ -59,7 +59,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import xin.dshaa.nativeapp.chat.ChatMirror
-import xin.dshaa.nativeapp.chat.PendingFile
+import xin.dshaa.ui.shellapi.chat.PendingFile
 import xin.dshaa.nativeapp.device.floating.FloatingWindowState
 
 private data class CropBounds(

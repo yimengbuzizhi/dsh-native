@@ -1,0 +1,9 @@
+{
+  "id": "m85e.readonly-storage",
+  "name": "M85-E 只读导出存储",
+  "version": "1.0.0",
+  "description": "storage/v1 验收：同 id 接管 builtin.storage.jsonl，通过 ctx.storage.exportList/exportLoad 只读导出内置会话",
+  "main": "index.js",
+  "format": "dsh",
+  "permissions": ["storage"]
+}

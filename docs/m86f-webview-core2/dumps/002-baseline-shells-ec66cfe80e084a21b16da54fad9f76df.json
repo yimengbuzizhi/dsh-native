@@ -1,0 +1,118 @@
+{
+  "pref": "native",
+  "active": "",
+  "native": {
+    "id": "builtin.shell.native",
+    "label": "原生界面",
+    "enabled": true,
+    "pages": 22,
+    "selected": true,
+    "safeMode": false
+  },
+  "resident": [
+    "builtin.shell.whale",
+    "m84h-demo",
+    "m84i-demo",
+    "m84j-demo",
+    "m84m-demo",
+    "m85a.chat",
+    "m85f.webview-shell",
+    "svc-consumer-b",
+    "whale-compat-test"
+  ],
+  "treeMounted": false,
+  "treeError": "",
+  "shells": [
+    {
+      "plugin": "m86.selftest.webcold.f5f2b3344033473b97adc34b8d773eab",
+      "pluginName": "m86.selftest.webcold.f5f2b3344033473b97adc34b8d773eab",
+      "enabled": false,
+      "uiGranted": true,
+      "id": "m86.webcold.f5f2b3344033473b97adc34b8d773eab",
+      "label": "M86 cold WebView",
+      "backend": "webview",
+      "hasState": true,
+      "hasAction": false,
+      "hasEvent": false,
+      "active": false
+    },
+    {
+      "plugin": "builtin.shell.whale",
+      "pluginName": "鲸歌可选壳（Surface）",
+      "enabled": true,
+      "uiGranted": true,
+      "id": "builtin.shell.whale",
+      "label": "鲸歌默认壳（Surface）",
+      "backend": "surface",
+      "hasState": true,
+      "hasAction": true,
+      "hasEvent": false,
+      "active": false
+    },
+    {
+      "plugin": "m86.selftest.webview-shell.1794627969274",
+      "pluginName": "m86.selftest.webview-shell.1794627969274",
+      "enabled": false,
+      "uiGranted": true,
+      "id": "m86.selftest.webview-shell.1794627969274",
+      "label": "我的 WebView 壳",
+      "backend": "webview",
+      "hasState": true,
+      "hasAction": true,
+      "hasEvent": false,
+      "active": false
+    },
+    {
+      "plugin": "m86.selftest.surface-shell.1794627969274",
+      "pluginName": "m86.selftest.surface-shell.1794627969274",
+      "enabled": false,
+      "uiGranted": true,
+      "id": "m86.selftest.surface-shell.1794627969274",
+      "label": "我的 Surface 壳",
+      "backend": "surface",
+      "hasState": true,
+      "hasAction": true,
+      "hasEvent": false,
+      "active": false
+    },
+    {
+      "plugin": "m85f.webview-shell",
+      "pluginName": "M85-F WebView 壳",
+      "enabled": true,
+      "uiGranted": true,
+      "id": "m85f.webview",
+      "label": "M85-F WebView 壳",
+      "backend": "webview",
+      "hasState": true,
+      "hasAction": true,
+      "hasEvent": false,
+      "active": false
+    },
+    {
+      "plugin": "m85c3.sameid",
+      "pluginName": "M85-C5 同 id 壳",
+      "enabled": false,
+      "uiGranted": true,
+      "id": "builtin.shell.native",
+      "label": "同 id 第三方壳",
+      "backend": "surface",
+      "hasState": true,
+      "hasAction": true,
+      "hasEvent": false,
+      "active": false
+    },
+    {
+      "plugin": "m85a.chat",
+      "pluginName": "M85-A 最小壳",
+      "enabled": true,
+      "uiGranted": true,
+      "id": "m85a.chat",
+      "label": "M85-A 最小壳",
+      "backend": "surface",
+      "hasState": true,
+      "hasAction": true,
+      "hasEvent": false,
+      "active": false
+    }
+  ]
+}

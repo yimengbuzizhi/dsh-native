@@ -1,0 +1,46 @@
+{
+  "batch": "M84-G",
+  "date": "2026-11-13",
+  "device": "OPPO A55 5G（PEMM00），Android 13",
+  "feature": "页面内容插件化（整页）：ctx.ui.registerPage / registerRoute({page:true}) 让插件用自己的 dsh.client 提供整页；route id 与宿主内置页同名时替换内置页；插件停用恢复内置页；另提供 PluginPageActivity 从插件详情以整页打开任意 page 路由。",
+  "capabilityVersion": "m84.3",
+  "capabilities": { "total": 27, "implemented": 25, "new": "ui.page" },
+  "steps": [
+    {
+      "step": "导入更新后的 m84e2-demo（注册 /m84e2 整页 + About 替换页）",
+      "evidence": "debug import ok；插件页能力清单 25/27"
+    },
+    {
+      "step": "启用插件后打开 About",
+      "evidence": "DshPage route page=Settings sub=About；界面显示「E2 替换的关于页」+ 插件 client.js 内容（不是宿主 About）",
+      "screenshot": "132-01-about-plugin-page.png"
+    },
+    {
+      "step": "停用插件后再打开 About",
+      "evidence": "显示宿主内置「关于」页（版本/协议/许可证），插件页消失",
+      "screenshot": "132-02-about-restored.png"
+    },
+    {
+      "step": "插件详情显示整页路由与「以整页打开」",
+      "evidence": "/m84e2 与 About 都标「整页」；两个可点入口",
+      "screenshot": "132-03-detail-routes.png"
+    },
+    {
+      "step": "点「以整页打开」启动 PluginPageActivity",
+      "evidence": "mCurrentFocus=xin.dshaa.nativeapp.pluginui.PluginPageActivity；整页标题「E2 演示页」，插件 client.js 渲染",
+      "screenshot": "132-04-page-activity.png"
+    },
+    {
+      "step": "验收后恢复",
+      "evidence": "m84e2-demo 已停用；About 恢复内置页；无障碍 Bound"
+    }
+  ],
+  "limitations": [
+    "整页内容只能是插件自己的 dsh.client（WebView），不能往宿主 Compose 页面插任意 Composable（ui.registerView 仍 unsupported）。",
+    "只有 route id 与内置页/二级页 id 相同才会替换；独立插件页目前从插件详情以 Activity 打开，未自动进抽屉/设置入口。",
+    "只对 About 做了替换/恢复真机验证，其余 21 页未逐页替换。",
+    "PluginPageScreen 的静态资源服务逻辑与悬浮窗宿主有重复（assets/plugin 目录拦截），后续可抽公共层。",
+    "M84-B 142 项逐页对拍未重跑。",
+    "本批未发版。"
+  ]
+}

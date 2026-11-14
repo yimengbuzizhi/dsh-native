@@ -1,0 +1,19 @@
+--------- beginning of main
+11-13 22:31:30.678  2619  2619 I DshShell: set active=m85a.chat#m85a.chat targets=[m85a.chat#m85a.chat]
+11-13 22:31:30.743  2619  2619 I DshShell: dispatch=shell.mount plugin=m85a.chat elapsed=8ms status=COMPLETED bytes=1201
+11-13 22:31:38.510  2619  2619 I DshShell: tap action=send
+11-13 22:31:38.510  2619  2619 I DshShell: action=send row=null index=-1
+11-13 22:31:38.528  2619  2619 I DshTurn : turn start session=- foreground=true model=deepseek-flash
+11-13 22:31:38.567  2619  2619 I DshTurn : foreground start
+11-13 22:31:38.574  2619  2619 I DshShell: dispatch=shell.action plugin=m85a.chat elapsed=56ms status=COMPLETED bytes=1201
+11-13 22:31:38.766  2619  2619 I DshShell: dispatch=shell.state plugin=m85a.chat elapsed=8ms status=COMPLETED bytes=1201
+11-13 22:31:38.943  2619  2619 I DshShell: dispatch=shell.state plugin=m85a.chat elapsed=8ms status=COMPLETED bytes=1201
+11-13 22:31:41.114  2619  2619 I DshShell: tap action=stop
+11-13 22:31:41.114  2619  2619 I DshShell: action=stop row=null index=-1
+11-13 22:31:41.137  2619  2619 I DshTurn : stop requested: AppViewModel.shellCommand$lambda$309:3991 <- AppViewModel.$r8$lambda$1IfrFLDnUYfGLjjiaB9HOpVLnUA:0 <- AppViewModel$$ExternalSyntheticLambda15.invoke:0 <- AppViewModel.onMainBlocking$lambda$310:4050 <- AppViewModel.$r8$lambda$-H34e9J5buSGBUL9kuXAQ66Y1i4:0 <- AppViewModel$$ExternalSyntheticLambda56.run:0 <- Handler.handleCallback:942 <- Handler.dispatchMessage:99
+11-13 22:31:41.141  2619  2619 I DshShell: dispatch=shell.action plugin=m85a.chat elapsed=10ms status=COMPLETED bytes=1201
+11-13 22:31:41.167  2619  2619 I DshTurn : turn end after 2639ms
+11-13 22:31:41.167  2619  2619 W DshTurn : turn ended without assistant text session=5408a131-3479-4b1b-b82d-f0f71b88dd99
+11-13 22:31:41.174  2619  2619 I DshTurn : foreground stop
+11-13 22:31:41.246  2619  2619 I DshShell: dispatch=shell.state plugin=m85a.chat elapsed=10ms status=COMPLETED bytes=1201
+11-13 22:31:41.511  2619  2619 I DshShell: dispatch=shell.state plugin=m85a.chat elapsed=30ms status=COMPLETED bytes=1201

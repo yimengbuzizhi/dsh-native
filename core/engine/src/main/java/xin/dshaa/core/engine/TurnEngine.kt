@@ -30,6 +30,7 @@ import xin.dshaa.core.protocol.ContentBlock as ApiBlock
 import xin.dshaa.core.protocol.ImageSource
 import xin.dshaa.core.protocol.OutputConfig
 import xin.dshaa.core.protocol.ThinkingConfig
+import xin.dshaa.core.protocol.TokenUsage
 import xin.dshaa.core.session.GoalIdleDecision
 import xin.dshaa.core.session.GoalRoundDriver
 import xin.dshaa.core.session.GoalRoundRef
@@ -52,6 +53,15 @@ internal const val PLAN_OFF_NOTICE = "The user switched this session back to the
 internal const val INTERRUPTED_TOOL_RESULT =
     "Tool call did not return a result: the turn was interrupted before it finished. " +
         "Treat this call as failed; do not retry it unless the user asks."
+
+/**
+ * `max_tokens` 可能把响应正好切在一个 `tool_use` 中间：参数可能不完整，**绝不能执行**。
+ * 但这条调用已经流进 assistant 消息（服务端要求 `tool_use` 后面必须有 `tool_result`），
+ * 所以补一条 error 结果保持配对，正文明确告诉模型「没执行、别重试」。
+ */
+internal const val TRUNCATED_TOOL_RESULT =
+    "Tool call was not executed: the response hit the max_tokens limit, so its arguments may be " +
+        "incomplete. Treat this call as failed; do not retry it unless the user asks."
 
 /**
  * 一轮对话的执行器：写 v4 事件、跑工具循环、按 goal activation 自动续轮。
@@ -94,6 +104,22 @@ class TurnEngine(private val deps: EngineDeps) {
         while (true) {
             val result = runTurn(ui, current)
             outcome = result
+            if (result == TurnOutcome.COMPLETED && !deps.stop.requested) {
+                val queued = try {
+                    deps.nextQueuedInput()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    ui.setError("用户输入队列领取失败：${e.message}")
+                    deps.sessions.current()?.let { GoalRoundDriver(deps.goals(it)).disarm() }
+                    throw e
+                }
+                if (queued != null) {
+                    requireHumanInput(queued)
+                    current = queued
+                    continue
+                }
+            }
             // 先结清 goal（可能写 round-limit blocked），再让到期的提醒插队：
             // 提醒是用户输入，自动续轮必须为它让路，投递完再继续 goal。
             val nextGoal = nextGoalTurn(ui, result)
@@ -152,6 +178,7 @@ class TurnEngine(private val deps: EngineDeps) {
         val config = deps.config()
         val provider = deps.providerLabel()
         val effort = deps.reasoningEffort()
+        if (input.promptId != null) requireHumanInput(input)
         val goalSource = input.goalRound?.let { round ->
             buildJsonObject {
                 put("kind", "goal")
@@ -159,7 +186,7 @@ class TurnEngine(private val deps: EngineDeps) {
                 put("revision", round.revision)
                 put("round", round.round)
             }
-        }
+        } ?: input.promptId?.let { humanSource(input) }
         var planStep: PlanStep? = null
         // 本轮的 turn/step 编号（时间上下文 M42 要写进正文；与落库的 turn/start、step/start 一致）
         var turnNumber = 0
@@ -168,7 +195,7 @@ class TurnEngine(private val deps: EngineDeps) {
         val noticeSeqs = ArrayList<Long>()
         val userSeq = withContext(Dispatchers.IO) {
             // goal 轮是独立的 request series：上游会在 goal 消息前渲染自己的 request header
-            if (goalSource != null) {
+            if (input.goalRound != null) {
                 session.appendRequestHeader(
                     provider = provider,
                     model = config.model,
@@ -217,7 +244,7 @@ class TurnEngine(private val deps: EngineDeps) {
             }
         }
         var stepOpen = true
-        // 本轮 assistant 消息是否已经落库（停止时不要重复写一遍）
+        // 当前 step 的 assistant 消息是否已经落库（停止时不要重复写一遍）
         var assistantPersisted = false
         // 本轮已落库、但还没写 tool_result 的调用：停止/切会话打断工具执行时必须补一条
         // error 结果，否则历史里会留一条只有 tool_use 没有 tool_result 的 assistant，
@@ -259,13 +286,21 @@ class TurnEngine(private val deps: EngineDeps) {
         var liveAssistantIndex = -1
         // 本轮的错误文案（决定 turn/end 写 completed 还是 error；每轮开头清零，与抽出前 state.error 一致）
         var errorText: String? = null
+        var activeRequestNo: Int? = null
+        var requestUsage = TokenUsage()
+        fun notifyUsage(status: RequestUsageStatus) {
+            activeRequestNo?.let { ui.onRequestUsage(RequestUsage(it, requestUsage, status)) }
+        }
         try {
+            if (input.promptId != null && userSeq != null) queueCallback { deps.onInputDelivered(input.promptId, userSeq) }
             var round = 0
+            val queuedSteering = ArrayList<TurnInput>()
             // 已从注册表取走、等下一个 step 起点落库的后台任务通知
             val queuedNotices = ArrayList<UserNotice>()
             // 不设步数上限（2026-11-12 用户要求）：模型继续调工具就继续跑，
             // 只有模型自己停（toolCalls 为空）、max_tokens、用户停止/取消才会结束。
             while (true) {
+                if (deps.stop.requested) throw CancellationException("stopped by user")
                 round++
                 if (round > 1) {
                     // 第二个及以后的 step：计划模式 pending 在 step/start 之前落库（上游 pre-step），
@@ -273,6 +308,7 @@ class TurnEngine(private val deps: EngineDeps) {
                     val step = withContext(Dispatchers.IO) {
                         val applied = applyPendingPlan(session)
                         stepNumber = session.startStep()
+                        stepOpen = true
                         applied.narration?.let { narration ->
                             applied.narrationSeq =
                                 session.appendUserMessageTexts(listOf(narration), source = noticeSource("plan-mode", narration))
@@ -287,6 +323,25 @@ class TurnEngine(private val deps: EngineDeps) {
                         )
                     }
                 }
+                // Human steering is delivered only after the previous response/tool batch is complete.
+                // Keep a previously claimed input until its durable append has been acknowledged.
+                if (queuedSteering.isEmpty()) queuedSteering += queueCallback { deps.claimSteeringInputs() }
+                val steeringTexts = ArrayList<String>()
+                queuedSteering.forEach { steering ->
+                    requireHumanInput(steering)
+                    val seq = withContext(Dispatchers.IO) {
+                        session.appendUserMessageContent(steering.userTexts, steering.images, humanSource(steering))
+                    }
+                    ui.appendMessage(ChatMessage(
+                        id = deps.newId(), role = MessageRole.USER,
+                        content = steering.userTexts.filter { it.isNotEmpty() }.map { ContentBlock(BlockType.TEXT, text = it) } +
+                            steering.images.map { it.toContentBlock() },
+                        sourceKind = "user", seq = seq,
+                    ))
+                    queueCallback { deps.onInputDelivered(requireNotNull(steering.promptId), seq) }
+                    steeringTexts += steering.userTexts
+                }
+                queuedSteering.clear()
                 // step 起点 claim 通知（上游 inbox 在每一步开始投递）：落成 user/message 后再发请求
                 queuedNotices += drainJobNotices()
                 if (queuedNotices.isNotEmpty()) {
@@ -307,7 +362,7 @@ class TurnEngine(private val deps: EngineDeps) {
                 }
                 // 用户直接 `/名字` 调用技能（M21）：只扫本 step 的直接用户输入（source.kind:"user"）；
                 // 注入点在本 step 的技能目录之后、请求之前（上游 pre-step 的注入顺序）。
-                val directTexts = if (round == 1 && !input.wake && input.goalRound == null) input.userTexts else emptyList()
+                val directTexts = (if (round == 1 && !input.wake && input.goalRound == null) input.userTexts else emptyList()) + steeringTexts
                 if (directTexts.isNotEmpty()) {
                     val invocations = withContext(Dispatchers.IO) { deps.skillInvocations(session, directTexts) }
                     invocations.forEach { invocation ->
@@ -347,8 +402,17 @@ class TurnEngine(private val deps: EngineDeps) {
 
                 // 自动压缩（M44，上游 `agent/pre-step` 的压力监听）：注入都落完、本 step 请求之前
                 // 估一次会话面；越过阈值就先把最早一段换成 checkpoint，再按新的会话面组装请求。
+                // M84-C2：step 钩子（注入落完、请求之前；step/end 前另有一次 onStepEnd）。
+                hookStepStart(turnNumber, stepNumber)
                 maybeAutoCompact(ui, session, config, turnNumber)
 
+                // A new response owns its persistence flag and partial buffers. A previous step's
+                // completed assistant must not suppress cancellation persistence for this response.
+                assistantPersisted = false
+                liveText = ""
+                liveReasoning = ""
+                liveSignature = ""
+                liveAssistantIndex = -1
                 val assistantId = deps.newId()
                 var assistant = ChatMessage(
                     id = assistantId,
@@ -366,8 +430,6 @@ class TurnEngine(private val deps: EngineDeps) {
                 val signature = StringBuilder()
                 val calls = LinkedHashMap<Int, MutableCall>()
                 var stopReason: String? = null
-                var inputTokens = 0
-                var outputTokens = 0
                 var failure: String? = null
                 var lastEmit = 0L
 
@@ -410,8 +472,6 @@ class TurnEngine(private val deps: EngineDeps) {
                     signature.setLength(0)
                     calls.clear()
                     stopReason = null
-                    inputTokens = 0
-                    outputTokens = 0
                     failure = null
                     errorText = null
                     lastEmit = 0L
@@ -431,6 +491,10 @@ class TurnEngine(private val deps: EngineDeps) {
                     ui.setStatus(if (round == 1) "思考中…" else "继续处理…")
                 }
                 while (true) {
+                    requestUsage = TokenUsage()
+                    activeRequestNo = requestNo + 1
+                    notifyUsage(RequestUsageStatus.STARTED)
+                    ui.setUsage(null)
                     val request = buildRequest(ui.messages().dropLast(1), config, effort)
                     val turnRequestNo = requestNo
                     var failedEvent: LlmEvent.Failed? = null
@@ -474,15 +538,21 @@ class TurnEngine(private val deps: EngineDeps) {
                                 calls[event.index]?.args?.append(event.partialJson)
                                 render()
                             }
-                            is LlmEvent.MessageStart -> inputTokens = event.inputTokens
+                            is LlmEvent.MessageStart -> {
+                                requestUsage = requestUsage.merge(event.usage)
+                                notifyUsage(RequestUsageStatus.STREAMING)
+                            }
                             is LlmEvent.MessageDelta -> {
-                                outputTokens += event.outputTokens
+                                requestUsage = requestUsage.merge(event.usage)
+                                notifyUsage(RequestUsageStatus.STREAMING)
                                 if (event.stopReason != null) stopReason = event.stopReason
                             }
                             is LlmEvent.Failed -> {
                                 failure = event.message
                                 failedEvent = event
                                 errorText = event.message
+                                // M84-C2：错误钩子（每次失败尝试一次；是否重试由 onRetry 另外通知）。
+                                hookError(EngineFailure(event.message, event.code, event.status))
                                 assistant = assistant.copy(streaming = false, error = event.message)
                                 ui.updateMessage(assistantIndex, assistant)
                                 ui.setError(event.message)
@@ -490,6 +560,8 @@ class TurnEngine(private val deps: EngineDeps) {
                             else -> Unit
                         }
                     }
+                    notifyUsage(if (failure == null) RequestUsageStatus.COMPLETED else RequestUsageStatus.FAILED)
+                    activeRequestNo = null
                     if (failure == null) break
                     val failed = failedEvent
                     val offloadCount = failed?.offloadImages
@@ -514,6 +586,7 @@ class TurnEngine(private val deps: EngineDeps) {
                         }
                         ui.applyImageOffload(targets)
                         imageOffloadRetries++
+                        hookRetry(EngineRetry("image-offload", imageOffloadRetries, ImageOffload.MAX_RETRIES))
                         deps.log(
                             "image-offload: offloaded ${targets.sumOf { it.imageIndexes.size }} image(s) " +
                                 "from ${targets.size} message(s) seq=$offloadSeq retry=$imageOffloadRetries",
@@ -530,6 +603,7 @@ class TurnEngine(private val deps: EngineDeps) {
                         break
                     }
                     overflowRetries++
+                    hookRetry(EngineRetry("context-overflow", overflowRetries, Compaction.MAX_OVERFLOW_RETRIES))
                     deps.log(
                         "context-overflow: request failed code=${failed.code ?: "-"} retry=$overflowRetries/${Compaction.MAX_OVERFLOW_RETRIES}; compacting the whole surface",
                     )
@@ -554,6 +628,7 @@ class TurnEngine(private val deps: EngineDeps) {
                     restartAttempt()
                 }
                 if (failure != null) {
+                    hookStepEnd(turnNumber, stepNumber)
                     withContext(Dispatchers.IO) { session.endStep() }
                     stepOpen = false
                     break
@@ -563,9 +638,13 @@ class TurnEngine(private val deps: EngineDeps) {
                 render(force = true)
                 assistant = assistant.copy(streaming = false)
                 ui.updateMessage(assistantIndex, assistant)
-                ui.setUsage(if (inputTokens + outputTokens > 0) "$inputTokens in / $outputTokens out" else null)
-                // 数字版用量（M72）：客户端插件（鲸鱼娘挂件）按上游规则把 token 折成功德。
-                if (inputTokens + outputTokens > 0) ui.setTokenUsage(inputTokens, outputTokens)
+                ui.setUsage(if (requestUsage.hasReportedTokens) {
+                    "${requestUsage.inputTokens ?: "?"} in / ${requestUsage.outputTokens ?: "?"} out"
+                } else null)
+                // Legacy success-only accounting; nullable request snapshots use onRequestUsage instead.
+                if (requestUsage.hasReportedTokens) {
+                    ui.setTokenUsage(requestUsage.inputTokens ?: 0, requestUsage.outputTokens ?: 0)
+                }
 
                 val toolCalls = calls.values.sortedBy { it.index }.mapNotNull { c ->
                     if (c.name == null || c.id == null) null else ToolCall(c.id!!, c.name!!, c.args.toString().ifBlank { "{}" })
@@ -591,17 +670,55 @@ class TurnEngine(private val deps: EngineDeps) {
                 ui.updateMessage(assistantIndex, assistant)
                 toolCalls.forEach { call -> withContext(Dispatchers.IO) { session.appendToolCall(call) } }
 
+                // max_tokens 截断在 tool_use 上：本批工具一次都不执行（参数可能被切断），
+                // 但每条已落库的调用都要补一条 error tool_result 保持配对。然后直接收口 turn：
+                // 继续下一步会去领 steer/队列（step 起点的 claim）并让后面的正常响应覆盖
+                // lastStopReason，用户看到的「上限暂停」就被吃掉了。
+                if (stopReason == "max_tokens" && toolCalls.isNotEmpty()) {
+                    toolCalls.forEach { call ->
+                        if (runCatching { session.hasToolResult(call.id) }.getOrDefault(false)) return@forEach
+                        val seq = withContext(Dispatchers.IO) {
+                            session.appendToolResult(call.id, TRUNCATED_TOOL_RESULT, true)
+                        }
+                        ui.appendMessage(
+                            ChatMessage(
+                                id = deps.newId(),
+                                role = MessageRole.TOOL,
+                                content = listOf(ContentBlock(BlockType.TEXT, text = TRUNCATED_TOOL_RESULT)),
+                                toolCallId = call.id,
+                                seq = seq,
+                            ),
+                        )
+                        pendingToolCalls.removeAll { it.id == call.id }
+                    }
+                    deps.log(
+                        "max_tokens: truncated response carried ${toolCalls.size} tool call(s); " +
+                            "persisted without executing them",
+                    )
+                    errorText = "达到 max_tokens 上限，输出被截断（工具调用未执行）"
+                    ui.setError(errorText)
+                    hookStepEnd(turnNumber, stepNumber)
+                    withContext(Dispatchers.IO) { session.endStep() }
+                    stepOpen = false
+                    break
+                }
+
                 if (toolCalls.isEmpty()) {
                     // 后台任务完成通知：turn 不能在 inbox 还有通知时收口（上游语义）。
                     // 先收口本 step，再开下一个 step；通知在下一个 step 起点落成 user/message。
                     val arriving = drainJobNotices()
-                    if (arriving.isNotEmpty() && stopReason != "max_tokens") {
+                    if (stopReason != "max_tokens" && !deps.stop.requested) {
+                        queuedSteering += queueCallback { deps.claimSteeringInputs() }
+                    }
+                    if ((arriving.isNotEmpty() || queuedSteering.isNotEmpty()) && stopReason != "max_tokens") {
                         queuedNotices += arriving
+                        hookStepEnd(turnNumber, stepNumber)
                         withContext(Dispatchers.IO) { session.endStep() }
                         stepOpen = false
-                        ui.setStatus("收到后台任务通知…")
+                        ui.setStatus(if (queuedSteering.isNotEmpty()) "收到用户补充…" else "收到后台任务通知…")
                         continue
                     }
+                    hookStepEnd(turnNumber, stepNumber)
                     withContext(Dispatchers.IO) { session.endStep() }
                     stepOpen = false
                     if (stopReason == "max_tokens") {
@@ -639,7 +756,10 @@ class TurnEngine(private val deps: EngineDeps) {
                         continue
                     }
                     val args = parseArgs(call.arguments)
+                    // M84-C2：工具执行前后的观察钩子（审批通过、真正执行才触发；拒绝路径不触发）。
+                    hookToolStart(call)
                     val result = deps.registry.execute(call.name, args, deps.toolContext)
+                    hookToolEnd(call, result)
                     deps.onToolResult(call, result.text, result.isError)
                     val resultSeq = withContext(Dispatchers.IO) {
                         session.appendToolResult(call.id, result.text, result.isError, result.images)
@@ -687,6 +807,7 @@ class TurnEngine(private val deps: EngineDeps) {
                         ),
                     )
                 }
+                hookStepEnd(turnNumber, stepNumber)
                 withContext(Dispatchers.IO) { session.endStep() }
                 stepOpen = false
                 ui.setStatus("继续…")
@@ -700,6 +821,8 @@ class TurnEngine(private val deps: EngineDeps) {
         } catch (e: CancellationException) {
             val partial = liveText
             withContext(NonCancellable) {
+                notifyUsage(RequestUsageStatus.CANCELLED)
+                activeRequestNo = null
                 // 只输出到思考就被停止时也要落库（否则这一轮在会话里凭空消失）；
                 // 已经落过库的（工具执行中途停止）不要重复追加。
                 if (!assistantPersisted && (partial.isNotEmpty() || liveReasoning.isNotEmpty())) {
@@ -728,9 +851,20 @@ class TurnEngine(private val deps: EngineDeps) {
                     runCatching { session.appendToolResult(call.id, INTERRUPTED_TOOL_RESULT, true) }
                 }
                 pendingToolCalls.clear()
+                // M84-C2：停止钩子（先于 endStep/endTurn，观察者能看到收口前的 step 坐标）。
+                val userStop = deps.stop.requested
+                hookStop(
+                    EngineStop(
+                        reason = if (userStop) "user" else "cancelled",
+                        userRequested = userStop,
+                        turn = turnNumber,
+                        step = stepNumber,
+                    ),
+                )
                 withContext(Dispatchers.IO) {
                     // 一轮必须收口：即使一个字都没流出来，step/turn 也要有 end（v4 事件平衡）
                     if (stepOpen) {
+                        hookStepEnd(turnNumber, stepNumber)
                         session.endStep()
                         stepOpen = false
                     }
@@ -745,7 +879,23 @@ class TurnEngine(private val deps: EngineDeps) {
                 ui.setGoal(runCatching { deps.goals(session).current() }.getOrNull())
             }
             throw e
+        } catch (e: PromptDeliveryFailure) {
+            // Outbox persistence failures must stay visible and leave a balanced session.
+            withContext(NonCancellable) {
+                ui.setError(e.message)
+                if (stepOpen) {
+                    hookStepEnd(turnNumber, stepNumber)
+                    withContext(Dispatchers.IO) { session.endStep() }
+                    stepOpen = false
+                }
+                withContext(Dispatchers.IO) { session.endTurn("error") }
+                GoalRoundDriver(deps.goals(session)).disarm()
+            }
+            throw e
         } finally {
+            // A provider may throw rather than emit Failed; still close this attempt's usage lifecycle.
+            notifyUsage(RequestUsageStatus.FAILED)
+            activeRequestNo = null
             ui.setGoal(runCatching { deps.sessions.current()?.let { deps.goals(it).current() } }.getOrNull())
             deps.onTurnFinished()
             if (!input.wake && input.goalRound == null && session.events.none { it.type == "session/title" }) {
@@ -756,12 +906,64 @@ class TurnEngine(private val deps: EngineDeps) {
         }
     }
 
+    /**
+     * M84-C2：钩子调用统一走这里——异常只记日志，**绝不能让观察者弄断一轮**；
+     * 钩子都在引擎线程同步执行，不占 IO 调度器，也不改变事件顺序。
+     */
+    private fun fire(hook: () -> Unit) {
+        runCatching(hook).onFailure { deps.log("engine-hook failed: ${it.message}") }
+    }
+
+    private fun hookStepStart(turn: Int, step: Int) {
+        val point = EngineStepPoint(turn, step)
+        fire { deps.hooks.onStepStart(point) }
+    }
+
+    private fun hookStepEnd(turn: Int, step: Int) {
+        val point = EngineStepPoint(turn, step)
+        fire { deps.hooks.onStepEnd(point) }
+    }
+
+    private fun hookToolStart(call: ToolCall) = fire { deps.hooks.onToolStart(call) }
+
+    private fun hookToolEnd(call: ToolCall, result: ToolResult) = fire { deps.hooks.onToolEnd(call, result) }
+
+    private fun hookStop(stop: EngineStop) = fire { deps.hooks.onStop(stop) }
+
+    private fun hookError(failure: EngineFailure) = fire { deps.hooks.onError(failure) }
+
+    private fun hookRetry(retry: EngineRetry) = fire { deps.hooks.onRetry(retry) }
+
     private data class MutableCall(
         val index: Int,
         val id: String?,
         val name: String?,
         val args: StringBuilder = StringBuilder(),
     )
+
+    private class PromptDeliveryFailure(cause: Exception) : IllegalStateException("用户输入队列交付失败：${cause.message}", cause)
+
+    private suspend fun <T> queueCallback(block: suspend () -> T): T = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        throw PromptDeliveryFailure(e)
+    }
+
+    private fun requireHumanInput(input: TurnInput) {
+        require(!input.wake && input.goalRound == null && !input.promptId.isNullOrBlank()) {
+            "queued input must be a direct human prompt with promptId"
+        }
+        require(input.delivery == "queue" || input.delivery == "steer") { "invalid prompt delivery" }
+        require(input.userTexts.any { it.isNotBlank() } || input.images.isNotEmpty()) { "empty queued input" }
+    }
+
+    private fun humanSource(input: TurnInput): JsonObject = buildJsonObject {
+        put("kind", "user")
+        put("promptId", requireNotNull(input.promptId))
+        put("delivery", input.delivery)
+    }
 
     /** 取走排队中的后台任务完成通知（宿主实现；取失败不能弄断一轮）。 */
     private fun drainJobNotices(): List<UserNotice> =
@@ -905,6 +1107,7 @@ class TurnEngine(private val deps: EngineDeps) {
                 if (next == null) throw failure
                 messages = next
                 attempts += 1
+                hookRetry(EngineRetry("summary-image-offload", attempts, ImageOffload.MAX_RETRIES))
             }
         }
     }
@@ -917,16 +1120,15 @@ class TurnEngine(private val deps: EngineDeps) {
     private suspend fun runSummaryRequest(request: ApiRequest, config: LlmConfig): Compaction.Summary {
         val texts = sortedMapOf<Int, StringBuilder>()
         val reasoning = sortedMapOf<Int, StringBuilder>()
-        var inputTokens = 0
-        var outputTokens = 0
+        var tokenUsage = TokenUsage()
         var failedEvent: LlmEvent.Failed? = null
         deps.stream(request, config).collect { event ->
             when (event) {
-                is LlmEvent.MessageStart -> inputTokens = event.inputTokens
+                is LlmEvent.MessageStart -> tokenUsage = tokenUsage.merge(event.usage)
                 is LlmEvent.BlockStart -> if (event.type == "text") texts.getOrPut(event.index) { StringBuilder() }
                 is LlmEvent.TextDelta -> texts.getOrPut(event.index) { StringBuilder() }.append(event.text)
                 is LlmEvent.ThinkingDelta -> reasoning.getOrPut(event.index) { StringBuilder() }.append(event.text)
-                is LlmEvent.MessageDelta -> outputTokens = event.outputTokens
+                is LlmEvent.MessageDelta -> tokenUsage = tokenUsage.merge(event.usage)
                 is LlmEvent.Failed -> failedEvent = event
                 else -> Unit
             }
@@ -952,11 +1154,11 @@ class TurnEngine(private val deps: EngineDeps) {
             }
         }
         val usage = buildJsonObject {
-            put("inputTokens", inputTokens)
-            put("outputTokens", outputTokens)
-            put("cacheReadTokens", 0)
-            put("cacheWriteTokens", 0)
-            put("totalTokens", inputTokens + outputTokens)
+            tokenUsage.inputTokens?.let { put("inputTokens", it) }
+            tokenUsage.outputTokens?.let { put("outputTokens", it) }
+            tokenUsage.cacheReadInputTokens?.let { put("cacheReadTokens", it) }
+            tokenUsage.cacheCreationInputTokens?.let { put("cacheWriteTokens", it) }
+            tokenUsage.totalTokens?.let { put("totalTokens", it) }
         }
         return Compaction.Summary(text, rawOutput, minOf(config.maxTokens, Compaction.MAX_SUMMARY_TOKENS), usage)
     }

@@ -1,0 +1,93 @@
+{
+  "publish": "D:\\dsh\\native-publish",
+  "dev": "D:\\dsh\\native",
+  "files": {
+    "publish": 306,
+    "dev": 332,
+    "missing": [
+      "core/tools/src/main/java/xin/dshaa/core/tools/DefaultTools.kt"
+    ]
+  },
+  "declarations": {
+    "publish": 3387,
+    "dev": 3679,
+    "missing": [
+      "DefaultTools",
+      "NativeBridge",
+      "Screen",
+      "SubScreen",
+      "parseEnvelope"
+    ],
+    "renamed": {
+      "DefaultTools": "BuiltinToolCatalog",
+      "NativeBridge": "JsNativeBridge",
+      "Screen": "BuiltinPageIds",
+      "SubScreen": "BuiltinPageIds",
+      "parseEnvelope": "parseJsEnvelope"
+    }
+  },
+  "tools": {
+    "publish_declared": 40,
+    "dev_declared": 40,
+    "missing": [],
+    "extra_in_dev": []
+  },
+  "pages": {
+    "publish": [
+      "Accessibility",
+      "Agents",
+      "Assistant",
+      "Backup",
+      "Behavior",
+      "DataMigration",
+      "Jobs",
+      "Memory",
+      "ModelConfig",
+      "Packages",
+      "Permissions",
+      "Plugins",
+      "Privacy",
+      "Sessions",
+      "Settings",
+      "Skills",
+      "Terminal",
+      "VirtualScreen",
+      "Workspace",
+      "Workspaces"
+    ],
+    "dev": [
+      "About",
+      "Accessibility",
+      "Agents",
+      "Assistant",
+      "Backup",
+      "Behavior",
+      "DataMigration",
+      "Jobs",
+      "Memory",
+      "ModelConfig",
+      "Packages",
+      "Permissions",
+      "Plugins",
+      "Privacy",
+      "RemoteDsh",
+      "Sessions",
+      "Settings",
+      "Skills",
+      "Terminal",
+      "VirtualScreen",
+      "Workspace",
+      "Workspaces"
+    ],
+    "missing": [],
+    "extra_in_dev": [
+      "About",
+      "RemoteDsh"
+    ]
+  },
+  "prompt": {
+    "system_txt_chars": 5775,
+    "system_txt_han": 0,
+    "sections_json_han": 12
+  }
+}

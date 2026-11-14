@@ -1,0 +1,120 @@
+{
+  "running": false,
+  "directory": "/data/user/0/xin.dshaa.nativeapp/files/workspace/m86-plugin-dev-1794627969265",
+  "checks": [
+    {
+      "name": "tool scaffold",
+      "ok": true,
+      "detail": "已创建 tool 插件：/data/data/xin.dshaa.nativeapp/files/workspace/m86-plugin-dev-1794627969265/tool；可运行 plugin_dev_test"
+    },
+    {
+      "name": "tool apply",
+      "ok": true,
+      "detail": "{\"ok\":true,\"message\":\"试运行通过：m86.selftest.tool.1794627969274\",\"id\":\"m86.selftest.tool.1794627969274\",\"tools\":[\"m86_selftest_tool_1794627969274_hello\"],\"shells\":[],\"unsupported\":[],\"missingServices\":[]}"
+    },
+    {
+      "name": "tool install",
+      "ok": true,
+      "detail": "已导入 m86.selftest.tool.1794627969274 0.1.0；注册 1 个工具：m86_selftest_tool_1794627969274_hello"
+    },
+    {
+      "name": "tool list",
+      "ok": true,
+      "detail": "{\"total\":1,\"truncated\":false,\"plugins\":[{\"id\":\"m86.selftest.tool.1794627969274\",\"name\":\"m86.selftest.tool.1794627969274\",\"version\":\"0.1.0\",\"enabled\":true,\"path\":\"/data/data/xin.dshaa.nativeapp/files/plugins/m86.selftest.tool.1794627969274\",\"tools\":[\"m86_selftest_tool_1794627969274_hello\"],\"shells\":[],\"permissions\":[],\"grantedPermissions\":[]}]}"
+    },
+    {
+      "name": "tool execute",
+      "ok": true,
+      "detail": "你好，M86"
+    },
+    {
+      "name": "tool disabled blocks",
+      "ok": true,
+      "detail": "该插件工具未启用或未接入：m86.selftest.tool.1794627969274 / m86_selftest_tool_1794627969274_hello"
+    },
+    {
+      "name": "tool reload",
+      "ok": true,
+      "detail": "m86.selftest.tool.1794627969274：试运行通过，注册 1 个工具"
+    },
+    {
+      "name": "failed upgrade preserves old tool",
+      "ok": true,
+      "detail": "m86.selftest.tool.1794627969274：试运行失败：Error: M86_EXPECTED_BAD_UPGRADE\n    at apply (index.js:1454:38)\n    at <anonymous> (index.js:1479:35)\n    at <anonymous> (index.js:1502:3)\n    at <eval> (index.js:1502:147)\n\n你好，ROLLBACK"
+    },
+    {
+      "name": "surface-shell scaffold",
+      "ok": true,
+      "detail": "已创建 surface-shell 插件：/data/data/xin.dshaa.nativeapp/files/workspace/m86-plugin-dev-1794627969265/surface-shell；可运行 plugin_dev_test"
+    },
+    {
+      "name": "surface-shell apply",
+      "ok": true,
+      "detail": "{\"ok\":true,\"message\":\"试运行通过：m86.selftest.surface-shell.1794627969274\",\"id\":\"m86.selftest.surface-shell.1794627969274\",\"tools\":[],\"shells\":[{\"id\":\"m86.selftest.surface-shell.1794627969274\",\"backend\":\"surface\"}],\"unsupported\":[],\"missingServices\":[]}"
+    },
+    {
+      "name": "surface-shell install",
+      "ok": true,
+      "detail": "已导入 m86.selftest.surface-shell.1794627969274 0.1.0；没有注册工具（可能只是 hook 插件）"
+    },
+    {
+      "name": "surface-shell list",
+      "ok": true,
+      "detail": "{\"total\":1,\"truncated\":false,\"plugins\":[{\"id\":\"m86.selftest.surface-shell.1794627969274\",\"name\":\"m86.selftest.surface-shell.1794627969274\",\"version\":\"0.1.0\",\"enabled\":true,\"path\":\"/data/data/xin.dshaa.nativeapp/files/plugins/m86.selftest.surface-shell.1794627969274\",\"tools\":[],\"shells\":[{\"id\":\"m86.selftest.surface-shell.1794627969274\",\"backend\":\"surface\"}],\"permissions\":[\"ui\"],\"grantedPermissions\":[\"ui\"]}]}"
+    },
+    {
+      "name": "surface-shell offscreen mount/state/action",
+      "ok": true,
+      "detail": "{\"ok\":true,\"isolated\":true,\"pluginId\":\"m86.selftest.surface-shell.1794627969274\",\"shellId\":\"m86.selftest.surface-shell.1794627969274\",\"backend\":\"surface\",\"mode\":\"offscreen-disposable-runtime\",\"stateSource\":\"synthetic-empty-session\",\"servicesSource\":\"empty-local-snapshots\",\"rendered\":false,\"commandsExecuted\":0,\"registeredShells\":[\"m86.selftest.surface-shell.1794627969274\"],\"checks\":[{\"method\":\"shell.mount\",\"status\":\"COMPLETED\",\"valid\":true,\"validation\":\"surface/v1\",\"replyChars\":170,\"rendered\":false,\"nodes\":3,\"preview\":\"{\\\"type\\\":\\\"column\\\",\\\"padding\\\":20,\\\"gap\\\":12,\\\"children\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"我的 Surface 壳\\\",\\\"size\\\":22},{\\\"type\\\":\\\"button\\\",\\\"label\\\":\\\"返回原生界面\\\",\\\"onTap\\\":\\\"close\\\"}]}\",\"previewTruncated\":false},{\"method\":\"shell.state\",\"status\":\"COMPLETED\",\"valid\":true,\"validation\":\"surface/v1\",\"replyChars\":170,\"rendered\":false,\"nodes\":3,\"preview\":\"{\\\"type\\\":\\\"column\\\",\\\"padding\\\":20,\\\"gap\\\":12,\\\"children\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"我的 Surface 壳\\\",\\\"size\\\":22},{\\\"type\\\":\\\"button\\\",\\\"label\\\":\\\"返回原生界面\\\",\\\"onTap\\\":\\\"close\\\"}]}\",\"previewTruncated\":false},{\"method\":\"shell.action\",\"status\":\"COMPLETED\",\"valid\":true,\"validation\":\"surface/v1\",\"replyChars\":170,\"rendered\":false,\"nodes\":3,\"preview\":\"{\\\"type\\\":\\\"column\\\",\\\"padding\\\":20,\\\"gap\\\":12,\\\"children\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"我的 Surface 壳\\\",\\\"size\\\":22},{\\\"type\\\":\\\"button\\\",\\\"label\\\":\\\"返回原生界面\\\",\\\"onTap\\\":\\\"close\\\"}]}\",\"previewTruncated\":false}],\"commands\":[{\"phase\":\"shell.action\",\"command\":\"closeShell\",\"argsPreview\":\"{}\",\"argsTruncated\":false,\"simulated\":true,\"executed\":false}],\"commandCount\":1,\"commandsTruncated\":false,\"deniedHostCalls\":[],\"deniedHostCallCount\":0,\"deniedHostCallsTruncated\":false}"
+    },
+    {
+      "name": "surface button has label",
+      "ok": true,
+      "detail": "{\"ok\":true,\"isolated\":true,\"pluginId\":\"m86.selftest.surface-shell.1794627969274\",\"shellId\":\"m86.selftest.surface-shell.1794627969274\",\"backend\":\"surface\",\"mode\":\"offscreen-disposable-runtime\",\"stateSource\":\"synthetic-empty-session\",\"servicesSource\":\"empty-local-snapshots\",\"rendered\":false,\"commandsExecuted\":0,\"registeredShells\":[\"m86.selftest.surface-shell.1794627969274\"],\"checks\":[{\"method\":\"shell.mount\",\"status\":\"COMPLETED\",\"valid\":true,\"validation\":\"surface/v1\",\"replyChars\":170,\"rendered\":false,\"nodes\":3,\"preview\":\"{\\\"type\\\":\\\"column\\\",\\\"padding\\\":20,\\\"gap\\\":12,\\\"children\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"我的 Surface 壳\\\",\\\"size\\\":22},{\\\"type\\\":\\\"button\\\",\\\"label\\\":\\\"返回原生界面\\\",\\\"onTap\\\":\\\"close\\\"}]}\",\"previewTruncated\":false},{\"method\":\"shell.state\",\"status\":\"COMPLETED\",\"valid\":true,\"validation\":\"surface/v1\",\"replyChars\":170,\"rendered\":false,\"nodes\":3,\"preview\":\"{\\\"type\\\":\\\"column\\\",\\\"padding\\\":20,\\\"gap\\\":12,\\\"children\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"我的 Surface 壳\\\",\\\"size\\\":22},{\\\"type\\\":\\\"button\\\",\\\"label\\\":\\\"返回原生界面\\\",\\\"onTap\\\":\\\"close\\\"}]}\",\"previewTruncated\":false},{\"method\":\"shell.action\",\"status\":\"COMPLETED\",\"valid\":true,\"validation\":\"surface/v1\",\"replyChars\":170,\"rendered\":false,\"nodes\":3,\"preview\":\"{\\\"type\\\":\\\"column\\\",\\\"padding\\\":20,\\\"gap\\\":12,\\\"children\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"我的 Surface 壳\\\",\\\"size\\\":22},{\\\"type\\\":\\\"button\\\",\\\"label\\\":\\\"返回原生界面\\\",\\\"onTap\\\":\\\"close\\\"}]}\",\"previewTruncated\":false}],\"commands\":[{\"phase\":\"shell.action\",\"command\":\"closeShell\",\"argsPreview\":\"{}\",\"argsTruncated\":false,\"simulated\":true,\"executed\":false}],\"commandCount\":1,\"commandsTruncated\":false,\"deniedHostCalls\":[],\"deniedHostCallCount\":0,\"deniedHostCallsTruncated\":false}"
+    },
+    {
+      "name": "webview-shell scaffold",
+      "ok": true,
+      "detail": "已创建 webview-shell 插件：/data/data/xin.dshaa.nativeapp/files/workspace/m86-plugin-dev-1794627969265/webview-shell；可运行 plugin_dev_test"
+    },
+    {
+      "name": "webview-shell apply",
+      "ok": true,
+      "detail": "{\"ok\":true,\"message\":\"试运行通过：m86.selftest.webview-shell.1794627969274\",\"id\":\"m86.selftest.webview-shell.1794627969274\",\"tools\":[],\"shells\":[{\"id\":\"m86.selftest.webview-shell.1794627969274\",\"backend\":\"webview\"}],\"unsupported\":[],\"missingServices\":[]}"
+    },
+    {
+      "name": "webview-shell install",
+      "ok": true,
+      "detail": "已导入 m86.selftest.webview-shell.1794627969274 0.1.0；没有注册工具（可能只是 hook 插件）"
+    },
+    {
+      "name": "webview-shell list",
+      "ok": true,
+      "detail": "{\"total\":1,\"truncated\":false,\"plugins\":[{\"id\":\"m86.selftest.webview-shell.1794627969274\",\"name\":\"m86.selftest.webview-shell.1794627969274\",\"version\":\"0.1.0\",\"enabled\":true,\"path\":\"/data/data/xin.dshaa.nativeapp/files/plugins/m86.selftest.webview-shell.1794627969274\",\"tools\":[],\"shells\":[{\"id\":\"m86.selftest.webview-shell.1794627969274\",\"backend\":\"webview\"}],\"permissions\":[\"ui\"],\"grantedPermissions\":[\"ui\"]}]}"
+    },
+    {
+      "name": "webview-shell offscreen mount/state/action",
+      "ok": true,
+      "detail": "{\"ok\":true,\"isolated\":true,\"pluginId\":\"m86.selftest.webview-shell.1794627969274\",\"shellId\":\"m86.selftest.webview-shell.1794627969274\",\"backend\":\"webview\",\"mode\":\"offscreen-disposable-runtime\",\"stateSource\":\"synthetic-empty-session\",\"servicesSource\":\"empty-local-snapshots\",\"rendered\":false,\"commandsExecuted\":0,\"registeredShells\":[\"m86.selftest.webview-shell.1794627969274\"],\"checks\":[{\"method\":\"shell.mount\",\"status\":\"COMPLETED\",\"valid\":true,\"validation\":\"nonempty-html-data-only\",\"replyChars\":129,\"rendered\":false,\"preview\":\"<main style=\\\"padding:20px\\\"><h1>我的 WebView 壳</h1><button onclick=\\\"DshWebShell.action(&quot;close&quot;,{})\\\">返回原生界面</button></main>\",\"previewTruncated\":false},{\"method\":\"shell.state\",\"status\":\"COMPLETED\",\"valid\":true,\"validation\":\"nonempty-html-data-only\",\"replyChars\":129,\"rendered\":false,\"preview\":\"<main style=\\\"padding:20px\\\"><h1>我的 WebView 壳</h1><button onclick=\\\"DshWebShell.action(&quot;close&quot;,{})\\\">返回原生界面</button></main>\",\"previewTruncated\":false},{\"method\":\"shell.action\",\"status\":\"COMPLETED\",\"valid\":true,\"validation\":\"nonempty-html-data-only\",\"replyChars\":129,\"rendered\":false,\"preview\":\"<main style=\\\"padding:20px\\\"><h1>我的 WebView 壳</h1><button onclick=\\\"DshWebShell.action(&quot;close&quot;,{})\\\">返回原生界面</button></main>\",\"previewTruncated\":false}],\"commands\":[{\"phase\":\"shell.action\",\"command\":\"closeShell\",\"argsPreview\":\"{}\",\"argsTruncated\":false,\"simulated\":true,\"executed\":false}],\"commandCount\":1,\"commandsTruncated\":false,\"deniedHostCalls\":[],\"deniedHostCallCount\":0,\"deniedHostCallsTruncated\":false}"
+    },
+    {
+      "name": "capability actual invoke",
+      "ok": true,
+      "detail": "{\"echo\":\"M86_CAP_OK\"}"
+    },
+    {
+      "name": "capability disabled refuses",
+      "ok": true,
+      "detail": "能力 m86.selftest.capability.1794627969274 的提供方插件 m86.selftest.capability.1794627969274 已停用。"
+    },
+    {
+      "name": "dangerous shell permission not auto granted",
+      "ok": true,
+      "detail": "Error: 插件没有 shell 权限（要在插件页逐项确认）\n    at __dshHostOk (index.js:1190:28)\n    at exec (index.js:1397:7)\n    at execute (index.js:1456:24)\n    at __dshInvoke (index.js:1530:41)\n"
+    }
+  ],
+  "passed": 22,
+  "total": 22,
+  "fixturesRetained": true,
+  "allCreatedPluginsDisabled": true
+}

@@ -1,0 +1,13 @@
+{
+  "name": "m84e2-demo",
+  "version": "1.0.0",
+  "description": "M84-E2 验收：ctx.llm.register 配置式供应商 + ctx.ui.registerRoute + 一个工具",
+  "main": "index.js",
+  "format": "esm",
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "entry": "client.js"
+    }
+  }
+}

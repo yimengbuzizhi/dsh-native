@@ -54,6 +54,7 @@ import xin.dshaa.nativeapp.device.a11y.A11y
 import xin.dshaa.ui.design.theme.DshTheme
 import kotlin.math.min
 import com.ai.assistance.showerclient.ShellIdentity
+import xin.dshaa.ui.shellapi.data.SettingsStore
 
 /**
  * Operit `FloatingWindowManager` 的原生移植（docs/76 §五 S14-S27、§六）。

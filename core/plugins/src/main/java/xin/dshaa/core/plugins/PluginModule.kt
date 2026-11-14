@@ -315,6 +315,518 @@ object PluginModule {
 """
     }
 
+    /**
+     * M84-H：常驻运行时的启动脚本。
+     *
+     * 与 [dryRunScript] 同一条链路（同一份 PRELUDE/宿主桥/模块包装），区别是宿主拿到这个脚本后
+     * 用 `QuickJsSession.start` 起 runtime 并**留着**；之后每条会话事件通过
+     * `__dshDispatch('projection.event', payloadJson)` 进 JS 折叠，闭包与状态都在同一个 runtime 里。
+     *
+     * 返回值是 JSON 字符串：`{ok, keys, projections, errors}`。
+     */
+    fun residentScript(module: TransformedModule, cwd: String? = null, configJson: String = "{}"): String =
+        moduleScript(module, cwd, configJson) + EXPORTS_APPLY + RESIDENT_DISPATCH + """
+  return Promise.resolve(__dshApply).then(function () {
+    return JSON.stringify({
+      ok: true,
+      keys: __dshProjectionKeys.slice(0),
+      subscriptions: Object.keys(__dshEventHandlers),
+      cleanups: __dshCleanups.length,
+      streams: Object.keys(__dshStreamProviders),
+      projections: __dsh.projections,
+      shells: __dsh.shells,
+      agents: __dsh.agents,
+      storages: __dsh.storages,
+      prompts: __dsh.prompts,
+      capabilities: __dsh.capabilities,
+      errors: __dsh.errors
+    });
+  });
+"""
+
+    /**
+     * 常驻运行时的 dispatch 入口（只在 [residentScript] 里出现）。
+     *
+     * 协议（宿主 → JS）：
+     * - `projection.event`：`{sessionId, header, inheritedEventCount, event}`，返回
+     *   `{ok, keys, values:[{key,seq,view}], errors:[{key,error}]}`；
+     * - `projection.snapshot`：`{sessionId}` → `{ok, entries:[{key,stateVersion,seq,state,view}]}`（checkpoint 落盘）；
+     * - `projection.restore`：`{sessionId, entries:[…]}` → 把 state/seq 灌回 cell，`seq <= cell.seq` 的旧事件不再折；
+     * - `projection.reset`：清掉所有会话的投影 cell；
+     * - `ping`：返回已注册的投影 key（验收/探活用）。
+     *
+     * `apply` 必须是同步 fold：返回 Promise 直接算插件错误（照 DSH 的同步纪律）。
+     */
+    private val RESIDENT_DISPATCH = """
+  function __dshProjectionDispatch(payload) {
+    const sessionId = String(payload.sessionId || '');
+    const event = payload.event;
+    if (!sessionId || !event || typeof event !== 'object') {
+      return { ok: false, error: 'projection.event 缺少 sessionId/event' };
+    }
+    const seq = (typeof event.seq === 'number') ? event.seq : null;
+    const values = [];
+    const errors = [];
+    for (let i = 0; i < __dshProjectionKeys.length; i++) {
+      const key = __dshProjectionKeys[i];
+      const def = __dshProjectionDefs[key];
+      if (!def) { continue; }
+      const cellKey = sessionId + '\u0000' + key;
+      let cell = __dshProjectionCells[cellKey];
+      try {
+        if (!cell) {
+          let initial = null;
+          if (typeof def.init === 'function') {
+            initial = def.init(payload.header || {}, (typeof payload.inheritedEventCount === 'number') ? payload.inheritedEventCount : 0);
+          }
+          if (initial && typeof initial.then === 'function') { throw new Error('init 必须是同步函数'); }
+          cell = { state: initial };
+          __dshProjectionCells[cellKey] = cell;
+        }
+        // M84-N：checkpoint 恢复后重投的旧事件不再 fold（apply 不要求幂等）。
+        if (seq !== null && typeof cell.seq === 'number' && seq <= cell.seq) { continue; }
+        if (seq !== null) { cell.seq = seq; }
+        const next = (typeof def.apply === 'function') ? def.apply(cell.state, event) : cell.state;
+        if (next && typeof next.then === 'function') { throw new Error('apply 必须是同步函数'); }
+        // DSH 纪律：不关心的事件返回同一个 state 引用 → 零下游工作。
+        if (next === cell.state) { continue; }
+        cell.state = next;
+        let view = next;
+        if (def.wire && typeof def.wire.view === 'function') {
+          view = def.wire.view(next);
+          if (view && typeof view.then === 'function') { throw new Error('wire.view 必须是同步函数'); }
+        }
+        cell.view = __dshJsonSafe(view);
+        cell.hasView = true;
+        values.push({ key: key, seq: seq, view: cell.view });
+      } catch (err) {
+        errors.push({ key: key, error: String((err && err.stack) ? err.stack : err) });
+      }
+    }
+    return { ok: errors.length === 0, keys: __dshProjectionKeys.slice(0), values: values, errors: errors };
+  }
+  // M84-N：checkpoint 快照（宿主定期落盘）与恢复（App 重启后只重投更新的事件）。
+  function __dshProjectionSnapshot(payload) {
+    const sessionId = String((payload && payload.sessionId) || '');
+    if (!sessionId) { return { ok: false, error: 'projection.snapshot 缺少 sessionId' }; }
+    const entries = [];
+    const errors = [];
+    for (let i = 0; i < __dshProjectionKeys.length; i++) {
+      const key = __dshProjectionKeys[i];
+      const cell = __dshProjectionCells[sessionId + '\u0000' + key];
+      if (!cell) { continue; }
+      const def = __dshProjectionDefs[key] || {};
+      try {
+        entries.push({
+          key: key,
+          stateVersion: (typeof def.stateVersion === 'number') ? def.stateVersion : 1,
+          seq: (typeof cell.seq === 'number') ? cell.seq : -1,
+          state: __dshJsonSafe(cell.state),
+          view: cell.hasView ? cell.view : null
+        });
+      } catch (err) {
+        errors.push({ key: key, error: String((err && err.stack) ? err.stack : err) });
+      }
+    }
+    return { ok: errors.length === 0, entries: entries, errors: errors };
+  }
+  function __dshProjectionRestore(payload) {
+    const sessionId = String((payload && payload.sessionId) || '');
+    const list = (payload && Array.isArray(payload.entries)) ? payload.entries : [];
+    if (!sessionId) { return { ok: false, error: 'projection.restore 缺少 sessionId' }; }
+    let restored = 0;
+    const errors = [];
+    for (let i = 0; i < list.length; i++) {
+      const entry = list[i] || {};
+      const key = String(entry.key || '');
+      // 插件重装/升级后不再声明的 key 直接丢（旧 checkpoint 不作数）。
+      if (!key || __dshProjectionKeys.indexOf(key) < 0) { continue; }
+      try {
+        const seq = (typeof entry.seq === 'number') ? entry.seq : -1;
+        __dshProjectionCells[sessionId + '\u0000' + key] = {
+          state: entry.state,
+          seq: seq,
+          view: (entry.view === undefined) ? null : entry.view,
+          hasView: entry.view !== null && entry.view !== undefined
+        };
+        restored++;
+      } catch (err) {
+        errors.push({ key: key, error: String((err && err.stack) ? err.stack : err) });
+      }
+    }
+    return { ok: errors.length === 0, restored: restored, errors: errors };
+  }
+  function __dshEmitEvent(name, sessionId, header, event) {
+    // 具体事件名 + DSH 的通用 'session/event' 两级订阅；'*' 收全部。
+    const names = [name];
+    if (name && name !== 'session/event') { names.push('session/event'); }
+    let handlers = [];
+    for (let n = 0; n < names.length; n++) {
+      handlers = handlers.concat(__dshEventHandlers[names[n]] || []);
+    }
+    if (name !== '*') { handlers = handlers.concat(__dshEventHandlers['*'] || []); }
+    const errors = [];
+    let handled = 0;
+    for (let i = 0; i < handlers.length; i++) {
+      try {
+        const result = handlers[i](event, { name: name, sessionId: sessionId, header: header || {} });
+        handled++;
+        // handler 允许 async：宿主不等它（事件回调不是投影 fold），异常记进插件错误。
+        if (result && typeof result.then === 'function') {
+          result.catch(function (err) {
+            __dsh.errors.push('ctx.on(' + name + ') 异步报错：' + String((err && err.stack) ? err.stack : err));
+          });
+        }
+      } catch (err) {
+        errors.push({ event: name, error: String((err && err.stack) ? err.stack : err) });
+      }
+    }
+    return { handled: handled, errors: errors };
+  }
+  // M85-A：整壳 dispatch。返回值统一是 {ok, tree} 或 {ok:false,error}；
+  // mount/state/action/event 都允许返回 Promise（宿主 dispatch 会等它结算）。
+  function __dshShellDispatch(method, payload) {
+    const shellId = String(payload.id || payload.shell || '');
+    const def = __dshShellDefs[shellId];
+    if (!def) { return { ok: false, error: '没有注册壳：' + shellId }; }
+    const state = (payload.state && typeof payload.state === 'object') ? payload.state : {};
+    let produced;
+    try {
+      if (method === 'mount') {
+        produced = def.mount(state);
+      } else if (method === 'state') {
+        const fn = def.onState || def.state || def.mount;
+        produced = fn.call(def, state);
+      } else if (method === 'action') {
+        const fn = def.onAction || def.action;
+        if (typeof fn !== 'function') { return { ok: false, error: '壳没有 onAction：' + shellId }; }
+        produced = fn.call(def, String(payload.action || ''), (payload.value === undefined ? (payload.payload || {}) : payload.value), state);
+      } else if (method === 'event') {
+        const fn = def.onEvent || def.event;
+        if (typeof fn !== 'function') { return { ok: false, error: '壳没有 onEvent：' + shellId }; }
+        produced = fn.call(def, String(payload.event || ''), state);
+      } else {
+        return { ok: false, error: '未知 shell dispatch：' + method };
+      }
+    } catch (err) {
+      return { ok: false, error: '壳 ' + method + ' 抛错：' + String((err && err.stack) ? err.stack : err) };
+    }
+    return Promise.resolve(produced).then(function (value) {
+      if (value === undefined || value === null) {
+        return { ok: false, error: '壳 ' + method + ' 没有返回 UI 树' };
+      }
+      const safe = __dshJsonSafe(value);
+      // M85-F：webview 后端返回 {title?, html}，原样交回宿主；surface 后端仍包成 {tree}。
+      if (safe && typeof safe === 'object' && typeof safe.html === 'string') {
+        return {
+          ok: true,
+          title: (safe.title === undefined || safe.title === null) ? null : String(safe.title),
+          html: safe.html
+        };
+      }
+      return { ok: true, tree: safe };
+    }, function (err) {
+      return { ok: false, error: '壳 ' + method + ' 失败：' + String((err && err.stack) ? err.stack : err) };
+    });
+  }
+  // M85-D：回合实现 dispatch（agent/v1）。宿主每轮传 {id, turn:{turnId,sessionId,input,state}}，
+  // run(turn, ctx) 允许 async；返回值统一归一成 {ok, stopReason, text}。
+  // ctx 只开放宿主原语：notify / status / abort / tools.names（tools.invoke、llm.stream、
+  // storage.append 在 M85-D 明确返回「未开放」，不静默成功）。
+  function __dshAgentDispatch(payload) {
+    const agentId = String(payload.id || '');
+    const def = __dshAgentDefs[agentId];
+    if (!def) { return { ok: false, error: '没有注册回合插件：' + agentId }; }
+    const turn = (payload.turn && typeof payload.turn === 'object') ? payload.turn : {};
+    const ctxApi = {
+      notify: function(title, body) {
+        const reply = __dshHostJson('agent.notify', {
+          title: String(title === undefined || title === null ? '' : title),
+          body: String(body === undefined || body === null ? '' : body)
+        });
+        return !!(reply && reply.ok === true);
+      },
+      status: function(text) {
+        const reply = __dshHostJson('agent.status', {
+          text: (text === undefined || text === null) ? '' : String(text)
+        });
+        return !!(reply && reply.ok === true);
+      },
+      abort: function() {
+        const reply = __dshHostJson('agent.abort', {});
+        return !!(reply && reply.abort === true);
+      },
+      tools: {
+        names: function() {
+          const reply = __dshHostJson('agent.tools.names', {});
+          return (reply && reply.ok === true && Array.isArray(reply.names)) ? reply.names.slice(0) : [];
+        },
+        invoke: function(name, args) {
+          return __dshHostJson('agent.tools.invoke', {
+            name: String(name || ''),
+            arguments: (args === undefined ? null : args)
+          });
+        }
+      },
+      llm: {
+        stream: function() { return __dshHostJson('agent.llm.stream', {}); }
+      },
+      storage: {
+        append: function() { return __dshHostJson('agent.storage.append', {}); }
+      }
+    };
+    let produced;
+    try {
+      produced = def.run(turn, ctxApi);
+    } catch (err) {
+      return { ok: false, error: 'agent.run 抛错：' + String((err && err.stack) ? err.stack : err) };
+    }
+    return Promise.resolve(produced).then(function (value) {
+      if (typeof value === 'string') {
+        return { ok: true, stopReason: 'completed', text: value };
+      }
+      if (!value || typeof value !== 'object') {
+        return { ok: false, error: 'agent.run 没有返回 {stopReason,text}' };
+      }
+      return {
+        ok: true,
+        stopReason: String(value.stopReason || 'completed'),
+        text: (value.text === undefined || value.text === null) ? '' : String(value.text)
+      };
+    }, function (err) {
+      return { ok: false, error: 'agent.run 失败：' + String((err && err.stack) ? err.stack : err) };
+    });
+  }
+  // M85-E：存储实现 dispatch（storage/v1）。v1 只读：宿主只调 list/load；
+  // list() 返回 [{id,title,updatedAt,...}]，load(id) 返回原始会话文档（JSONL 文本）。
+  // 写入路径不在 v1 开放（宿主会拒绝），第三方存储不会假装能落库。
+  function __dshStorageDispatch(method, payload) {
+    const storeId = String(payload.id || '');
+    const def = __dshStorageDefs[storeId];
+    if (!def) { return { ok: false, error: '没有注册存储插件：' + storeId }; }
+    let produced;
+    try {
+      if (method === 'list') {
+        if (typeof def.list !== 'function') { return { ok: false, error: '存储插件没有 list：' + storeId }; }
+        produced = def.list();
+      } else if (method === 'load') {
+        if (typeof def.load !== 'function') { return { ok: false, error: '存储插件没有 load：' + storeId }; }
+        produced = def.load(String(payload.sessionId || ''));
+      } else {
+        return { ok: false, error: 'storage/v1 只支持 list/load：' + method };
+      }
+    } catch (err) {
+      return { ok: false, error: '存储操作抛错：' + String((err && err.stack) ? err.stack : err) };
+    }
+    return Promise.resolve(produced).then(function (value) {
+      if (method === 'list') {
+        let items = value;
+        if (value && !Array.isArray(value) && Array.isArray(value.sessions)) { items = value.sessions; }
+        if (!Array.isArray(items)) { return { ok: false, error: 'storage.list 需要返回数组' }; }
+        return { ok: true, sessions: __dshJsonSafe(items) };
+      }
+      let doc = value;
+      if (value && typeof value === 'object' && !Array.isArray(value)) { doc = value.doc; }
+      if (typeof doc !== 'string') { return { ok: false, error: 'storage.load 需要返回会话文档字符串' }; }
+      return { ok: true, doc: doc };
+    }, function (err) {
+      return { ok: false, error: '存储操作失败：' + String((err && err.stack) ? err.stack : err) };
+    });
+  }
+  // M85-E：提示词实现 dispatch（prompt/v1）。宿主传内置拼装结果 base + 本轮参数，
+  // 插件可以整体替换或包一层；返回 string 或 {text}。
+  function __dshPromptDispatch(payload) {
+    const promptId = String(payload.id || '');
+    const def = __dshPromptDefs[promptId];
+    if (!def || typeof def.assemble !== 'function') {
+      return { ok: false, error: '没有注册提示词插件：' + promptId };
+    }
+    const request = {
+      base: String(payload.base || ''),
+      model: String(payload.model || ''),
+      provider: String(payload.provider || ''),
+      tools: Array.isArray(payload.tools) ? payload.tools.slice(0) : [],
+      planMode: payload.planMode === true,
+      personaPrefix: String(payload.personaPrefix || ''),
+      personaSuffix: String(payload.personaSuffix || ''),
+      variables: (payload.variables && typeof payload.variables === 'object') ? payload.variables : {}
+    };
+    let produced;
+    try {
+      produced = def.assemble(request);
+    } catch (err) {
+      return { ok: false, error: 'prompt.assemble 抛错：' + String((err && err.stack) ? err.stack : err) };
+    }
+    return Promise.resolve(produced).then(function (value) {
+      if (typeof value === 'string') { return { ok: true, text: value }; }
+      if (Array.isArray(value)) {
+        return { ok: true, text: value.map(function (item) { return String(item); }).join('\n\n') };
+      }
+      if (value && typeof value === 'object' && typeof value.text === 'string') {
+        return { ok: true, text: value.text };
+      }
+      return { ok: false, error: 'prompt.assemble 需要返回字符串 / {text}' };
+    }, function (err) {
+      return { ok: false, error: 'prompt.assemble 失败：' + String((err && err.stack) ? err.stack : err) };
+    });
+  }
+  // M85-F：能力提供方 dispatch（capability/v1）。宿主/插件页/调试通道调用一个能力 id，
+  // invoke(args) 允许 async；返回值归一成 {ok, value, error}。调用方拿不到宿主方法，
+  // 只能拿到这个插件自己声明的实现（宿主已经做过开关/授权/超时门）。
+  function __dshCapabilityDispatch(payload) {
+    const capId = String(payload.id || '');
+    const def = __dshCapabilityDefs[capId];
+    if (!def || typeof def.invoke !== 'function') {
+      return { ok: false, error: '没有注册能力：' + capId };
+    }
+    const args = (payload.args === undefined || payload.args === null) ? {} : payload.args;
+    let produced;
+    try {
+      produced = def.invoke(args);
+    } catch (err) {
+      return { ok: false, error: 'capability.invoke 抛错：' + String((err && err.stack) ? err.stack : err) };
+    }
+    return Promise.resolve(produced).then(function (value) {
+      if (value && typeof value === 'object' && value.ok === false) {
+        return { ok: false, error: String(value.error || '能力调用失败') };
+      }
+      if (value && typeof value === 'object' && value.ok === true) {
+        return { ok: true, value: __dshJsonSafe(value.value === undefined ? null : value.value) };
+      }
+      return { ok: true, value: __dshJsonSafe(value === undefined ? null : value) };
+    }, function (err) {
+      return { ok: false, error: 'capability.invoke 失败：' + String((err && err.stack) ? err.stack : err) };
+    });
+  }
+  globalThis.__dshDispatch = function(method, payloadJson) {
+    const name = String(method || '');
+    let payload = {};
+    if (payloadJson) {
+      try { payload = JSON.parse(String(payloadJson)); }
+      catch (e) { return { ok: false, error: 'dispatch payload 不是 JSON：' + String((e && e.message) || e) }; }
+    }
+    payload = payload || {};
+    // M84-H + M84-I：一条会话事件同时喂投影 fold 和 ctx.on 订阅者。
+    if (name === 'session.event' || name === 'projection.event') {
+      const projection = __dshProjectionDispatch(payload);
+      const event = payload.event || {};
+      const eventName = String(event.type || payload.name || '');
+      const emitted = eventName ? __dshEmitEvent(eventName, String(payload.sessionId || ''), payload.header, event) : { handled: 0, errors: [] };
+      return {
+        ok: projection.ok !== false && emitted.errors.length === 0,
+        keys: projection.keys || [],
+        values: projection.values || [],
+        errors: (projection.errors || []).concat(emitted.errors || []),
+        handled: emitted.handled
+      };
+    }
+    if (name === 'projection.reset') {
+      for (const key in __dshProjectionCells) { delete __dshProjectionCells[key]; }
+      return { ok: true, keys: __dshProjectionKeys.slice(0) };
+    }
+    // M84-N：checkpoint 落盘/恢复。快照把每个 cell 的 state/seq/view 交回宿主；恢复把它们灌回来。
+    if (name === 'projection.snapshot') { return __dshProjectionSnapshot(payload); }
+    if (name === 'projection.restore') { return __dshProjectionRestore(payload); }
+    // M84-I：停用/重载插件时跑 ctx.effect 的 cleanup。
+    if (name === 'shutdown') {
+      const errors = [];
+      let cleaned = 0;
+      const pending = __dshCleanups.slice(0);
+      __dshCleanups.length = 0;
+      for (let i = 0; i < pending.length; i++) {
+        try {
+          const result = pending[i]();
+          cleaned++;
+          if (result && typeof result.then === 'function') {
+            result.catch(function (err) {
+              __dsh.errors.push('ctx.effect cleanup 异步报错：' + String((err && err.stack) ? err.stack : err));
+            });
+          }
+        } catch (err) {
+          errors.push({ cleanup: i, error: String((err && err.stack) ? err.stack : err) });
+        }
+      }
+      return { ok: errors.length === 0, cleaned: cleaned, errors: errors };
+    }
+    // M84-J/M84-M：插件自己产出模型回合。请求体是完整的 Anthropic 形状（和宿主真实请求同形）。
+    // 第二个参数 emit(chunk) 是 M84-M 的增量通道：同步调宿主 'llm.emit'，边算边把文本/工具块送回去。
+    // 返回值可以是 string / {text, toolCalls, stopReason, usage} / Promise；宿主等它结算。
+    if (name === 'llm.stream') {
+      const providerId = String(payload.id || '');
+      const provider = __dshStreamProviders[providerId];
+      if (!provider || typeof provider.stream !== 'function') {
+        return { ok: false, error: '没有 stream 供应商：' + providerId };
+      }
+      const callId = String(payload.callId || '');
+      let emitted = 0;
+      const emit = function(chunk) {
+        const reply = __dshHostJson('llm.emit', { callId: callId, chunk: chunk });
+        if (!reply || reply.ok !== true) {
+          throw new Error((reply && reply.error) || '宿主没有接收流片段');
+        }
+        emitted++;
+        return true;
+      };
+      let produced;
+      try {
+        produced = provider.stream(payload.request || {}, emit);
+      } catch (err) {
+        return { ok: false, error: 'stream 抛错：' + String((err && err.stack) ? err.stack : err) };
+      }
+      return Promise.resolve(produced).then(function (value) {
+        if (typeof value === 'string') { return { ok: true, text: value, emitted: emitted }; }
+        if (value && typeof value === 'object') {
+          return {
+            ok: true,
+            text: (typeof value.text === 'string') ? value.text : '',
+            toolCalls: Array.isArray(value.toolCalls) ? value.toolCalls : null,
+            stopReason: value.stopReason || '',
+            model: value.model || '',
+            usage: value.usage || null,
+            emitted: emitted
+          };
+        }
+        return { ok: false, error: 'stream 没有返回结果（string 或 {text}）' };
+      }, function (err) {
+        return { ok: false, error: 'stream 失败：' + String((err && err.stack) ? err.stack : err) };
+      });
+    }
+    if (name.indexOf('shell.') === 0) {
+      return __dshShellDispatch(name.substring(6), payload);
+    }
+    if (name === 'agent.run') {
+      return __dshAgentDispatch(payload);
+    }
+    // M85-E：storage/v1 只读（list/load）与 prompt/v1（assemble）。
+    if (name === 'storage.list' || name === 'storage.load') {
+      return __dshStorageDispatch(name.substring(8), payload);
+    }
+    if (name === 'prompt.assemble') {
+      return __dshPromptDispatch(payload);
+    }
+    // M85-F：能力提供方（capability/v1）。宿主只调一个能力 id，插件返回结果。
+    if (name === 'capability.invoke') {
+      return __dshCapabilityDispatch(payload);
+    }
+    if (name === 'ping') {
+      return {
+        ok: true,
+        keys: __dshProjectionKeys.slice(0),
+        subscriptions: Object.keys(__dshEventHandlers),
+        cleanups: __dshCleanups.length,
+        streams: Object.keys(__dshStreamProviders),
+        shells: __dsh.shells,
+        agents: __dsh.agents,
+        storages: __dsh.storages,
+        prompts: __dsh.prompts,
+        capabilities: __dsh.capabilities,
+        applied: __dsh.applied === true
+      };
+    }
+    return { ok: false, error: '未知 dispatch：' + name };
+  };
+"""
+
     /** QuickJS 跑插件模块的公共前半段：注入宿主符号 → 执行模块 → 收集 exports。 */
     private fun moduleScript(module: TransformedModule, cwd: String?, configJson: String): String {
         val sb = StringBuilder()
@@ -395,6 +907,163 @@ object PluginModule {
                 PluginCommand(name = name, description = item.string("description").orEmpty())
             }.orEmpty()
         }.getOrDefault(emptyList())
+        // M84-E2：配置式供应商 / 页面路由（坏 id、重复 id 直接丢，和 JS 侧规则一致）
+        val llmProviders = runCatching {
+            val seen = HashSet<String>()
+            obj["llmProviders"]?.jsonArray?.mapNotNull { element ->
+                val item = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val provider = PluginDecl.provider(
+                    id = item.string("id"),
+                    label = item.string("label"),
+                    protocol = item.string("protocol"),
+                    baseUrl = item.string("baseUrl"),
+                    model = item.string("model"),
+                    apiKey = item.string("apiKey"),
+                    hasStream = item["hasStream"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    },
+                ) ?: return@mapNotNull null
+                if (!seen.add(provider.id)) return@mapNotNull null
+                provider
+            }.orEmpty()
+        }.getOrDefault(emptyList())
+        val routes = runCatching {
+            val seen = HashSet<String>()
+            obj["routes"]?.jsonArray?.mapNotNull { element ->
+                val item = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val route = PluginDecl.route(
+                    id = item.string("id"),
+                    title = item.string("title"),
+                    description = item.string("description"),
+                    page = item["page"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    } ?: false,
+                ) ?: return@mapNotNull null
+                if (!seen.add(route.id)) return@mapNotNull null
+                route
+            }.orEmpty()
+        }.getOrDefault(emptyList())
+        // M84-H：会话投影（key + stateVersion + 是否有 wire.view）。定义本身留在常驻 JS 里。
+        val projections = runCatching {
+            val seen = HashSet<String>()
+            obj["projections"]?.jsonArray?.mapNotNull { element ->
+                val item = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val projection = PluginDecl.projection(
+                    key = item.string("key"),
+                    stateVersion = item["stateVersion"]?.let {
+                        runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
+                    },
+                    hasView = item["hasView"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    },
+                    hasApply = item["hasApply"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    },
+                ) ?: return@mapNotNull null
+                if (!seen.add(projection.key)) return@mapNotNull null
+                projection
+            }.orEmpty()
+        }.getOrDefault(emptyList())
+        // M85-A：整壳（id + label + 有哪些回调）。定义本身留在常驻 JS 里。
+        val shells = runCatching {
+            val seen = HashSet<String>()
+            obj["shells"]?.jsonArray?.mapNotNull { element ->
+                val item = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val shell = PluginDecl.shell(
+                    id = item.string("id"),
+                    label = item.string("label"),
+                    backend = item.string("backend"),
+                    hasState = item["hasState"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    },
+                    hasAction = item["hasAction"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    },
+                    hasEvent = item["hasEvent"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    },
+                ) ?: return@mapNotNull null
+                if (!seen.add(shell.id)) return@mapNotNull null
+                shell
+            }.orEmpty()
+        }.getOrDefault(emptyList())
+        val loadingErrors = ArrayList<String>()
+        val loadingElements = obj["loadings"] as? kotlinx.serialization.json.JsonArray
+        if (obj.containsKey("loadings") && loadingElements == null) loadingErrors += "加载页声明必须是数组"
+        if (loadingElements != null && loadingElements.size > LoadingSpec.MAX_DECLARATIONS) {
+            loadingErrors += "加载页声明超过 ${LoadingSpec.MAX_DECLARATIONS} 项"
+        }
+        val loadings = loadingElements.orEmpty().take(LoadingSpec.MAX_DECLARATIONS).mapNotNull { element ->
+            val parsed = LoadingSpec.parse(element)
+            parsed.error?.let { loadingErrors += "loading/v1：$it" }
+            parsed.loading
+        }.let { declarations ->
+            if (declarations.map { it.id }.distinct().size != declarations.size) loadingErrors += "加载页 id 重复"
+            declarations.distinctBy { it.id }
+        }
+        // M85-D：回合实现（id + label）。run 闭包留在常驻 JS 里。
+        val agents = runCatching {
+            val seen = HashSet<String>()
+            obj["agents"]?.jsonArray?.mapNotNull { element ->
+                val item = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val agent = PluginDecl.agent(
+                    id = item.string("id"),
+                    label = item.string("label"),
+                ) ?: return@mapNotNull null
+                if (!seen.add(agent.id)) return@mapNotNull null
+                agent
+            }.orEmpty()
+        }.getOrDefault(emptyList())
+        // M85-E：存储实现（id + label + 回调能力）。list/load 闭包留在常驻 JS 里。
+        val storages = runCatching {
+            val seen = HashSet<String>()
+            obj["storages"]?.jsonArray?.mapNotNull { element ->
+                val item = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val storage = PluginDecl.storage(
+                    id = item.string("id"),
+                    label = item.string("label"),
+                    readOnly = item["readOnly"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    },
+                    hasList = item["hasList"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    },
+                    hasLoad = item["hasLoad"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    },
+                ) ?: return@mapNotNull null
+                if (!seen.add(storage.id)) return@mapNotNull null
+                storage
+            }.orEmpty()
+        }.getOrDefault(emptyList())
+        // M85-E：提示词实现（id + label）。assemble 闭包留在常驻 JS 里。
+        val prompts = runCatching {
+            val seen = HashSet<String>()
+            obj["prompts"]?.jsonArray?.mapNotNull { element ->
+                val item = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val prompt = PluginDecl.prompt(
+                    id = item.string("id"),
+                    label = item.string("label"),
+                ) ?: return@mapNotNull null
+                if (!seen.add(prompt.id)) return@mapNotNull null
+                prompt
+            }.orEmpty()
+        }.getOrDefault(emptyList())
+        // M85-F：能力提供方（id + label + 说明 + 分类）。invoke 闭包留在常驻 JS 里。
+        val capabilities = runCatching {
+            val seen = HashSet<String>()
+            obj["capabilities"]?.jsonArray?.mapNotNull { element ->
+                val item = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val capability = PluginDecl.capability(
+                    id = item.string("id"),
+                    label = item.string("label"),
+                    description = item.string("description"),
+                    kind = item.string("kind"),
+                ) ?: return@mapNotNull null
+                if (!seen.add(capability.id)) return@mapNotNull null
+                capability
+            }.orEmpty()
+        }.getOrDefault(emptyList())
         // M74：`ctx.systemPrompt.variable` 求值出的快照（name -> 文本），供 `{{name}}` 替换
         val promptVariables = runCatching {
             (obj["promptVariables"] as? kotlinx.serialization.json.JsonObject)
@@ -403,6 +1072,26 @@ object PluginModule {
                     key to text
                 }?.toMap().orEmpty()
         }.getOrDefault(emptyMap())
+        // M83：服务容器（ctx.provide / ctx.inject / ctx.effect / ctx.on）
+        val provides = runCatching {
+            (obj["provides"] as? kotlinx.serialization.json.JsonObject)
+                ?.mapNotNull { (key, element) ->
+                    val text = runCatching { element.jsonPrimitive.contentOrNull }.getOrNull() ?: return@mapNotNull null
+                    key to text
+                }?.toMap().orEmpty()
+        }.getOrDefault(emptyMap())
+        val injectDeps = runCatching {
+            obj["injects"]?.jsonArray?.mapNotNull { element ->
+                val dep = element.jsonObject
+                val name = dep.string("name")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                PluginDependencyRef(
+                    name = name,
+                    optional = dep["optional"]?.let {
+                        runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+                    } ?: false,
+                )
+            }.orEmpty()
+        }.getOrDefault(emptyList())
         return PluginDryRun(
             name = obj.string("name"),
             version = obj.string("version"),
@@ -411,14 +1100,31 @@ object PluginModule {
             imports = obj.stringList("imports"),
             relativeImports = obj.stringList("relativeImports"),
             applied = obj["applied"]?.let { runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull() } ?: false,
-            error = errors.joinToString("\n").ifBlank { null },
+            error = (errors + loadingErrors).joinToString("\n").ifBlank { null },
             configSchema = configSchema,
             configError = configError,
             promptSections = sections("promptSections"),
             contexts = sections("contexts"),
             promptVariables = promptVariables,
+            suppressRuntimeContext = obj["suppressRuntimeContext"]?.let {
+                runCatching { it.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull()
+            } ?: false,
             commands = commands,
+            llmProviders = llmProviders,
+            routes = routes,
+            projections = projections,
+            shells = shells,
+            loadings = loadings,
+            agents = agents,
+            storages = storages,
+            prompts = prompts,
+            capabilities = capabilities,
             unsupported = obj.stringList("unsupported"),
+            provides = provides,
+            injects = injectDeps,
+            missingServices = obj.stringList("missingDeps"),
+            effects = obj.stringList("effects"),
+            subscriptions = obj.stringList("subscriptions"),
         )
     }
 
@@ -529,12 +1235,37 @@ object PluginModule {
      * 「跑不跑得起来、注册了什么」，不因为这些服务没实现就误报失败。
      */
     private val PRELUDE = """
-  const __dsh = { name: null, version: null, inject: [], tools: [], errors: [], imports: [], relativeImports: [], applied: false, configSchema: null, configError: null, promptSections: [], contexts: [], promptVariables: {}, commands: [], unsupported: [] };
+  const __dsh = { name: null, version: null, inject: [], tools: [], errors: [], imports: [], relativeImports: [], applied: false, configSchema: null, configError: null, promptSections: [], contexts: [], promptVariables: {}, suppressRuntimeContext: false, commands: [], llmProviders: [], routes: [], projections: [], shells: [], loadings: [], agents: [], storages: [], prompts: [], capabilities: [], unsupported: [], provides: {}, injects: [], missingDeps: [], effects: [], subscriptions: [] };
   function __dshUnsupported(name) {
     if (__dsh.unsupported.indexOf(name) < 0) { __dsh.unsupported.push(name); }
     return __noop;
   }
   const __dshDefs = {};
+  // M84-H：会话投影。定义留在 JS 侧（常驻运行时里由宿主事件驱动），元数据进 __dsh.projections。
+  const __dshProjectionDefs = {};
+  const __dshProjectionKeys = [];
+  const __dshProjectionCells = {};
+  // M84-I：事件订阅 / 清理器。只有常驻运行时能把宿主事件送进来、并在停用时跑 cleanup。
+  const __dshEventHandlers = {};
+  const __dshCleanups = [];
+  // M84-J：带 stream 回调的模型供应商。宿主发起请求时 dispatch 'llm.stream' 进常驻运行时。
+  const __dshStreamProviders = {};
+  // M85-A：整壳。mount/onState/onAction 闭包留在常驻 runtime，宿主每次 dispatch 进来取新树。
+  const __dshShellDefs = {};
+  const __dshShellIds = [];
+  // M85-D：回合实现（agent/v1）。run 闭包留在常驻 runtime；宿主的每轮 dispatch 'agent.run'。
+  const __dshAgentDefs = {};
+  const __dshAgentIds = [];
+  // M85-E：存储（storage/v1，只读）与提示词（prompt/v1）。list/load/assemble 闭包留在常驻 runtime。
+  const __dshStorageDefs = {};
+  const __dshPromptDefs = {};
+  // M85-F：能力提供方（capability/v1）。invoke 闭包留在常驻 runtime；宿主的插件页/调试通道
+  // dispatch 'capability.invoke' 进来。root/NFC/Shizuku/adb-shell 等特权能力只能这样由插件提供。
+  const __dshCapabilityDefs = {};
+  function __dshJsonSafe(value) {
+    if (value === undefined) { return null; }
+    try { return JSON.parse(JSON.stringify(value)); } catch (e) { return String(value); }
+  }
   function __dshSchema(value) {
     if (value === undefined || value === null) { return null; }
     try {
@@ -594,6 +1325,227 @@ object PluginModule {
     return setTimeout.apply(null, [handler, 0].concat(Array.prototype.slice.call(arguments, 1)));
   }
   function clearImmediate(id) { clearTimeout(id); }
+  // ── M84-P：Buffer（UTF-8 / hex / base64）与 EventEmitter（Node 兼容矩阵用）──────────
+  // QuickJS 没有 Node 的 Buffer；插件里 `Buffer.from(x).toString('base64')` 很常见，
+  // 这里给一个只做字节数组的最小实现（不接 ArrayBuffer/TypedArray 互转，按需再加）。
+  const __dshBase64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  function __dshUtf8Encode(text) {
+    const bytes = [];
+    const s = String(text);
+    for (let i = 0; i < s.length; i++) {
+      let code = s.charCodeAt(i);
+      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < s.length) {
+        const next = s.charCodeAt(i + 1);
+        if (next >= 0xDC00 && next <= 0xDFFF) {
+          code = 0x10000 + ((code - 0xD800) << 10) + (next - 0xDC00);
+          i += 1;
+        }
+      }
+      if (code < 0x80) { bytes.push(code); }
+      else if (code < 0x800) { bytes.push(0xC0 | (code >> 6), 0x80 | (code & 0x3F)); }
+      else if (code < 0x10000) { bytes.push(0xE0 | (code >> 12), 0x80 | ((code >> 6) & 0x3F), 0x80 | (code & 0x3F)); }
+      else { bytes.push(0xF0 | (code >> 18), 0x80 | ((code >> 12) & 0x3F), 0x80 | ((code >> 6) & 0x3F), 0x80 | (code & 0x3F)); }
+    }
+    return bytes;
+  }
+  function __dshUtf8Decode(bytes) {
+    let out = '';
+    for (let i = 0; i < bytes.length;) {
+      const b0 = bytes[i++] & 0xFF;
+      let code;
+      if (b0 < 0x80) { code = b0; }
+      else if (b0 >= 0xC0 && b0 < 0xE0) { code = ((b0 & 0x1F) << 6) | ((bytes[i++] || 0) & 0x3F); }
+      else if (b0 >= 0xE0 && b0 < 0xF0) { code = ((b0 & 0x0F) << 12) | (((bytes[i++] || 0) & 0x3F) << 6) | ((bytes[i++] || 0) & 0x3F); }
+      else if (b0 >= 0xF0) { code = ((b0 & 0x07) << 18) | (((bytes[i++] || 0) & 0x3F) << 12) | (((bytes[i++] || 0) & 0x3F) << 6) | ((bytes[i++] || 0) & 0x3F); }
+      else { code = 0xFFFD; }
+      if (code > 0xFFFF) {
+        const rest = code - 0x10000;
+        out += String.fromCharCode(0xD800 + (rest >> 10), 0xDC00 + (rest & 0x3FF));
+      } else { out += String.fromCharCode(code); }
+    }
+    return out;
+  }
+  function __dshHexEncode(bytes) {
+    let out = '';
+    for (let i = 0; i < bytes.length; i++) { const b = bytes[i] & 0xFF; out += (b < 16 ? '0' : '') + b.toString(16); }
+    return out;
+  }
+  function __dshHexDecode(text) {
+    const s = String(text).replace(/[^0-9a-fA-F]/g, '');
+    const out = [];
+    for (let i = 0; i + 1 < s.length; i += 2) { out.push(parseInt(s.slice(i, i + 2), 16) & 0xFF); }
+    return out;
+  }
+  function __dshBase64Encode(bytes) {
+    let out = '';
+    for (let i = 0; i < bytes.length; i += 3) {
+      const b0 = bytes[i] & 0xFF;
+      const b1 = (i + 1 < bytes.length) ? (bytes[i + 1] & 0xFF) : 0;
+      const b2 = (i + 2 < bytes.length) ? (bytes[i + 2] & 0xFF) : 0;
+      const triplet = (b0 << 16) | (b1 << 8) | b2;
+      out += __dshBase64Chars.charAt((triplet >> 18) & 0x3F) + __dshBase64Chars.charAt((triplet >> 12) & 0x3F);
+      out += (i + 1 < bytes.length) ? __dshBase64Chars.charAt((triplet >> 6) & 0x3F) : '=';
+      out += (i + 2 < bytes.length) ? __dshBase64Chars.charAt(triplet & 0x3F) : '=';
+    }
+    return out;
+  }
+  function __dshBase64Decode(text) {
+    const clean = String(text).replace(/[^A-Za-z0-9+/=]/g, '');
+    const out = [];
+    let buffer = 0;
+    let bits = 0;
+    for (let i = 0; i < clean.length; i++) {
+      const c = clean.charAt(i);
+      if (c === '=') { break; }
+      const idx = __dshBase64Chars.indexOf(c);
+      if (idx < 0) { continue; }
+      buffer = (buffer << 6) | idx;
+      bits += 6;
+      if (bits >= 8) { bits -= 8; out.push((buffer >> bits) & 0xFF); }
+    }
+    return out;
+  }
+  function DshBuffer(bytes) {
+    const raw = Array.isArray(bytes) ? bytes : [];
+    const list = [];
+    for (let i = 0; i < raw.length; i++) { list.push(Number(raw[i]) & 0xFF); }
+    this.bytes = list;
+    this.length = list.length;
+  }
+  DshBuffer.prototype.toString = function(encoding) {
+    const enc = String(encoding || 'utf8').toLowerCase();
+    if (enc === 'hex') { return __dshHexEncode(this.bytes); }
+    if (enc === 'base64') { return __dshBase64Encode(this.bytes); }
+    if (enc === 'latin1' || enc === 'binary') {
+      let out = '';
+      for (let i = 0; i < this.bytes.length; i++) { out += String.fromCharCode(this.bytes[i]); }
+      return out;
+    }
+    return __dshUtf8Decode(this.bytes);
+  };
+  DshBuffer.prototype.toJSON = function() { return { type: 'Buffer', data: this.bytes.slice(0) }; };
+  DshBuffer.prototype.slice = function(start, end) { return new DshBuffer(this.bytes.slice(start, end)); };
+  DshBuffer.prototype.equals = function(other) {
+    if (!DshBuffer.isBuffer(other) || other.length !== this.length) { return false; }
+    for (let i = 0; i < this.bytes.length; i++) { if (this.bytes[i] !== other.bytes[i]) { return false; } }
+    return true;
+  };
+  DshBuffer.isBuffer = function(value) { return value instanceof DshBuffer; };
+  DshBuffer.isEncoding = function(encoding) {
+    const enc = String(encoding || '').toLowerCase();
+    return enc === 'utf8' || enc === 'utf-8' || enc === 'hex' || enc === 'base64' || enc === 'latin1' || enc === 'binary';
+  };
+  DshBuffer.from = function(input, encoding) {
+    if (DshBuffer.isBuffer(input)) { return new DshBuffer(input.bytes.slice(0)); }
+    if (Array.isArray(input)) { return new DshBuffer(input); }
+    if (typeof input === 'number') { return DshBuffer.alloc(input); }
+    if (typeof input === 'string') {
+      const enc = String(encoding || 'utf8').toLowerCase();
+      if (enc === 'hex') { return new DshBuffer(__dshHexDecode(input)); }
+      if (enc === 'base64') { return new DshBuffer(__dshBase64Decode(input)); }
+      if (enc === 'latin1' || enc === 'binary') {
+        const list = [];
+        for (let i = 0; i < input.length; i++) { list.push(input.charCodeAt(i) & 0xFF); }
+        return new DshBuffer(list);
+      }
+      return new DshBuffer(__dshUtf8Encode(input));
+    }
+    return new DshBuffer([]);
+  };
+  DshBuffer.alloc = function(size, fill) {
+    const n = Math.max(0, Number(size) | 0);
+    let value = 0;
+    if (typeof fill === 'number') { value = fill & 0xFF; }
+    else if (typeof fill === 'string' && fill.length > 0) { value = fill.charCodeAt(0) & 0xFF; }
+    const list = [];
+    for (let i = 0; i < n; i++) { list.push(value); }
+    return new DshBuffer(list);
+  };
+  DshBuffer.concat = function(list, totalLength) {
+    const chunks = Array.isArray(list) ? list : [];
+    const out = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const item = chunks[i];
+      if (!item) { continue; }
+      const bytes = DshBuffer.isBuffer(item) ? item.bytes : DshBuffer.from(item).bytes;
+      for (let j = 0; j < bytes.length; j++) { out.push(bytes[j]); }
+    }
+    if (typeof totalLength === 'number' && totalLength >= 0 && totalLength < out.length) { out.length = totalLength; }
+    return new DshBuffer(out);
+  };
+  DshBuffer.byteLength = function(input, encoding) { return DshBuffer.from(input, encoding).length; };
+  function DshEventEmitter() { this._events = {}; }
+  DshEventEmitter.prototype.on = function(name, fn) {
+    if (typeof fn !== 'function') { return this; }
+    const key = String(name);
+    const list = this._events[key] || (this._events[key] = []);
+    list.push(fn);
+    return this;
+  };
+  DshEventEmitter.prototype.addListener = DshEventEmitter.prototype.on;
+  DshEventEmitter.prototype.prependListener = function(name, fn) {
+    if (typeof fn !== 'function') { return this; }
+    const key = String(name);
+    const list = this._events[key] || (this._events[key] = []);
+    list.unshift(fn);
+    return this;
+  };
+  DshEventEmitter.prototype.once = function(name, fn) {
+    const self = this;
+    if (typeof fn !== 'function') { return this; }
+    function wrapped() {
+      self.off(name, wrapped);
+      return fn.apply(self, arguments);
+    }
+    wrapped.__dshOriginal = fn;
+    return this.on(name, wrapped);
+  };
+  DshEventEmitter.prototype.off = function(name, fn) {
+    const key = String(name);
+    const list = this._events[key];
+    if (!list) { return this; }
+    const kept = [];
+    for (let i = 0; i < list.length; i++) {
+      const item = list[i];
+      if (item === fn || item.__dshOriginal === fn) { continue; }
+      kept.push(item);
+    }
+    this._events[key] = kept;
+    return this;
+  };
+  DshEventEmitter.prototype.removeListener = DshEventEmitter.prototype.off;
+  DshEventEmitter.prototype.removeAllListeners = function(name) {
+    if (name === undefined || name === null) { this._events = {}; }
+    else { delete this._events[String(name)]; }
+    return this;
+  };
+  DshEventEmitter.prototype.emit = function(name) {
+    const key = String(name);
+    const list = this._events[key];
+    if (!list || list.length === 0) { return false; }
+    const args = Array.prototype.slice.call(arguments, 1);
+    const copy = list.slice(0);
+    for (let i = 0; i < copy.length; i++) { copy[i].apply(this, args); }
+    return true;
+  };
+  DshEventEmitter.prototype.listenerCount = function(name) {
+    const list = this._events[String(name)];
+    return list ? list.length : 0;
+  };
+  DshEventEmitter.prototype.listeners = function(name) { return (this._events[String(name)] || []).slice(0); };
+  DshEventEmitter.prototype.setMaxListeners = function() { return this; };
+  DshEventEmitter.defaultMaxListeners = 10;
+  function __dshEventsOnce(emitter, name) {
+    return new Promise(function(resolve) {
+      emitter.once(name, function() { resolve(Array.prototype.slice.call(arguments)); });
+    });
+  }
+  const __dshEventsModule = {
+    EventEmitter: DshEventEmitter,
+    once: __dshEventsOnce,
+    default: DshEventEmitter
+  };
+  const __dshBufferModule = { Buffer: DshBuffer, default: { Buffer: DshBuffer } };
   function __permissive(extra) {
     const base = function(){ return base; };
     if (extra) { for (const key in extra) { base[key] = extra[key]; } }
@@ -954,7 +1906,91 @@ object PluginModule {
         __dsh.promptVariables[String(key)] = (resolved === undefined || resolved === null) ? '' : String(resolved);
         return __noop;
       },
-      suppressRuntimeContext: function() { return __dshUnsupported('systemPrompt.suppressRuntimeContext'); }
+      // M84-E1：抑制宿主的运行时上下文快照（DSH `systemPrompt.suppressRuntimeContext`）。
+      // 手机端没有常驻运行时：apply 时记一个布尔，启用期间宿主每轮都不再注入 runtime context；
+      // 其它 `ctx.systemPrompt.context` 段仍照常注入（它们不是 runtime context）。
+      suppressRuntimeContext: function() {
+        __dsh.suppressRuntimeContext = true;
+        return __noop;
+      },
+      // M85-E：提示词实现（prompt/v1）。被选中后，宿主每轮把内置拼装结果作为 base 交给
+      // assemble({base, model, provider, tools, planMode, personaPrefix, personaSuffix, variables})，
+      // 插件返回最终 system 文本（整体替换或包一层）。同 id 可覆盖 builtin.prompt.dsh。
+      register: function(def) {
+        if (!def || typeof def !== 'object') {
+          return __dshUnsupported('systemPrompt.register(invalid)');
+        }
+        const id = String(def.id || def.name || '').trim().slice(0, 80);
+        if (!id) { return __dshUnsupported('systemPrompt.register(no id)'); }
+        if (typeof def.assemble !== 'function') {
+          return __dshUnsupported('systemPrompt.register(no assemble)');
+        }
+        if (__dshPromptDefs[id]) { return __noop; }
+        __dshPromptDefs[id] = def;
+        __dsh.prompts.push({
+          id: id,
+          label: String(def.label || def.title || id).slice(0, 120)
+        });
+        return __noop;
+      }
+    }),
+    // M85-E：存储实现（storage/v1，v1 只读）。被选中后，宿主通过 dispatch 'storage.list' /
+    // 'storage.load' 向插件要会话摘要 / 原始会话文档；写入仍由内置 native 实现负责。
+    // exportList / exportLoad 是给「只读导出器」用的宿主导出原语：只读内置 builtin.storage.jsonl，
+    // 不碰当前活动存储（不会递归），需要 storage 授权。
+    storage: __permissive({
+      register: function(def) {
+        if (!def || typeof def !== 'object') {
+          return __dshUnsupported('storage.register(invalid)');
+        }
+        const id = String(def.id || def.name || '').trim().slice(0, 80);
+        if (!id) { return __dshUnsupported('storage.register(no id)'); }
+        if (typeof def.list !== 'function' && typeof def.load !== 'function') {
+          return __dshUnsupported('storage.register(no list/load)');
+        }
+        if (__dshStorageDefs[id]) { return __noop; }
+        __dshStorageDefs[id] = def;
+        __dsh.storages.push({
+          id: id,
+          label: String(def.label || def.title || id).slice(0, 120),
+          readOnly: true,
+          hasList: typeof def.list === 'function',
+          hasLoad: typeof def.load === 'function'
+        });
+        return __noop;
+      },
+      exportList: function() {
+        return __dshHostJson('storage.exportList', {});
+      },
+      exportLoad: function(sessionId) {
+        return __dshHostJson('storage.exportLoad', { sessionId: String(sessionId || '') });
+      }
+    }),
+    // M85-F：能力提供方（capability/v1）。插件声明一个能力 id + invoke(args)；
+    // 宿主只登记 + 权限门（capability 授权）+ 超时，插件页/调试通道按 id 调用。
+    // 特权能力（root/NFC/Shizuku/adb-shell）也走这里，宿主不写死任何一条。
+    capability: __permissive({
+      register: function(def) {
+        if (!def || typeof def !== 'object') {
+          return __dshUnsupported('capability.register(invalid)');
+        }
+        const id = String(def.id || def.name || '').trim().slice(0, 80);
+        if (!id || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(id)) {
+          return __dshUnsupported('capability.register(no valid id)');
+        }
+        if (typeof def.invoke !== 'function') {
+          return __dshUnsupported('capability.register(no invoke)');
+        }
+        if (__dshCapabilityDefs[id]) { return __noop; }
+        __dshCapabilityDefs[id] = def;
+        __dsh.capabilities.push({
+          id: id,
+          label: String(def.label || def.title || id).slice(0, 120),
+          description: String(def.description || '').slice(0, 300),
+          kind: String(def.kind || def.category || '').replace(/[^A-Za-z0-9._]/g, '').slice(0, 32)
+        });
+        return __noop;
+      }
     }),
     // P5（M57）：斜杠命令。handler 在 commandScript 里被调用，不进模型轮次。
     commands: __permissive({
@@ -978,17 +2014,332 @@ object PluginModule {
           body: String(opts.body || ''),
           level: String(opts.level || 'info')
         });
+      },
+      // M83 阶段 3 开桥：OCR（ML Kit，已在 APK 里；要 device 权限）与 zstd 压缩/解压
+      //（zstd-jni，已在 APK 里；路径要过 fs 权限）。都是同步宿主调用。
+      ocr: function(path) {
+        return __dshHostOk('ocr.recognize', { path: String(path === undefined || path === null ? '' : path) });
+      },
+      zstd: function(options) {
+        const opts = options || {};
+        return __dshHostOk('zip.zstd', {
+          mode: (opts.mode === undefined || opts.mode === null) ? 'compress' : String(opts.mode),
+          path: String(opts.path === undefined || opts.path === null ? '' : opts.path),
+          out: (opts.out === undefined || opts.out === null) ? '' : String(opts.out),
+          level: (typeof opts.level === 'number') ? opts.level : undefined
+        });
       }
     }),
-    sessionProjections: __permissive({ register: function() { return __dshUnsupported('sessionProjections'); } }),
-    llm: __permissive({ register: function() { return __dshUnsupported('llm.register'); } }),
-    ui: __permissive({
-      registerRoute: function() { return __dshUnsupported('ui.registerRoute'); },
-      registerView: function() { return __dshUnsupported('ui.registerView'); }
+    // M84-H：会话投影。DSH 的真实契约是一个 key + stateSchema + init(header, inherited)
+    // + 同步 fold apply(state, event) + 可选 wire.view。手机端现在有常驻 JS 运行时：
+    // 定义留在 JS 里，宿主每提交一条会话事件就 dispatch 进来折叠一次，返回值是 wire 视图。
+    // 没有 key / 不是对象的注册按 unsupported 记（不假装成功）。
+    sessionProjections: __permissive({
+      register: function(definition) {
+        if (!definition || typeof definition !== 'object') {
+          return __dshUnsupported('sessionProjections.register(invalid)');
+        }
+        const key = (typeof definition.key === 'string') ? definition.key.trim().slice(0, 80) : '';
+        if (!key) {
+          return __dshUnsupported('sessionProjections.register(no key)');
+        }
+        const version = (typeof definition.stateVersion === 'number') ? definition.stateVersion : 1;
+        const hasView = !!(definition.wire && typeof definition.wire.view === 'function');
+        const hasApply = typeof definition.apply === 'function';
+        if (__dshProjectionKeys.indexOf(key) < 0) {
+          __dshProjectionKeys.push(key);
+          __dshProjectionDefs[key] = definition;
+          __dsh.projections.push({
+            key: key,
+            stateVersion: version,
+            hasView: hasView,
+            hasApply: hasApply
+          });
+        }
+        return __permissive({
+          key: key,
+          stateVersion: version,
+          stateOf: function(session) {
+            const id = (session && (session.id || session.sessionId)) ? String(session.id || session.sessionId) : '';
+            const cell = id ? __dshProjectionCells[id + '\u0000' + key] : undefined;
+            return cell ? cell.state : undefined;
+          },
+          dispose: function() {
+            if (__dshProjectionDefs[key]) { delete __dshProjectionDefs[key]; }
+            return Promise.resolve(undefined);
+          }
+        });
+      }
     }),
-    effect: function() { return __dshUnsupported('ctx.effect'); },
-    on: function() { return __dshUnsupported('ctx.on'); },
-    plugin: function() { return undefined; },
+    // M84-E2 / M84-J：模型供应商。没有 stream 回调 = 配置式（宿主包装成内置通道）；
+    // 有 stream 回调 = 插件自己产出模型回合（常驻运行时里执行，请求体是完整的 Anthropic 形状）。
+    llm: __permissive({
+      register: function(provider) {
+        if (!provider || typeof provider !== 'object') { return __noop; }
+        const id = String(provider.id || provider.name || '');
+        const hasStream = typeof provider.stream === 'function';
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id)) {
+          if (hasStream) { return __dshUnsupported('llm.register(stream)'); }
+          return __noop;
+        }
+        if (__dsh.llmProviders.some(function(p) { return p.id === id; })) { return __noop; }
+        const rawProtocol = String(provider.protocol || provider.api || '').toLowerCase();
+        const protocol = (rawProtocol === 'openai' || rawProtocol === 'openai-completions' ||
+          rawProtocol === 'openai-compatible' || rawProtocol === 'chat') ? 'openai' :
+          ((rawProtocol === 'anthropic' || rawProtocol === 'anthropic-messages' ||
+            rawProtocol === 'messages' || rawProtocol === 'claude') ? 'anthropic' : '');
+        const label = String(provider.label || provider.title || id).slice(0, 120);
+        const baseUrl = String(provider.baseUrl || provider.baseURL || provider.endpoint || '').slice(0, 400);
+        const model = String(provider.model || '').slice(0, 200);
+        const apiKey = String(provider.apiKey || provider.key || '').slice(0, 500);
+        __dsh.llmProviders.push({
+          id: id,
+          label: label,
+          protocol: protocol,
+          baseUrl: baseUrl,
+          model: model,
+          apiKey: apiKey,
+          hasStream: hasStream
+        });
+        if (hasStream) {
+          __dshStreamProviders[id] = provider;
+        }
+        return __noop;
+      }
+    }),
+    // M84-E2：页面路由。最小版只登记元数据（id/title/description），
+    // 插件页显示入口；点开时跑插件自己的 dsh.client（没有 client 时如实提示）。
+    // registerView（往宿主页面插任意 Composable）仍未实现，继续返回 unsupported。
+    ui: __permissive({
+      registerRoute: function(route) {
+        if (!route) { return __noop; }
+        let id = '';
+        let title = '';
+        let description = '';
+        if (typeof route === 'string') {
+          id = route;
+        } else if (typeof route === 'object') {
+          id = String(route.path || route.id || route.name || '');
+          title = String(route.title || route.label || '');
+          description = String(route.description || '');
+        }
+        id = id.trim();
+        if (!id) { return __noop; }
+        if (__dsh.routes.some(function(r) { return r.id === id; })) { return __noop; }
+        const fullPage = route.page === true || route.fullscreen === true || route.kind === 'page';
+        __dsh.routes.push({
+          id: id.slice(0, 160),
+          title: title.slice(0, 120) || id.slice(0, 120),
+          description: description.slice(0, 300),
+          page: fullPage
+        });
+        return __noop;
+      },
+      // M84-G：整页插件页面。registerPage 等价于 registerRoute({..., page: true})；
+      // id 与宿主内置页同名时，宿主用插件页替换该内置页（例如 About）。
+      registerPage: function(route) {
+        if (!route) { return __noop; }
+        if (typeof route === 'string') { return this.registerRoute({ path: route, page: true }); }
+        const copy = {};
+        for (const key in route) { copy[key] = route[key]; }
+        copy.page = true;
+        return this.registerRoute(copy);
+      },
+      // loading/v1 is collected as immutable JSON; it never needs a resident runtime.
+      registerLoading: function(def) {
+        if (!def || typeof def !== 'object' || typeof def.id !== 'string' || !def.tree || typeof def.tree !== 'object') {
+          __dsh.errors.push('loading/v1：registerLoading 需要 {id,label,tree}');
+          return __noop;
+        }
+        if (__dsh.loadings.length >= 8) {
+          __dsh.errors.push('loading/v1：最多注册 8 个加载页');
+          return __noop;
+        }
+        if (__dsh.loadings.some(function(item) { return item.id === def.id; })) {
+          __dsh.errors.push('loading/v1：重复 id ' + def.id);
+          return __noop;
+        }
+        try {
+          const raw = JSON.stringify(def, function(key, value) {
+            if (typeof value === 'function' || typeof value === 'undefined' || typeof value === 'symbol') {
+              throw new Error('加载页只接受静态 JSON');
+            }
+            return value;
+          });
+          if (raw.length > 32768) { throw new Error('加载页声明过大'); }
+          __dsh.loadings.push(JSON.parse(raw));
+        } catch (err) {
+          __dsh.errors.push('loading/v1：' + String((err && err.message) || err));
+        }
+        return __noop;
+      },
+      registerView: function() { return __dshUnsupported('ui.registerView'); },
+      // M85-A：整壳。一个插件可以带多个壳；宿主按 `dsh_shell` 选择并 dispatch
+      // shell.mount / shell.state / shell.action / shell.event。定义留在常驻 runtime，
+      // 元数据（id/label/有哪些回调）进 __dsh.shells 供宿主/插件页展示。
+      registerShell: function(shell) {
+        if (!shell || typeof shell !== 'object') {
+          return __dshUnsupported('ui.registerShell(invalid)');
+        }
+        const id = String(shell.id || shell.name || '').trim().slice(0, 80);
+        if (!id) { return __dshUnsupported('ui.registerShell(no id)'); }
+        if (typeof shell.mount !== 'function') {
+          return __dshUnsupported('ui.registerShell(no mount)');
+        }
+        if (__dshShellDefs[id]) { return __noop; }
+        __dshShellDefs[id] = shell;
+        __dshShellIds.push(id);
+        // M85-F：后端 = surface（默认，返回 Surface 树）或 webview（返回整屏 HTML）。
+        const backend = String(shell.backend || shell.kind || 'surface').toLowerCase();
+        __dsh.shells.push({
+          id: id,
+          label: String(shell.label || shell.title || id).slice(0, 120),
+          backend: backend === 'webview' ? 'webview' : 'surface',
+          hasState: typeof shell.onState === 'function' || typeof shell.state === 'function',
+          hasAction: typeof shell.onAction === 'function' || typeof shell.action === 'function',
+          hasEvent: typeof shell.onEvent === 'function' || typeof shell.event === 'function'
+        });
+        return __noop;
+      }
+    }),
+    // M85-D：回合实现（agent/v1）。宿主按 `dsh_agent` 选中后每轮 dispatch 'agent.run'；
+    // run 闭包留在常驻 runtime，元数据（id/label）进 __dsh.agents 供插件页/安全提示展示。
+    // 插件仍需 `agent` 授权；没有授权时宿主会拒绝选择（同 id 覆盖也一样）。
+    agent: __permissive({
+      register: function(def) {
+        if (!def || typeof def !== 'object') {
+          return __dshUnsupported('agent.register(invalid)');
+        }
+        const id = String(def.id || def.name || '').trim().slice(0, 80);
+        if (!id) { return __dshUnsupported('agent.register(no id)'); }
+        if (typeof def.run !== 'function') {
+          return __dshUnsupported('agent.register(no run)');
+        }
+        if (__dshAgentDefs[id]) { return __noop; }
+        __dshAgentDefs[id] = def;
+        __dshAgentIds.push(id);
+        __dsh.agents.push({
+          id: id,
+          label: String(def.label || def.title || id).slice(0, 120)
+        });
+        return __noop;
+      }
+    }),
+    // M85-A：壳 → 宿主的同步命令。宿主只做白名单分发（send/stop/…），
+    // 插件不能借它执行任意宿主调用。
+    surface: __permissive({
+      command: function(name, args) {
+        const command = String(name || '').trim();
+        if (!command) { return Promise.resolve({ ok: false, error: 'surface.command 缺少命令名' }); }
+        return __dshHostJson('surface.command', {
+          command: command,
+          args: (args === undefined || args === null) ? {} : args
+        });
+      }
+    }),
+    // ── M83 阶段 1：服务容器（宿主侧快照 + 依赖注入）────────────────────
+    // 手机端每次 apply 都是新 QuickJS：服务值是宿主传进来的 JSON 快照，
+    // provide/inject 只登记数据，真正的「谁提供、谁缺」由宿主 PluginServices.resolve 算。
+    provide: function(name, value) {
+      if (typeof name !== 'string' || !name) { return __noop; }
+      let json = 'null';
+      try { json = JSON.stringify(value === undefined ? null : value); } catch (e) { json = JSON.stringify(String(value)); }
+      if (json === undefined || json === null) { json = 'null'; }
+      __dsh.provides[name] = json;
+      try { __dshHostJson('plugin.services.provide', { name: name, value: json }); } catch (e) {}
+      return __noop;
+    },
+    inject: function(deps, callback) {
+      const list = Array.isArray(deps) ? deps : ((deps === undefined || deps === null) ? [] : [deps]);
+      const meta = [];
+      for (let i = 0; i < list.length; i++) {
+        const d = list[i];
+        let name = '';
+        let optional = false;
+        if (typeof d === 'string') { name = d; }
+        else if (d && typeof d === 'object') {
+          name = String(d.name || '');
+          optional = (d.optional === true) || (d.required === false);
+        }
+        if (!name) { continue; }
+        meta.push({ name: name, optional: optional });
+        __dsh.injects.push({ name: name, optional: optional });
+      }
+      if (meta.length === 0) { return __noop; }
+      const names = meta.map(function(m) { return m.name; });
+      const reply = __dshHostJson('plugin.services.values', { names: names });
+      if (!reply || reply.ok !== true) {
+        // 没有宿主（JVM 单测 / 无服务容器的试运行）：不误报缺依赖，跳过回调。
+        return __noop;
+      }
+      const values = reply.values || {};
+      const missing = [];
+      for (let i = 0; i < meta.length; i++) {
+        if (!Object.prototype.hasOwnProperty.call(values, meta[i].name) && !meta[i].optional) {
+          missing.push(meta[i].name);
+        }
+      }
+      if (missing.length > 0) {
+        for (let i = 0; i < missing.length; i++) {
+          if (__dsh.missingDeps.indexOf(missing[i]) < 0) { __dsh.missingDeps.push(missing[i]); }
+        }
+        return __noop;
+      }
+      if (typeof callback !== 'function') { return __noop; }
+      const scope = Object.create(__ctx);
+      for (let i = 0; i < names.length; i++) {
+        const raw = values[names[i]];
+        let parsed = raw;
+        if (typeof raw === 'string') { try { parsed = JSON.parse(raw); } catch (e) { parsed = raw; } }
+        scope[names[i]] = parsed;
+      }
+      try {
+        const r = callback(scope);
+        if (r && typeof r.then === 'function') {
+          Promise.resolve(r).catch(function(err) {
+            __dsh.errors.push('ctx.inject 回调异步报错：' + String((err && err.message) || err));
+          });
+        }
+      } catch (err) {
+        __dsh.errors.push('ctx.inject 回调报错：' + String((err && err.message) || err));
+      }
+      return __noop;
+    },
+    effect: function(fn) {
+      if (typeof fn === 'function') {
+        try {
+          const cleanup = fn();
+          __dsh.effects.push((typeof cleanup === 'function') ? 'cleanup' : 'effect');
+          // M84-I：常驻运行时停用插件时真的回调 cleanup（异步 cleanup 不阻塞，异常记日志）。
+          if (typeof cleanup === 'function') { __dshCleanups.push(cleanup); }
+        } catch (err) {
+          __dsh.errors.push('ctx.effect 报错：' + String((err && err.message) || err));
+        }
+      }
+      try { __dshHostJson('plugin.services.effect', {}); } catch (e) {}
+      return __noop;
+    },
+    on: function(event, handler) {
+      if (typeof event !== 'string' || !event) { return __noop; }
+      if (__dsh.subscriptions.indexOf(event) < 0) { __dsh.subscriptions.push(event); }
+      // M84-I：handler 留在常驻运行时里；宿主事件（turn/start、tool/result…）dispatch 进来时调用。
+      if (typeof handler === 'function') {
+        if (!__dshEventHandlers[event]) { __dshEventHandlers[event] = []; }
+        if (__dshEventHandlers[event].length < 32) { __dshEventHandlers[event].push(handler); }
+        if (!__dshDefs['event:' + event]) { __dshDefs['event:' + event] = { handler: handler }; }
+      }
+      try { __dshHostJson('plugin.services.on', { event: event }); } catch (e) {}
+      return __noop;
+    },
+    plugin: function(sub, config) {
+      try {
+        if (sub && typeof sub.apply === 'function') { sub.apply(__ctx, config); }
+        else if (typeof sub === 'function') { sub(__ctx, config); }
+      } catch (err) {
+        __dsh.errors.push('ctx.plugin 组合子插件报错：' + String((err && err.message) || err));
+      }
+      return __noop;
+    },
     logger: { info: __noop, warn: __noop, error: __noop, debug: __noop },
     config: {}
   });
@@ -1029,6 +2380,22 @@ object PluginModule {
     }
     if (name === 'node:fs/promises' || name === 'fs/promises') {
       return __dshFs.promises;
+    }
+    if (name === 'node:buffer' || name === 'buffer') {
+      return __dshBufferModule;
+    }
+    if (name === 'node:events' || name === 'events') {
+      return __dshEventsModule;
+    }
+    if (name === 'node:timers' || name === 'timers') {
+      return {
+        setTimeout: setTimeout,
+        clearTimeout: clearTimeout,
+        setInterval: setInterval,
+        clearInterval: clearInterval,
+        setImmediate: setImmediate,
+        clearImmediate: clearImmediate
+      };
     }
     if (name === 'node:child_process' || name === 'child_process') {
       return {
@@ -1133,10 +2500,13 @@ object PluginModule {
      *
      * 覆盖的兼容面：
      * - `node:fs` / `fs`：readFileSync / writeFileSync / existsSync / readdirSync / statSync /
-     *   mkdirSync / rmSync / renameSync / copyFileSync / promises.*（只支持文本，不支持 Buffer）；
+     *   mkdirSync / rmSync / renameSync / copyFileSync / promises.*（只支持文本，返回/接受 Buffer 时按 UTF-8 转）；
      * - `ctx.http` / 全局 `fetch`：https + 域名白名单，返回 `{status, ok, headers, body}`；
      * - `node:https` / `node:http` 的 `get/request`：最小回调式实现（body 一次给完）；
      * - `node:child_process`：execSync / exec（需 shell 权限）；
+     * - `node:buffer` + 全局 `Buffer`（M84-P）：UTF-8 / hex / base64 / latin1 的 from/alloc/concat/toString/equals；
+     * - `node:events`（M84-P）：EventEmitter（on/once/off/emit/listenerCount）+ events.once；
+     * - `node:timers`（M84-P）：复用全局 setTimeout/setInterval/clear*；
      * - `process.cwd()`、`console.*`、`ctx.fs` / `ctx.shell`。
      */
     private val HOST_BRIDGE = """
@@ -1394,6 +2764,7 @@ object PluginModule {
     globalThis.console = __dshConsole;
     globalThis.process = __dshProcess;
     globalThis.fetch = __dshFetch;
+    globalThis.Buffer = DshBuffer;
   }
   const __dshBaseRequire = __require;
   __require = function(id) {

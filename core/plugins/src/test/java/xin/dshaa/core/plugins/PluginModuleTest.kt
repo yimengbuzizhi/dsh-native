@@ -2,6 +2,7 @@ package xin.dshaa.core.plugins
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -131,6 +132,34 @@ class PluginModuleTest {
     }
 
     @Test
+    fun parsesServiceContainerDeclarations() {
+        val run = PluginModule.parseDryRun(
+            """
+            {"applied":true,"errors":[],
+             "provides":{"clock":"{\"now\":1}"},
+             "injects":[{"name":"clock","optional":false},{"name":"log","optional":true}],
+             "missingDeps":["log2"],
+             "effects":["cleanup"],
+             "subscriptions":["turn/end"]}
+            """.trimIndent(),
+        )
+        assertEquals("{\"now\":1}", run.provides["clock"])
+        assertEquals(listOf("clock", "log"), run.injects.map { it.name })
+        assertEquals(listOf(false, true), run.injects.map { it.optional })
+        assertEquals(listOf("log2"), run.missingServices)
+        assertEquals(listOf("cleanup"), run.effects)
+        assertEquals(listOf("turn/end"), run.subscriptions)
+
+        // 脚本里不能再把这些原语当 unsupported 直接吞掉
+        val script = PluginModule.dryRunScript(PluginModule.transform("export const apply = (ctx) => {}"))
+        assertTrue(script.contains("plugin.services.values"))
+        assertTrue(script.contains("plugin.services.provide"))
+        assertTrue(script.contains("ctx.inject 回调报错"))
+        assertTrue(!script.contains("__dshUnsupported('ctx.on')"))
+        assertTrue(!script.contains("__dshUnsupported('ctx.effect')"))
+    }
+
+    @Test
     fun dryRunCapturesParametersSchema() {
         val module = PluginModule.transform(
             """
@@ -184,6 +213,266 @@ class PluginModuleTest {
             """{"tools":[{"name":"z","parametersState":"unsupported"}]}""",
         ).tools.single()
         assertNull(unsupported.parameters)
+    }
+
+    @Test
+    fun parsesSuppressRuntimeContextFlag() {
+        val module = PluginModule.transform(
+            """
+            export const apply = (ctx) => {
+              ctx.systemPrompt.suppressRuntimeContext()
+              ctx.systemPrompt.context({ name: 'c', text: 'still here' })
+            }
+            """.trimIndent(),
+        )
+        val script = PluginModule.dryRunScript(module)
+        assertTrue(script.contains("__dsh.suppressRuntimeContext = true;"))
+
+        assertTrue(PluginModule.parseDryRun("""{"applied":true,"suppressRuntimeContext":true}""").suppressRuntimeContext)
+        // 旧试运行结果（没有这个字段）必须按 false 读，不能因为缺字段误抑制
+        assertTrue(!PluginModule.parseDryRun("""{"applied":true}""").suppressRuntimeContext)
+    }
+
+    @Test
+    fun parsesShellsAndResidentDispatch() {
+        val module = PluginModule.transform(
+            """
+            export const apply = (ctx) => {
+              ctx.ui.registerShell({
+                id: 'm85a.chat',
+                label: 'M85-A 最小壳',
+                mount(state) { return { title: '壳', tree: { type: 'text', text: 'hi' } }; },
+                onState(state) { return { tree: { type: 'text', text: 'state' } }; },
+                onAction(id, payload, state) { return { tree: { type: 'text', text: id } }; }
+              })
+            }
+            """.trimIndent(),
+        )
+        val script = PluginModule.dryRunScript(module)
+        assertTrue(script.contains("registerShell"))
+        assertTrue(script.contains("__dsh.shells.push"))
+        val resident = PluginModule.residentScript(module)
+        assertTrue(resident.contains("__dshShellDispatch"))
+        assertTrue(resident.contains("shells: __dsh.shells"))
+
+        val run = PluginModule.parseDryRun(
+            """
+            {"applied":true,"shells":[
+              {"id":"m85a.chat","label":"M85-A 最小壳","hasState":true,"hasAction":true},
+              {"id":"m85a.chat","label":"重复"},
+              {"id":"  "}
+            ]}
+            """.trimIndent(),
+        )
+        val shell = run.shells.single()
+        assertEquals("m85a.chat", shell.id)
+        assertEquals("M85-A 最小壳", shell.label)
+        assertTrue(shell.hasState)
+        assertTrue(shell.hasAction)
+        assertFalse(shell.hasEvent)
+        // 旧试运行结果没有 shells → 空表（向后兼容）
+        assertTrue(PluginModule.parseDryRun("""{"applied":true}""").shells.isEmpty())
+    }
+
+    @Test
+    fun parsesAgentsAndResidentDispatch() {
+        val module = PluginModule.transform(
+            """
+            export const apply = (ctx) => {
+              ctx.agent.register({
+                id: 'm85.echo',
+                label: 'Echo 回合',
+                run(turn, ctx) { return { stopReason: 'completed', text: turn.input } }
+              })
+            }
+            """.trimIndent(),
+        )
+        val script = PluginModule.dryRunScript(module)
+        assertTrue(script.contains("agent"))
+        assertTrue(script.contains("__dsh.agents.push"))
+        val resident = PluginModule.residentScript(module)
+        assertTrue(resident.contains("__dshAgentDispatch"))
+        assertTrue(resident.contains("agents: __dsh.agents"))
+        assertTrue(resident.contains("agent.run"))
+
+        val run = PluginModule.parseDryRun(
+            """
+            {"applied":true,"agents":[
+              {"id":"m85.echo","label":"Echo 回合"},
+              {"id":"m85.echo","label":"重复"},
+              {"id":"  "}
+            ]}
+            """.trimIndent(),
+        )
+        val agent = run.agents.single()
+        assertEquals("m85.echo", agent.id)
+        assertEquals("Echo 回合", agent.label)
+        // 旧试运行结果没有 agents → 空表（向后兼容）
+        assertTrue(PluginModule.parseDryRun("""{"applied":true}""").agents.isEmpty())
+    }
+
+    @Test
+    fun parsesStoragesAndPrompts() {
+        val module = PluginModule.transform(
+            """
+            export const apply = (ctx) => {
+              ctx.storage.register({
+                id: 'builtin.storage.jsonl',
+                label: '只读导出器',
+                list() { return [] },
+                load(id) { return '' }
+              })
+              ctx.systemPrompt.register({
+                id: 'builtin.prompt.dsh',
+                label: '标记提示词',
+                assemble(req) { return req.base + '\nMARK' }
+              })
+            }
+            """.trimIndent(),
+        )
+        val script = PluginModule.dryRunScript(module)
+        assertTrue(script.contains("__dsh.storages.push"))
+        assertTrue(script.contains("__dsh.prompts.push"))
+        val resident = PluginModule.residentScript(module)
+        assertTrue(resident.contains("__dshStorageDispatch"))
+        assertTrue(resident.contains("__dshPromptDispatch"))
+        assertTrue(resident.contains("storages: __dsh.storages"))
+        assertTrue(resident.contains("prompts: __dsh.prompts"))
+        assertTrue(resident.contains("storage.list"))
+        assertTrue(resident.contains("prompt.assemble"))
+
+        val run = PluginModule.parseDryRun(
+            """
+            {"applied":true,
+             "storages":[{"id":"builtin.storage.jsonl","label":"只读导出器","readOnly":false,"hasList":true,"hasLoad":true}],
+             "prompts":[{"id":"builtin.prompt.dsh","label":"标记提示词"},{"id":"  "}]}
+            """.trimIndent(),
+        )
+        val storage = run.storages.single()
+        assertEquals("builtin.storage.jsonl", storage.id)
+        // v1 第三方存储只读：插件写 readOnly=false 也不放开写入。
+        assertTrue(storage.readOnly)
+        assertTrue(storage.hasList)
+        assertTrue(storage.hasLoad)
+        val prompt = run.prompts.single()
+        assertEquals("builtin.prompt.dsh", prompt.id)
+        assertEquals("标记提示词", prompt.label)
+        // 旧试运行结果没有 storages/prompts → 空表（向后兼容）
+        val legacy = PluginModule.parseDryRun("""{"applied":true}""")
+        assertTrue(legacy.storages.isEmpty())
+        assertTrue(legacy.prompts.isEmpty())
+    }
+
+    @Test
+    fun parsesCapabilitiesAndResidentDispatch() {
+        val module = PluginModule.transform(
+            """
+            export const apply = (ctx) => {
+              ctx.capability.register({
+                id: 'nfc',
+                label: 'NFC 读卡',
+                description: '演示能力',
+                kind: 'device',
+                invoke(args) { return { ok: true, value: { tag: 'M85F' } } }
+              })
+              ctx.capability.register({ id: 'bad id', invoke() {} })
+              ctx.capability.register({ id: 'no-invoke' })
+            }
+            """.trimIndent(),
+        )
+        val script = PluginModule.dryRunScript(module)
+        assertTrue(script.contains("__dsh.capabilities.push"))
+        assertTrue(script.contains("capability.register"))
+        val resident = PluginModule.residentScript(module)
+        assertTrue(resident.contains("__dshCapabilityDispatch"))
+        assertTrue(resident.contains("capabilities: __dsh.capabilities"))
+        assertTrue(resident.contains("capability.invoke"))
+
+        val run = PluginModule.parseDryRun(
+            """
+            {"applied":true,"capabilities":[
+              {"id":"nfc","label":"NFC 读卡","description":"演示能力","kind":"device"},
+              {"id":"nfc","label":"重复"},
+              {"id":"  "}
+            ]}
+            """.trimIndent(),
+        )
+        val capability = run.capabilities.single()
+        assertEquals("nfc", capability.id)
+        assertEquals("NFC 读卡", capability.label)
+        assertEquals("演示能力", capability.description)
+        assertEquals("device", capability.kind)
+        // 旧试运行结果没有 capabilities → 空表（向后兼容）
+        assertTrue(PluginModule.parseDryRun("""{"applied":true}""").capabilities.isEmpty())
+    }
+
+    @Test
+    fun parsesLlmProvidersAndRoutes() {
+        val module = PluginModule.transform(
+            """
+            export const apply = (ctx) => {
+              ctx.llm.register({ id: 'e2.provider', label: 'E2 供应商', protocol: 'openai',
+                baseUrl: 'https://api.example.com', model: 'e2-model', apiKey: 'sk-test' })
+              ctx.llm.register({ id: '../bad id' })
+              ctx.ui.registerRoute({ path: '/e2/panel', title: 'E2 面板', description: '演示页' })
+              ctx.ui.registerRoute('/e2/string')
+              ctx.ui.registerView({ mount() {} })
+              ctx.sessionProjections.register({ key: 'todos' })
+            }
+            """.trimIndent(),
+        )
+        val script = PluginModule.dryRunScript(module)
+        assertTrue(script.contains("__dsh.llmProviders.push"))
+        assertTrue(script.contains("__dsh.routes.push"))
+        // registerView 仍是明确的 unsupported；sessionProjections 已经真做了（M84-H）
+        assertTrue(script.contains("__dshUnsupported('ui.registerView')"))
+        assertTrue(script.contains("__dsh.projections.push"))
+        // 常驻脚本要装 dispatch 入口（宿主事件回传协议）
+        val resident = PluginModule.residentScript(module)
+        assertTrue(resident.contains("__dshDispatch"))
+        assertTrue(resident.contains("__dshProjectionDispatch"))
+
+        val run = PluginModule.parseDryRun(
+            """
+            {"applied":true,
+             "llmProviders":[
+               {"id":"e2.provider","label":"E2 供应商","protocol":"openai","baseUrl":"https://api.example.com",
+                "model":"e2-model","apiKey":"sk-test"},
+               {"id":"../bad id","label":"bad"},
+               {"id":"m84j.echo","label":"JS 流","hasStream":true},
+               {"id":"e2.provider","label":"重复"}],
+             "routes":[{"id":"/e2/panel","title":"E2 面板","description":"演示页"},{"id":"About","title":"整页","page":true},{"id":""}],
+             "projections":[{"key":"m84hTurns","stateVersion":2,"hasView":true},
+                            {"key":"m84hTurns","stateVersion":9},
+                            {"key":"  "}],
+             "unsupported":["ui.registerView"]}
+            """.trimIndent(),
+        )
+        val provider = run.llmProviders.first()
+        assertEquals("e2.provider", provider.id)
+        assertEquals("openai", provider.protocol)
+        assertEquals("e2-model", provider.model)
+        assertEquals("sk-test", provider.apiKey)
+        // 重复 id / 非法 id 丢掉，只留前两条（第二条带 stream 回调）
+        assertEquals(2, run.llmProviders.size)
+        assertTrue(run.llmProviders[1].hasStream)
+        assertEquals("openai", run.llmProviders[0].protocol)
+        assertEquals(2, run.routes.size)
+        assertEquals("/e2/panel", run.routes[0].id)
+        assertEquals("演示页", run.routes[0].description)
+        assertEquals("About", run.routes[1].id)
+        assertTrue(run.routes[1].page)
+        val projection = run.projections.single()
+        assertEquals("m84hTurns", projection.key)
+        assertEquals(2, projection.stateVersion)
+        assertTrue(projection.hasView)
+        assertTrue(projection.hasApply)
+        assertEquals(listOf("ui.registerView"), run.unsupported)
+
+        // 旧试运行结果没有这两个字段 → 空表（向后兼容）
+        assertTrue(PluginModule.parseDryRun("""{"applied":true}""").llmProviders.isEmpty())
+        assertTrue(PluginModule.parseDryRun("""{"applied":true}""").routes.isEmpty())
+        assertTrue(PluginModule.parseDryRun("""{"applied":true}""").projections.isEmpty())
     }
 
     @Test
