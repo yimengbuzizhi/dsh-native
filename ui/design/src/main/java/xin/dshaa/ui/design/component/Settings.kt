@@ -60,6 +60,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import xin.dshaa.ui.design.theme.wash
 
 /**
  * Operit 设置页组件词汇表（源码：ui/features/settings/sections/ModelApiSettingsSection.kt L1519-1788）。
@@ -96,12 +99,10 @@ fun SettingsCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val c = DshTheme2.colors
-    Surface(
+    GlassSurface(
         modifier = modifier.fillMaxWidth().padding(top = 4.dp),
-        shape = RoundedCornerShape(14.dp),
-        color = c.surface,
-        border = BorderStroke(1.dp, c.line2),
+        shape = RoundedCornerShape(LiquidRadius.m),
+        level = LiquidLevel.Card,
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }
@@ -156,7 +157,7 @@ fun SettingsTextField(
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         shape = RoundedCornerShape(10.dp),
-        color = c.surfaceAlt.copy(alpha = if (c.isDark) 0.55f else 0.75f),
+        color = c.surfaceAlt.wash(if (c.isDark) 0.55f else 0.75f),
     ) {
         Column(Modifier.padding(12.dp)) {
             Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = c.text)
@@ -166,11 +167,17 @@ fun SettingsTextField(
             }
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(6.dp),
-                    color = c.background.copy(alpha = if (c.isDark) 0.75f else 0.6f),
-                    border = BorderStroke(1.dp, c.line.copy(alpha = 0.6f)),
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(9.dp))
+                        .liquidGlass(
+                            shape = RoundedCornerShape(9.dp),
+                            level = LiquidLevel.Pill,
+                            tint = c.surfaceAlt,
+                            tintGradient = 0f,
+                            elevated = false,
+                        ),
                 ) {
                     BasicTextField(
                         value = value,
@@ -242,10 +249,12 @@ fun SettingsSelectorRow(
     enabled: Boolean = true,
 ) {
     val c = DshTheme2.colors
-    Surface(
-        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled) { onClick() },
-        shape = RoundedCornerShape(10.dp),
-        color = c.surfaceAlt.copy(alpha = if (c.isDark) 0.55f else 0.75f),
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(LiquidRadius.xs))
+            .background(c.surfaceAlt)
+            .liquidClickable(enabled = enabled) { onClick() },
     ) {
         Row(
             Modifier.padding(16.dp),
@@ -309,16 +318,17 @@ fun SettingsExpandablePickerRow(
         animationSpec = tween(180),
         label = "settings-picker-arrow",
     )
-    Surface(
-        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)),
-        shape = RoundedCornerShape(10.dp),
-        color = c.surfaceAlt.copy(alpha = if (c.isDark) 0.55f else 0.75f),
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(LiquidRadius.xs))
+            .background(c.surfaceAlt),
     ) {
         Column {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = enabled) { expanded = !expanded }
+                    .liquidClickable(enabled = enabled) { expanded = !expanded }
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -349,7 +359,7 @@ fun SettingsExpandablePickerRow(
                 exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(120)),
             ) {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(c.line.copy(alpha = 0.5f)))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(c.line.wash(0.5f)))
                     options.forEach { option ->
                         val selected = option.value == value
                         Row(
@@ -403,10 +413,11 @@ fun SettingsSwitchRow(
     enabled: Boolean = true,
 ) {
     val c = DshTheme2.colors
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = c.surfaceAlt.copy(alpha = if (c.isDark) 0.55f else 0.75f),
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(LiquidRadius.xs))
+            .background(c.surfaceAlt),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -472,13 +483,14 @@ fun SettingsNavRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 4.dp, vertical = 10.dp),
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .liquidClickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = c.brand, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(12.dp))
+        Icon(icon, contentDescription = null, tint = c.brand, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(1.dp))
@@ -488,7 +500,7 @@ fun SettingsNavRow(
             Icons.Rounded.KeyboardArrowRight,
             contentDescription = null,
             tint = c.faint,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
         )
     }
 }
@@ -505,15 +517,14 @@ fun CollapsibleSettingsCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val c = DshTheme2.colors
-    Surface(
+    GlassSurface(
         modifier = modifier.fillMaxWidth().padding(top = 4.dp),
-        shape = RoundedCornerShape(14.dp),
-        color = c.surface,
-        border = BorderStroke(1.dp, c.line2),
+        shape = RoundedCornerShape(LiquidRadius.m),
+        level = LiquidLevel.Card,
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onToggle() },
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).liquidClickable { onToggle() },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(icon, contentDescription = null, tint = c.brand, modifier = Modifier.size(22.dp))

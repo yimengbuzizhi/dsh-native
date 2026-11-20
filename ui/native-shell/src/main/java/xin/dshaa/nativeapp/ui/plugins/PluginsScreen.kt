@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.plugins
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import android.Manifest
 import android.net.Uri
 import android.os.Build
@@ -214,11 +219,11 @@ fun PluginsScreen(
     // M87-F：切到「扩展点」页签时重算一次快照（命中/耗时只在本进程内存里）。
     LaunchedEffect(tab) { if (tab == 3) onRefreshExtensions() }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(c.surface)
+                .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                 .statusBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -245,7 +250,7 @@ fun PluginsScreen(
             TextButton(onClick = { showCapabilities = true }) { Text("帮助", color = c.sub) }
         }
 
-        TabRow(selectedTabIndex = tab, containerColor = c.surface, contentColor = c.brand) {
+        TabRow(selectedTabIndex = tab, containerColor = c.panel, contentColor = c.brand) {
             listOf("导入", "内置", "角色", "扩展点").forEachIndexed { index, label ->
                 Tab(selected = tab == index, onClick = { tab = index }, text = { Text(label) })
             }
@@ -415,7 +420,7 @@ fun PluginsScreen(
                 DetailField("说明", item.plugin.description)
                 if (item.plugin.tools.isNotEmpty()) DetailField("工具", item.plugin.tools.joinToString("、"))
                 if (item.plugin.screens.isNotEmpty()) DetailField("页面", item.plugin.screens.joinToString("、"))
-            } }, confirmButton = { TextButton(onClick = { builtinDetailId = null }) { Text("关闭") } }, containerColor = c.surface)
+            } }, confirmButton = { TextButton(onClick = { builtinDetailId = null }) { Text("关闭") } }, containerColor = c.panel)
     }
 
     val detailRecord = plugins.firstOrNull { it.id == detailId }
@@ -462,7 +467,7 @@ fun PluginsScreen(
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text("取消", color = c.sub) }
             },
-            containerColor = c.surface,
+            containerColor = c.panel,
         )
     }
 
@@ -541,7 +546,7 @@ private fun CapabilityDialog(onDismiss: () -> Unit) {
     val done = PluginCapabilities.all.count { it.implemented }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("插件 API 参考", color = c.text) },
         text = {
             Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
@@ -594,7 +599,7 @@ private fun ImportCard(busy: Boolean, onPick: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) { onPick() },
         shape = RoundedCornerShape(18.dp),
-        color = c.surface,
+        color = c.panel,
         border = BorderStroke(1.dp, if (busy) c.brand else c.line),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -707,7 +712,7 @@ private fun PluginCard(
     val c = DshTheme2.colors
     Surface(
         modifier = Modifier.fillMaxWidth().clickable { onOpen() },
-        shape = RoundedCornerShape(16.dp), color = c.surface,
+        shape = RoundedCornerShape(16.dp), color = c.panel,
         border = BorderStroke(1.dp, if (record.error != null) c.danger.copy(alpha = 0.45f) else c.line2),
     ) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1288,7 +1293,7 @@ private fun ConfigEditDialog(
                 },
                 confirmButton = { TextButton(onClick = { onSave(selected) }) { Text("保存", color = c.brand) } },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1305,7 +1310,7 @@ private fun ConfigEditDialog(
                 },
                 confirmButton = { TextButton(onClick = { onSave(JsonPrimitive(checked)) }) { Text("保存", color = c.brand) } },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1364,7 +1369,7 @@ private fun ConfigEditDialog(
                     }) { Text("保存", color = c.brand) }
                 },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1396,7 +1401,7 @@ private fun ConfigEditDialog(
                     }) { Text("保存", color = c.brand) }
                 },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1454,7 +1459,7 @@ private fun ConfigEditDialog(
                     }) { Text("保存", color = c.brand) }
                 },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
     }
@@ -1527,7 +1532,7 @@ private fun PermissionConfirmDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消", color = c.sub) }
         },
-        containerColor = c.surface,
+        containerColor = c.panel,
     )
 }
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,6 +67,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import xin.dshaa.ui.shellapi.ConversationSessionUi
@@ -75,6 +78,10 @@ import xin.dshaa.ui.shellapi.BuiltinPageIds
 import xin.dshaa.ui.shellapi.data.WorkspaceUi
 import xin.dshaa.ui.design.component.DshAvatar
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LocalLiquidTokens
 import xin.dshaa.nativeapp.ui.shell.slots.SlotDock
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -148,13 +155,15 @@ fun DshDrawer(
     var deleteFor by remember { mutableStateOf<ConversationSessionUi?>(null) }
     var purgeFor by remember { mutableStateOf<ConversationSessionUi?>(null) }
     val grouped = sessions.groupBy { drawerDayLabel(it.updatedAt) }
+    // 设计稿 .drawer: width: min(85vw, 336px)
+    val drawerWidth = minOf(336.dp, (LocalConfiguration.current.screenWidthDp * 0.85f).dp)
 
     // M83：宽屏常驻模式（permanent=true）不套 ModalDrawerSheet——Material 的
     // PermanentNavigationDrawer 会在外面再套一层自带圆角、浅色容器（surfaceContainerLow）的
     // DrawerSheet，深色主题下侧边栏右上/右下角会露出两块白色缺口（用户：四角/边缘有白色空白）。
     // 常驻模式由 App.kt 用普通 Row 拼，这里只画一块直角、铺满高度的面板。
     val panel: @Composable () -> Unit = {
-        Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 10.dp)) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 14.dp)) {
             // ---- 品牌 + 助手 ----
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { sourceSheet = true }
@@ -272,7 +281,8 @@ fun DshDrawer(
                 Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .heightIn(min = 48.dp)
+                    .clip(RoundedCornerShape(16.dp))
                     .background(c.brand)
                     .clickable { onNewChat() }
                     .padding(horizontal = 14.dp, vertical = 11.dp),
@@ -387,26 +397,53 @@ fun DshDrawer(
             // ---- M87-D：插件在抽屉底部追加的项（空注册表时零占位） ----
             SlotDock("drawer.items", horizontalPadding = 0, verticalPadding = 0)
 
-            // ---- 底部动作条（RikkaHub 的圆形 DrawerAction） ----
+            // ---- 底部动作条（设计稿 .dock：flat-l2 底、16dp 圆角、单项 44dp 高 / 12dp 圆角） ----
             Row(
-                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 6.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(vertical = 8.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(c.surfaceAlt)
+                    .padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DrawerAction("设置", Icons.Rounded.Settings) { onSelectScreen(BuiltinPageIds.Settings) }
+                DrawerDockButton("设置", Icons.Rounded.Settings) { onSelectScreen(BuiltinPageIds.Settings) }
                 // M83：底部第二个入口从「关于」换成「插件」（插件管理）；「关于」仍在设置页里。
-                DrawerAction("插件", Icons.Rounded.Extension) { onSelectScreen(BuiltinPageIds.Plugins) }
+                DrawerDockButton("插件", Icons.Rounded.Extension) { onSelectScreen(BuiltinPageIds.Plugins) }
             }
         }
     }
 
     if (permanent) {
-        Box(Modifier.fillMaxHeight().width(304.dp).background(c.surface)) { panel() }
+        // 宽屏常驻面板：玻璃由 NativeShellRoot 的 Row 那一层画（整条 304dp 竖玻璃），这里只铺内容。
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .width(drawerWidth)
+                .liquidGlass(
+                    shape = RectangleShape,
+                    level = LiquidLevel.Panel,
+                    elevated = false,
+                    solidBase = LocalLiquidTokens.current.panelBase,
+                ),
+        ) { panel() }
     } else {
+        // 窄屏滑出抽屉：容器色透明，玻璃自己画，透出背后的水族箱墙面。
+        val sheetShape = RoundedCornerShape(topEnd = LiquidRadius.xl, bottomEnd = LiquidRadius.xl)
         ModalDrawerSheet(
-            modifier = Modifier.width(304.dp),
-            drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
-            drawerContainerColor = c.surface,
+            modifier = Modifier
+                .width(drawerWidth)
+                .liquidGlass(
+                    shape = sheetShape,
+                    level = LiquidLevel.Panel,
+                    elevated = false,
+                    // 没有 backdrop-filter，抽屉必须"带底"，否则下面那一页的文字会透上来
+                    solidBase = LocalLiquidTokens.current.panelBase,
+                ),
+            drawerShape = sheetShape,
+            drawerContainerColor = Color.Transparent,
         ) {
             panel()
         }
@@ -449,7 +486,7 @@ fun DshDrawer(
     }
 
     if (sourceSheet) {
-        AlertDialog(onDismissRequest = { sourceSheet = false }, containerColor = c.surface,
+        AlertDialog(onDismissRequest = { sourceSheet = false }, containerColor = c.panel,
             title = { Text("选择对话来源") },
             text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
                 Row(Modifier.fillMaxWidth().clickable { sourceSheet = false; onSelectTarget(null) }.padding(vertical = 12.dp),
@@ -476,7 +513,7 @@ fun DshDrawer(
     if (localFeatures) menuFor?.let { target ->
         AlertDialog(
             onDismissRequest = { menuFor = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text(target.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
@@ -502,7 +539,7 @@ fun DshDrawer(
         var text by remember(target.id) { mutableStateOf(target.title) }
         AlertDialog(
             onDismissRequest = { renameFor = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("重命名会话") },
             text = { DrawerTextField(text, { text = it }) },
             confirmButton = {
@@ -518,7 +555,7 @@ fun DshDrawer(
     if (localFeatures) deleteFor?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteFor = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("删除会话") },
             text = { Text("「${target.title}」会移到回收站（不真删），之后可从 .trash 找回。", color = c.sub) },
             confirmButton = {
@@ -535,7 +572,7 @@ fun DshDrawer(
     if (localFeatures) purgeFor?.let { target ->
         AlertDialog(
             onDismissRequest = { purgeFor = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("彻底删除这条会话？", color = c.danger) },
             text = {
                 Column {
@@ -586,7 +623,8 @@ private fun DrawerSessionRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(if (selected) c.brandSoft else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 10.dp, vertical = 9.dp),
@@ -607,6 +645,29 @@ private fun DrawerSessionRow(
         SessionBadgeMark(badge)
         Spacer(Modifier.width(6.dp))
         Text(drawerTimeLabel(summary.updatedAt), style = MaterialTheme.typography.labelSmall, color = c.faint)
+    }
+}
+
+@Composable
+private fun RowScope.DrawerDockButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    val c = DshTheme2.colors
+    Row(
+        Modifier
+            .weight(1f)
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = c.brand, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = c.sub, maxLines = 1)
     }
 }
 
@@ -665,7 +726,7 @@ private fun WorkspaceSwitcherSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surface,
+        containerColor = c.panel,
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -749,7 +810,7 @@ private fun AssistantSwitcherSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surface,
+        containerColor = c.panel,
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

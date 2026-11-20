@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DrawerValue
@@ -53,6 +55,12 @@ import xin.dshaa.nativeapp.ui.shell.native.pages.NativeNav
 import xin.dshaa.nativeapp.ui.shell.native.pages.NativePageDispatch
 import xin.dshaa.nativeapp.ui.shell.native.pages.NativePages
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.component.GlassDivider
+import xin.dshaa.ui.design.component.LiquidBackdrop
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
 
 @Composable
 private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
@@ -396,9 +404,20 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
             )
     }
 
+    /**
+     * 页面级背景：每个页面自己铺一层不透明「墙」。
+     *
+     * 为什么必须有：设置首页在打开二级页时是**保活组合**的（见上面的 M88 注释），二级页如果
+     * 是透明的，就会看到下面那一页的所有文字一层层叠上来（用户 2026-11-19 截图：标题/行文字
+     * 全部重影）。AnimatedContent 换页时旧页也会留到动画结束，同理。
+     */
+    val PageBackdrop: @Composable (@Composable () -> Unit) -> Unit = { inner ->
+        LiquidBackdrop(Modifier.fillMaxSize()) { inner() }
+    }
+
     // 屏幕主体：宽屏时和常驻抽屉并排，窄屏时铺满
     val body: @Composable () -> Unit = {
-        Box(Modifier.fillMaxSize().background(c.background)) {
+        Box(Modifier.fillMaxSize()) {
             // M79：所有一级页/二级页共用一套转场（用户 2026-11-12：进二级页、退出都没有动画）。
             // H4 候选 A（docs/182 §H4）：新页 160ms 淡入 + 1/8 屏轻位移，旧页不动画，去掉 SizeTransform。
             // 外层 target 改成一/二级**页面**（二级页的 sub 交给内层）：从设置进二级页时设置首页
@@ -417,6 +436,7 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                 },
                 label = "dsh-screen",
             ) { page ->
+                PageBackdrop {
                 if (page == BuiltinPageIds.Settings) {
                     Box(Modifier.fillMaxSize()) {
                         // 设置首页：在设置栈里一直保留组合（含二级页打开时），返回时不再重新
@@ -485,7 +505,7 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                                         },
                                     ),
                             ) {
-                                NativePageDispatch(vm, BuiltinPageIds.Settings, shownSub, nav, hostUi)
+                                PageBackdrop { NativePageDispatch(vm, BuiltinPageIds.Settings, shownSub, nav, hostUi) }
                             }
                         }
                     }
@@ -493,13 +513,16 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                     // M85-C2：页面内容由壳自己的 dispatch 画（标题/图标/层级都在 `NativePages`）
                     NativePageDispatch(vm, page, null, nav, hostUi)
                 }
+                }
             }
         }
     }
 
     // M87-D：把插槽注册表交给整棵壳（抽屉/浮层也要读），会话有无消息供 `when.session` 过滤。
     val hasSlotMessages = conversation.state?.messages?.isNotEmpty() == true
-    Box(Modifier.fillMaxSize()) {
+    // 液态玻璃：整棵壳铺在一张「水族箱」背景上，页面内容全部透出它，
+    // 页面自己不再铺不透明底色（原先各处 .background(c.background) 都改成透明）。
+    LiquidBackdrop(Modifier.fillMaxSize(), animated = false, withSheen = false) {
         CompositionLocalProvider(
             LocalSlotRegistry provides vm.slotRegistry,
             LocalSlotHasMessages provides hasSlotMessages,
@@ -508,10 +531,15 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                 // M83：宽屏不再用 Material 的 PermanentNavigationDrawer。它内部会再套一层
                 // PermanentDrawerSheet（默认容器色 surfaceContainerLow ≈ #FAFAFA、带圆角），
                 // 深色主题下侧边栏右上/右下角会露出两块白色缺口（用户：「四角/边缘有白色空白」）。
-                // 这里用普通 Row 拼常驻侧边栏：直角、铺满高度、紧贴左边缘，右侧一条 1dp 分隔线。
-                Row(Modifier.fillMaxSize().background(c.surface)) {
-                    Box(Modifier.width(304.dp).fillMaxHeight()) { drawerContent(true) }
-                    Box(Modifier.width(1.dp).fillMaxHeight().background(c.line))
+                // 这里用普通 Row 拼常驻侧边栏：左侧一整块竖玻璃，右边一条发丝分隔线。
+                Row(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier
+                            .width(304.dp)
+                            .fillMaxHeight()
+                            .padding(start = 12.dp, end = 12.dp, top = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel),
+                    ) { drawerContent(true) }
+                    GlassDivider(Modifier.fillMaxHeight(), horizontal = false)
                     Box(Modifier.weight(1f).fillMaxHeight()) { body() }
                 }
             } else {
@@ -560,7 +588,10 @@ object BuiltinNativeShell : NativeShell {
     @Composable
     override fun Root(vm: NativeShellHost, ui: NativeShellHostUi) {
         if (!vm.onboardingDone) {
-            Onboarding(onDone = { vm.completeOnboarding() })
+            // 引导页背景由壳层背景提供（再多铺一层会让软件渲染直接跪掉）
+            LiquidBackdrop(Modifier.fillMaxSize(), animated = false, withSheen = false) {
+                Onboarding(onDone = { vm.completeOnboarding() })
+            }
         } else {
             NativeShellContent(vm, ui)
         }

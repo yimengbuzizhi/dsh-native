@@ -1,5 +1,9 @@
 package xin.dshaa.nativeapp.ui.jobs
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -114,12 +118,12 @@ fun JobsScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         // ---------- 顶栏 ----------
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(c.surface)
+                .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                 .statusBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -210,7 +214,7 @@ fun JobsScreen(
     stopFor?.let { target ->
         AlertDialog(
             onDismissRequest = { stopFor = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("停止任务？", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
@@ -248,7 +252,7 @@ fun JobsScreen(
         }
         AlertDialog(
             onDismissRequest = { detailFor = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("任务输出", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))

@@ -1,5 +1,13 @@
 package xin.dshaa.nativeapp.ui.chat
 
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.unit.sp
+import xin.dshaa.ui.design.component.focusRings
+import xin.dshaa.ui.design.component.liquidClickable
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import xin.dshaa.ui.design.theme.LocalLiquidTokens
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -88,6 +96,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
@@ -99,6 +108,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
@@ -127,6 +137,7 @@ import xin.dshaa.ui.shellapi.ChatUiCapabilities
 import xin.dshaa.ui.shellapi.data.McpConfigStore
 import xin.dshaa.ui.shellapi.data.McpServer
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -475,14 +486,22 @@ fun ChatComposer(
         }
 
         // ---- 卡片本体（Operit agent-input-card：先输入，再控件行） ----
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            color = c.surface,
-            border = BorderStroke(1.dp, c.line),
-            shadowElevation = 6.dp,
+        // 设计稿 .composer：radius 24、padding 9/10/8/14；聚焦时外加
+        // `0 0 0 1.5px focus-ring-inner, 0 0 0 7px focus-ring-outer` 双环柔光。
+        val inputFocused = remember { mutableStateOf(false) }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+                .focusRings(
+                    focused = inputFocused.value,
+                    shape = RoundedCornerShape(24.dp),
+                    inner = c.brand.copy(alpha = 0.52f),
+                    outer = c.brand.copy(alpha = if (c.isDark) 0.13f else 0.12f),
+                )
+                .liquidGlass(shape = RoundedCornerShape(24.dp), level = LiquidLevel.Panel),
         ) {
-            Column(Modifier.padding(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 6.dp)) {
+            Column(Modifier.padding(start = 14.dp, end = 10.dp, top = 9.dp, bottom = 8.dp)) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     BasicTextField(
                         value = input,
@@ -490,18 +509,19 @@ fun ChatComposer(
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = 40.dp)
-                            .padding(vertical = 6.dp)
+                            .padding(vertical = 5.dp)
+                            .onFocusChanged { inputFocused.value = it.isFocused }
                             .focusRequester(inputFocus),
-                        textStyle = TextStyle(color = c.text, fontSize = MaterialTheme.typography.bodyLarge.fontSize),
+                        textStyle = TextStyle(color = c.text, fontSize = 15.sp, lineHeight = 24.sp),
                         cursorBrush = SolidColor(c.brand),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(onSend = { if (canSend) onSubmit() }),
-                        maxLines = 8,
+                        maxLines = 6,
                         decorationBox = { inner ->
                             if (input.text.isEmpty()) {
                                 Text(
                                     if (state.streaming) "生成中，可继续输入…" else "发消息…",
-                                    style = MaterialTheme.typography.bodyLarge,
+                                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
                                     color = c.faint,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -543,31 +563,34 @@ fun ChatComposer(
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     // 右侧固定控件：圆环 ~48 + 齿轮 36 + 加号 36 + 发送 44 + 间距 10 = ~174dp，
                     // 多留 2dp 余量。360dp 手机上 pill 还有 ~140dp，默认的 deepseek-flash 放得下。
-                    val controlWidth = 48 + (if (capabilities.contextMeter) 52 else 0) +
+                    val controlWidth = 52 + (if (capabilities.contextMeter) 52 else 0) +
                         (if (capabilities.inputSettings) 38 else 0) + (if (capabilities.attachments) 38 else 0)
                     val pillMax = (maxWidth - controlWidth.dp).coerceAtLeast(88.dp)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (model.isNotBlank()) Row(
                             Modifier
+                                // 注意：**不能**再给 weight —— 与右侧 Spacer(weight(1f)) 平分空间后
+                                // 模型名会被截成「d…」（用户 22:24 截图）。靠 pillMax 控宽即可。
                                 .widthIn(max = pillMax)
-                                .clip(RoundedCornerShape(12.dp))
+                                .heightIn(min = 34.dp)
+                                .clip(RoundedCornerShape(11.dp))
                                 .background(c.surfaceAlt)
-                                .border(1.dp, c.line, RoundedCornerShape(12.dp))
                                 .clickable(enabled = capabilities.modelSettings) { modelSheet = true }
-                                .padding(horizontal = 9.dp, vertical = 7.dp),
+                                .padding(horizontal = 11.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
                                 model,
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = c.text,
+                                color = c.sub,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false),
                             )
                             if (capabilities.modelSettings) Spacer(Modifier.width(3.dp))
-                            if (capabilities.modelSettings) Icon(Icons.Rounded.KeyboardArrowDown, "模型设置", tint = c.faint, modifier = Modifier.size(15.dp))
+                            if (capabilities.modelSettings) Icon(Icons.Rounded.KeyboardArrowDown, "模型设置", tint = c.brand, modifier = Modifier.size(14.dp))
                         }
                         Spacer(Modifier.weight(1f))
                         // M76：上下文圆环（照 DSH ContextMeter）——放在模型 pill 与输入设置之间
@@ -789,7 +812,7 @@ fun ChatComposer(
                             val selected = (autoCompactRatio * 100).toInt() == percent
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = if (selected) c.brand else c.surfaceAlt.copy(alpha = 0.7f),
+                                color = if (selected) c.brand else c.surfaceAlt.wash(0.7f),
                                 modifier = Modifier.weight(1f).clickable { onSetAutoCompactRatio(percent / 100f) },
                             ) {
                                 Box(Modifier.padding(vertical = 7.dp), contentAlignment = Alignment.Center) {
@@ -1023,7 +1046,7 @@ fun ChatComposer(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(c.brandSoft.copy(alpha = if (c.isDark) 0.5f else 0.65f))
+                        .background(c.brandSoft.wash(if (c.isDark) 0.5f else 0.65f))
                         .padding(horizontal = 10.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1470,16 +1493,25 @@ private fun ComposerIconButton(
 ) {
     val c = DshTheme2.colors
     Box(
-        Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onClick),
+        // 设计稿 .ico / .bar-ico：36dp、圆角 11dp、按下缩到 .92
+        Modifier
+            .size(36.dp)
+            .clip(RoundedCornerShape(11.dp))
+            .liquidClickable(scale = 0.92f, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, label, tint = if (active) c.brand else c.sub, modifier = Modifier.size(21.dp))
+        Icon(icon, label, tint = if (active) c.brand else c.sub, modifier = Modifier.size(19.dp))
     }
 }
 
 /**
- * 发送圆钮：Operit `.agent-action-orb`（36dp）+ 外面 40dp 的进度环。
+ * 发送圆钮：Operit `.agent-action-orb`（36dp）+ 外面 44dp 的进度环。
  * 生成中转一圈，比「按钮变个 Stop 图标」更容易看出「还在跑」。
+ *
+ * 对比度守则（用户 2026-11-20：「输入文字后发送按钮是白的，跟背景分不出来」）：
+ * - 可发送：`brand` 实底 + 白色图标 + 一圈内亮边——在浅色玻璃上和深色玻璃上都是「一个蓝圆」。
+ * - 不可发送：不再用 `line2` 那种 4% 的淡淡一层（等于没有），改成 16% 的冷灰实底 + 1dp 描边，
+ *   图标用 `sub` 本色；也就是「看得见但明显不能按」。
  */
 @Composable
 private fun SendOrb(streaming: Boolean, enabled: Boolean, onClick: () -> Unit) {
@@ -1499,7 +1531,7 @@ private fun SendOrb(streaming: Boolean, enabled: Boolean, onClick: () -> Unit) {
                 val d = size.minDimension - stroke
                 val topLeft = Offset((size.width - d) / 2f, (size.height - d) / 2f)
                 drawArc(
-                    color = c.line2,
+                    color = c.sub.copy(alpha = 0.20f),
                     startAngle = 0f,
                     sweepAngle = 360f,
                     useCenter = false,
@@ -1521,18 +1553,21 @@ private fun SendOrb(streaming: Boolean, enabled: Boolean, onClick: () -> Unit) {
         Box(
             Modifier
                 .size(36.dp)
+                // 设计稿 .send：36dp 正圆、accent 实底 + on-accent 图标、按下 .88。
                 .clip(CircleShape)
-                .background(
-                    if (active) Brush.linearGradient(listOf(c.brandBright, c.brand))
-                    else Brush.linearGradient(listOf(c.line2, c.line2)),
+                .background(if (active) c.brand else c.sub.copy(alpha = 0.16f))
+                .border(
+                    width = 1.dp,
+                    color = if (active) Color.White.copy(alpha = 0.22f) else c.sub.copy(alpha = 0.30f),
+                    shape = CircleShape,
                 )
-                .clickable(enabled = active, onClick = onClick),
+                .liquidClickable(enabled = active, scale = 0.88f, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 if (streaming) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
                 if (streaming) "停止" else "发送",
-                tint = if (active) Color.White else c.faint,
+                tint = if (active) Color.White else c.sub,
                 modifier = Modifier.size(19.dp),
             )
         }
@@ -1544,13 +1579,39 @@ private fun SendOrb(streaming: Boolean, enabled: Boolean, onClick: () -> Unit) {
 @Composable
 private fun ModalSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
     val c = DshTheme2.colors
+    val liquid = LocalLiquidTokens.current
+    // 设计稿 .sheet：max-height 82vh、padding 8/16/18、顶部 36×4 抓手
+    val maxH = (LocalConfiguration.current.screenHeightDp * 0.82f).dp
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surface,
-        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+        // 设计稿：面板是「实底玻璃」——--glass-solid 打底再叠玻璃层，避免透出下一级内容
+        containerColor = liquid.panelBase,
+        scrimColor = Color.Black.copy(alpha = if (liquid.isDark) 0.46f else 0.30f),
+        shape = RoundedCornerShape(topStart = LiquidRadius.xl, topEnd = LiquidRadius.xl),
+        dragHandle = {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 2.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier
+                        .size(width = 36.dp, height = 4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(c.faint.copy(alpha = 0.55f)),
+                )
+            }
+        },
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = maxH)
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 18.dp),
+        ) {
             content()
         }
     }
@@ -1621,7 +1682,7 @@ private fun MenuDivider() {
             .fillMaxWidth()
             .padding(start = 2.dp, end = 2.dp, top = 8.dp, bottom = 2.dp)
             .height(1.dp)
-            .background(c.line.copy(alpha = 0.55f)),
+            .background(c.line.wash(0.55f)),
     )
 }
 
@@ -2077,7 +2138,7 @@ private fun PackageSelectorDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("取消", color = c.sub) }
         },
-        containerColor = c.surface,
+        containerColor = c.panel,
     )
 }
 

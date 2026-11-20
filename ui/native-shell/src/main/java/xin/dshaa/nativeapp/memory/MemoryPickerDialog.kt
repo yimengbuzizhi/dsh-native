@@ -90,7 +90,7 @@ fun MemoryPickerDialog(
             Surface(
                 Modifier.fillMaxWidth().fillMaxHeight(),
                 shape = RoundedCornerShape(24.dp),
-                color = c.surface,
+                color = c.panel,
             ) {
                 Column(Modifier.fillMaxWidth().padding(18.dp)) {
                     Text("从记忆库引用", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = c.text)

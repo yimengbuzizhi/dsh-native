@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.packages
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -267,13 +272,13 @@ fun PackagesScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(c.background)) {
+    Box(Modifier.fillMaxSize().background(Color.Transparent)) {
         Column(Modifier.fillMaxSize()) {
             // ---- 顶栏：返回 / 标题 / 搜索 / 刷新 ----
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .background(c.surface)
+                    .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -327,7 +332,7 @@ fun PackagesScreen(
             // ---- Tab（Operit：插件 / 包 / 技能 / MCP，这里去掉没有数据层的「包」）----
             TabRow(
                 selectedTabIndex = tab.ordinal,
-                containerColor = c.surface,
+                containerColor = c.panel,
                 contentColor = c.brand,
                 divider = { HorizontalDivider(color = c.line2) },
             ) {
@@ -611,7 +616,7 @@ fun PackagesScreen(
                 dismissButton = {
                     TextButton(onClick = { pendingDeletePlugin = null }) { Text("取消", color = c.sub) }
                 },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -635,7 +640,7 @@ fun PackagesScreen(
                 dismissButton = {
                     TextButton(onClick = { pendingDeleteMcp = null }) { Text("取消", color = c.sub) }
                 },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -662,7 +667,7 @@ fun PackagesScreen(
                 dismissButton = {
                     TextButton(onClick = { pendingDeleteSkill = null }) { Text("取消", color = c.sub) }
                 },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -691,7 +696,7 @@ fun PackagesScreen(
                 confirmButton = {
                     TextButton(onClick = { showSkillWarnings = false }) { Text("关闭", color = c.brand) }
                 },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
     }
@@ -740,7 +745,7 @@ private fun PluginRow(
         onClick = onOpen,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        color = c.surface,
+        color = c.panel,
     ) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -817,7 +822,7 @@ private fun OperitPackageRow(
         onClick = onOpen,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        color = c.surface,
+        color = c.panel,
     ) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -988,7 +993,7 @@ private fun OperitPackageDetailDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("关闭", color = c.sub) }
         },
-        containerColor = c.surface,
+        containerColor = c.panel,
     )
 }
 
@@ -1009,7 +1014,7 @@ private fun SkillRow(
         onClick = onOpen,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        color = c.surface,
+        color = c.panel,
     ) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -1092,7 +1097,7 @@ private fun McpRow(
         onClick = onOpen,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        color = c.surface,
+        color = c.panel,
     ) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -1201,7 +1206,7 @@ private fun SkillDetailDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("关闭", color = c.brand) }
         },
-        containerColor = c.surface,
+        containerColor = c.panel,
     )
 }
 
@@ -1271,7 +1276,7 @@ private fun McpDetailDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("关闭", color = c.sub) }
         },
-        containerColor = c.surface,
+        containerColor = c.panel,
     )
 }
 
