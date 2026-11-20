@@ -3,7 +3,9 @@ package xin.dshaa.core.prompt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * 契约 #1 的 system 段拼装对拍：
@@ -289,5 +291,27 @@ class SystemAssemblyTest {
         // 上游 32 个 + 29 个 Android 设备/终端/记忆/能力/HTTP 工具
         // （18 设备终端 + 8 记忆，M56 追加；M88-C 追加 capability/notify 2 个；M88-D 追加 http_request）
         assertEquals(32 + 29, tools.size)
+    }
+
+    /**
+     * bash 段的 Android 事实（2026-11-20，用户反馈「bash 工具箱不全」）：
+     * 文案不能再宣称 `bash -c` / 分级沙箱（设备上没有），`env` / `stdin` 要真的进 schema，
+     * 而 `required` 与上游保持同形（description + command），否则模型侧调用形态会变。
+     */
+    @Test
+    fun androidBashSchemaMatchesDeviceFacts() {
+        val bash = pack.androidApiTools().first { it.name == "bash" }
+        val props = bash.inputSchema["properties"]?.jsonObject ?: error("bash 没有 properties")
+        assertEquals("object", props["env"]?.jsonObject?.get("type")?.jsonPrimitive?.content)
+        assertEquals("string", props["stdin"]?.jsonObject?.get("type")?.jsonPrimitive?.content)
+        assertEquals(
+            listOf("description", "command"),
+            bash.inputSchema["required"]?.jsonArray?.map { it.jsonPrimitive.content },
+            "required 不能变（上游同形）",
+        )
+        val description = bash.description.orEmpty()
+        assertTrue(description.contains("`sh -c` on Android"), "应说明真机是 sh -c：$description")
+        assertTrue("bash -c" !in description, "不该再宣称 bash：$description")
+        assertTrue("no graded sandbox" in description, "应说明没有分级沙箱：$description")
     }
 }

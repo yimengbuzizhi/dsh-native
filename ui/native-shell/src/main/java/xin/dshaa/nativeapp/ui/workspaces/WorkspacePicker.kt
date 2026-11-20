@@ -66,7 +66,7 @@ fun CreateWorkspaceDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("新建工作区") },
         text = {
             Column {
@@ -219,7 +219,7 @@ fun DirectoryPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("选择目录") },
         text = {
             Column {
@@ -288,7 +288,7 @@ fun DirectoryPickerDialog(
     newFolder?.let { value ->
         AlertDialog(
             onDismissRequest = { newFolder = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("新建文件夹") },
             text = {
                 BasicTextField(

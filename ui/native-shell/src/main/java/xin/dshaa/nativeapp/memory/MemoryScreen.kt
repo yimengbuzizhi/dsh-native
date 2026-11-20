@@ -1,5 +1,9 @@
 package xin.dshaa.nativeapp.memory
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.widget.Toast
@@ -20,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -143,11 +148,11 @@ fun MemoryScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(c.background)) {
+    Box(Modifier.fillMaxSize().background(Color.Transparent)) {
         Column(Modifier.fillMaxSize()) {
             // ---- 顶栏 ----
             Row(
-                Modifier.fillMaxWidth().background(c.surface).statusBarsPadding()
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -181,7 +186,7 @@ fun MemoryScreen(
 
             // ---- 搜索行（Operit MemorySearchBar）----
             Row(
-                Modifier.fillMaxWidth().background(c.surface).padding(horizontal = 8.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {

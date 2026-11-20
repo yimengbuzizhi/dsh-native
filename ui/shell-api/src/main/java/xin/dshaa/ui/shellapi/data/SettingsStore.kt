@@ -31,6 +31,11 @@ class SettingsStore(private val sp: SharedPreferences) {
      */
     private val _pluginMiddlewareEnabled = mutableStateOf(sp.getBoolean(KEY_PLUGIN_MIDDLEWARE, true))
     /**
+     * docs/185 P2：Node 插件宿主。默认关——首版标实验，打开才会解压运行时并起进程（+50~120MB 常驻）。
+     */
+    // 默认开：跟原生插件一样「装上就有」，不再单独做启动页；启动后 1.5s 在后台起 node 进程。
+    private val _nodePluginHostEnabled = mutableStateOf(sp.getBoolean(KEY_NODE_PLUGIN_HOST, true))
+    /**
      * M88-E（docs/183 §5）：AI 全控制插件总开关。默认开；关掉后
      * `plugin_dev_grant/revoke/config/role` 四个工具返回 `ai_plugin_control_disabled`。
      */
@@ -139,6 +144,9 @@ class SettingsStore(private val sp: SharedPreferences) {
 
     /** M87-F：插件中间件总开关（关 = 工具/请求/存储/事件钩子全部旁路）。 */
     val pluginMiddlewareEnabled: Boolean get() = _pluginMiddlewareEnabled.value
+
+    /** docs/185 P2：Node 插件宿主开关（默认关）。 */
+    val nodePluginHostEnabled: Boolean get() = _nodePluginHostEnabled.value
 
     /** M88-E：AI 全控制插件（授予/撤销/配置/角色）总开关，默认开。 */
     val aiPluginControl: Boolean get() = _aiPluginControl.value
@@ -294,6 +302,13 @@ class SettingsStore(private val sp: SharedPreferences) {
 
     fun setApprovalMode(v: String) {        _approvalMode.value = v
         sp.edit().putString(KEY_APPROVAL, v).apply()
+    }
+
+    /** docs/185 P2：Node 插件宿主开关（进程起停由 AppViewModel 负责）。 */
+    fun setNodePluginHostEnabled(enabled: Boolean) {
+        if (_nodePluginHostEnabled.value == enabled) return
+        _nodePluginHostEnabled.value = enabled
+        sp.edit().putBoolean(KEY_NODE_PLUGIN_HOST, enabled).apply()
     }
 
     /** M87-F：插件中间件总开关（宿主的链重建由 AppViewModel 负责）。 */
@@ -646,6 +661,8 @@ class SettingsStore(private val sp: SharedPreferences) {
         private const val KEY_APPROVAL = "approval_mode"
         /** M87-F：插件中间件总开关（默认 true）。 */
         private const val KEY_PLUGIN_MIDDLEWARE = "plugin_middleware_enabled"
+        /** docs/185 P2：Node 插件宿主（默认 false）。 */
+        private const val KEY_NODE_PLUGIN_HOST = "node_plugin_host_enabled"
         private const val KEY_AI_PLUGIN_CONTROL = "ai_plugin_control"
         private const val KEY_ASSISTANT_NAME = "assistant_name"
         private const val KEY_ASSISTANT_DESC = "assistant_desc"

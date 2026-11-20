@@ -62,7 +62,14 @@ fun DshTheme(
         large = RoundedCornerShape(20.dp),
         extraLarge = RoundedCornerShape(24.dp),
     )
-    CompositionLocalProvider(LocalDshColors provides palette) {
+    // 设计稿切主题是 280ms 的颜色过渡（墙面 + 玻璃 + 文字一起变），这里把两套令牌包成可动画版本。
+    val liquid = animatedLiquidTokens(if (darkTheme) DarkLiquidTokens else LightLiquidTokens)
+    val livePalette = animatedDshColors(palette)
+    CompositionLocalProvider(
+        LocalDshColors provides livePalette,
+        LocalLiquidTokens provides liquid,
+        LocalDarkTheme provides darkTheme,
+    ) {
         MaterialTheme(colorScheme = scheme, typography = DshTypography, shapes = shapes, content = content)
     }
 }
@@ -72,6 +79,10 @@ object DshTheme2 {
         @Composable @ReadOnlyComposable get() = LocalDshColors.current
     val typography
         @Composable @ReadOnlyComposable get() = LocalDshTypography.current
+
+    /** 液态玻璃 token（墙面 / 玻璃档位 / 色散 / 噪点强度），只在需要手绘玻璃时用。 */
+    val liquid: LiquidTokens
+        @Composable @ReadOnlyComposable get() = LocalLiquidTokens.current
     val spacing = DshSpacing
 }
 

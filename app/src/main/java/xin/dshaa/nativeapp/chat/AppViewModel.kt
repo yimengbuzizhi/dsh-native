@@ -27,6 +27,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -130,6 +131,7 @@ import xin.dshaa.nativeapp.data.PluginRequestMiddleware
 import xin.dshaa.nativeapp.data.TOOL_MIDDLEWARE_TIMEOUT_MS
 import xin.dshaa.core.parity.ParityJson
 import xin.dshaa.core.plugins.PluginRecord
+import xin.dshaa.core.plugins.PluginPromptSection
 import xin.dshaa.core.plugins.PluginPermissions
 import xin.dshaa.core.plugins.PluginMiddlewareSwitch
 import xin.dshaa.core.plugins.PluginRoute
@@ -216,6 +218,8 @@ import com.ai.assistance.showerclient.ShellIdentity
 import xin.dshaa.nativeapp.device.tools.AndroidDeviceTools
 import xin.dshaa.nativeapp.memory.MemoryTools
 import xin.dshaa.nativeapp.device.tools.TerminalTools
+import xin.dshaa.nativeapp.node.NodePluginHost
+import xin.dshaa.ui.shellapi.NodeHostPluginUi
 import xin.dshaa.ui.shellapi.NativeShellHost
 import xin.dshaa.ui.shellapi.SlotRegistry
 import xin.dshaa.ui.shellapi.PluginExtensionInput
@@ -279,6 +283,12 @@ private const val AGENT_TURN_TIMEOUT_MS = 120_000L
 
 /** M85-E：第三方提示词实现的最长等待（拼装要很快；超时就回退内置拼装并亮提示）。 */
 private const val PROMPT_ASSEMBLE_TIMEOUT_MS = 8_000L
+
+/**
+ * Node 宿主「随应用后台启动」的延迟：原生插件体系和首帧先就位，再起 node 进程，
+ * 免得开机时 75MB RSS + 1.5s 解压抢 CPU（用户手动开开关时不等）。
+ */
+private const val NODE_HOST_AUTOSTART_DELAY_MS = 1_500L
 
 /**
  * 应用级状态：设置 + 会话仓库 + 当前聊天 + 工具循环。
@@ -358,6 +368,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
             onPhase("ready", "准备界面…")
             runtimeReady = true
             installRuntimeBindings()
+            if (settings.nodePluginHostEnabled) attachNodeHost(delayMs = NODE_HOST_AUTOSTART_DELAY_MS)
             consumeStartupDebug()
             refreshSessions()
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -638,6 +649,52 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
     /** 当前请求可用的插件工具 schema（每次请求现取，随 `ToolRegistry` 同步刷新）。 */
     @Volatile
     private var pluginApiTools: List<ApiTool> = emptyList()
+
+    /**
+     * Node 插件宿主（docs/185 的 P2）：独立进程 + 本地 WS 桥，跟原生插件体系并存。
+     *
+     * 默认关（[xin.dshaa.ui.shellapi.data.SettingsStore.nodePluginHostEnabled]）；打开后才解压运行时、
+     * 起进程、把宿主 manifest 里的工具并进 [registry]（名字统一加 `node_` 前缀，跟原生插件不撞）。
+     */
+    private val nodePluginHost: NodePluginHost by lazy { NodePluginHost(app) }
+
+    /** Node 侧工具 schema（每次宿主 Ready 后重算）。 */
+    @Volatile
+    private var nodeApiTools: List<ApiTool> = emptyList()
+
+    private val nodeToolNames = LinkedHashSet<String>()
+
+    private var nodeHostJob: Job? = null
+
+    /** 已经拉过提示词段的宿主 pid（同 pid 不重复拉）。 */
+    private var nodePromptPid = -1
+
+    private var nodePromptJob: Job? = null
+
+    /** 插件页展示的宿主状态（Extracting/Ready/Failed 的人话版本）。 */
+    override var nodeHostStateText by mutableStateOf("")
+        private set
+
+    /** 插件页展示：宿主里已加载的模块 + 各自注册的工具。 */
+    override var nodeHostPlugins by mutableStateOf<List<NodeHostPluginUi>>(emptyList())
+        private set
+
+    /** 插件页展示：宿主日志尾巴。 */
+    override var nodeHostLogs by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    /**
+     * Node 宿主里的插件往系统提示注册的段/上下文（`ctx.systemPrompt.section/context`）。
+     * 宿主 Ready 后拉一次，导入/重载后重拉；拼进 [pluginPromptSections] / [pluginContextText] 同一张表。
+     */
+    @Volatile
+    private var nodePromptSections: List<PluginPromptSection> = emptyList()
+
+    @Volatile
+    private var nodePromptContexts: List<PluginPromptSection> = emptyList()
+
+    @Volatile
+    private var nodePromptVariables: Map<String, String> = emptyMap()
 
     /** 插件页展示：插件 id → 已接入对话的工具名（未启用/参数认不出 = 不在表里）。 */
     override var pluginInjected by mutableStateOf<Map<String, Set<String>>>(emptyMap())
@@ -2401,7 +2458,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
                 toolContext = live.toolContext,
                 stop = live.stop,
                 apiTools = {
-                    promptPack.androidApiTools().filter { it.name in offeredToolNames() } + pluginApiTools +
+                    promptPack.androidApiTools().filter { it.name in offeredToolNames() } + pluginApiTools + nodeApiTools +
                         pluginDevTools.apiTools().filter { it.name in offeredToolNames() }
                 },
                 systemPrompt = {
@@ -2587,8 +2644,57 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
             importRequest = if (File(path).isAbsolute) path else File(getApplication<Application>().filesDir, path).absolutePath
         }
         debugScreenRequest = settings.debugScreen
-        // 调试通道：`am start --es dsh_send "..."`（仅 debug，用于无 IME 的自动验收）
         val sp = getApplication<Application>().getSharedPreferences("dsh", 0)
+        // 调试通道：`--ez dsh_node_host_on true` → 打开 Node 宿主开关并等它把工具并进工具表（仅 debug）。
+        if (sp.getBoolean("debug_node_host_on", false)) {
+            sp.edit().remove("debug_node_host_on").apply()
+            setNodePluginHostEnabled(true)
+            viewModelScope.launch {
+                val deadline = System.currentTimeMillis() + 25_000
+                while (!nodePluginHost.isReady() && System.currentTimeMillis() < deadline) delay(200)
+                delay(500)
+                val merged = nodeToolNames.toList()
+                val offered = offeredToolNames().filter { it.startsWith("node_") }
+                Log.i(
+                    "DshNodeHost",
+                    "integration state=${nodePluginHost.describeState()} tools=${merged.size} names=$merged " +
+                        "apiTools=${nodeApiTools.size} offered=$offered pid=${nodePluginHost.pid} rss=${nodePluginHost.rssKb}",
+                )
+                runCatching {
+                    File(getApplication<Application>().filesDir, "node-host-integration.json").writeText(
+                        "{\"ok\":${nodePluginHost.isReady() && merged.isNotEmpty()}," +
+                            "\"state\":\"${nodePluginHost.describeState()}\"," +
+                            "\"tools\":${merged.joinToString(",", "[", "]") { "\"$it\"" }}," +
+                            "\"apiTools\":${nodeApiTools.size},\"pid\":${nodePluginHost.pid}}",
+                    )
+                }
+            }
+        }
+        // A 验收：`--es dsh_node_plugin_zip <绝对路径>` → 与插件页「导入 .zip」同一条 installPluginZip 路径
+        sp.getString("debug_node_plugin_zip", null)?.takeIf { it.isNotBlank() }?.let { raw ->
+            sp.edit().remove("debug_node_plugin_zip").apply()
+            viewModelScope.launch {
+                val source = if (File(raw).isAbsolute) File(raw) else File(getApplication<Application>().filesDir, raw)
+                setNodePluginHostEnabled(true)
+                val deadline = System.currentTimeMillis() + 25_000
+                while (!nodePluginHost.isReady() && System.currentTimeMillis() < deadline) delay(200)
+                val bytes = runCatching { withContext(Dispatchers.IO) { source.readBytes() } }.getOrNull()
+                val result = if (bytes == null) {
+                    Result.failure(IllegalStateException("cannot read $raw"))
+                } else {
+                    nodePluginHost.installPluginZip(bytes, source.name)
+                }
+                result.onSuccess { installed ->
+                    refreshNodeHostDiagnostics()
+                    Log.i(
+                        "DshNodeHost",
+                        "debug import ok module=$installed modules=${nodePluginHost.manifestModules()} " +
+                            "tools=${nodeToolNames.toList()}",
+                    )
+                }.onFailure { Log.e("DshNodeHost", "debug import failed: ${it.message}", it) }
+            }
+        }
+        // 调试通道：`am start --es dsh_send "..."`（仅 debug，用于无 IME 的自动验收）
         // 调试通道：`--es dsh_backup_export <绝对路径>` 直接导出原生备份（锁屏/无 UI 也能验，docs/59）
         sp.getString("debug_backup_export", null)?.takeIf { it.isNotBlank() }?.let { raw ->
             sp.edit().remove("debug_backup_export").apply()
@@ -6931,6 +7037,158 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
      * 先注销上一批名字（停用/删除/改名都靠这一步收回工具），再按清单注册。
      * 工具名和内置工具冲突时 [ToolRegistry.register] 拒绝，这里只打日志、不覆盖内置工具。
      */
+    // ---- Node 插件宿主（docs/185 P2） ----
+
+    override val nodePluginHostEnabled: Boolean get() = settings.nodePluginHostEnabled
+
+    /**
+     * 打开/关闭 Node 宿主。关闭时先杀掉进程树再收回工具名——宿主没了还留着 schema，
+     * 模型会一直调用一个永远失败的 `node_*` 工具。
+     */
+    override fun setNodePluginHostEnabled(enabled: Boolean) {
+        if (settings.nodePluginHostEnabled == enabled) return
+        settings.setNodePluginHostEnabled(enabled)
+        if (enabled) {
+            attachNodeHost()
+        } else {
+            nodeHostJob?.cancel()
+            nodeHostJob = null
+            nodeHostStateText = ""
+            nodeHostPlugins = emptyList()
+            nodeHostLogs = emptyList()
+            runCatching { nodePluginHost.shutdown() }
+            syncNodeTools()
+        }
+    }
+
+    /**
+     * 起宿主（幂等）+ 订阅状态；失败只体现在状态文案里，不影响原生插件。
+     *
+     * [delayMs] > 0 时表示「随应用后台启动」：等原生首帧和插件体系就位后再起进程，
+     * 别跟启动抢 CPU/内存（用户手动打开开关时传 0，立即生效）。
+     */
+    private fun attachNodeHost(delayMs: Long = 0) {
+        if (!settings.nodePluginHostEnabled) return
+        if (nodeHostJob?.isActive == true) return
+        nodeHostJob = viewModelScope.launch {
+            if (delayMs > 0) delay(delayMs)
+            launch {
+                nodePluginHost.state.collect { state ->
+                    nodeHostStateText = nodePluginHost.describeState()
+                    refreshNodeHostDiagnostics()
+                    if (state is NodePluginHost.State.Ready) refreshNodePromptAsync()
+                }
+            }
+            launch {
+                nodePluginHost.tools.collect { syncNodeTools() }
+            }
+            val started = nodePluginHost.start()
+            if (!started) {
+                Log.w("DshNodeHost", "node host start failed: ${nodePluginHost.describeState()}")
+            }
+            nodeHostStateText = nodePluginHost.describeState()
+            refreshNodeHostDiagnostics()
+        }
+    }
+
+    /** 插件页要的两样：已加载模块 + 各自工具、日志尾巴。 */
+    private fun refreshNodeHostDiagnostics() {        val ready = nodePluginHost.state.value as? NodePluginHost.State.Ready
+        nodeHostPlugins = ready?.plugins.orEmpty().map { plugin ->
+            NodeHostPluginUi(
+                module = plugin.module,
+                ok = plugin.ok,
+                error = plugin.error,
+                tools = plugin.tools,
+            )
+        }
+        nodeHostLogs = nodePluginHost.tailLogs(40)
+    }
+
+    /** 宿主 Ready 后拉一次插件注册的提示词段；同一进程只拉一次，`force` 用于重载后重拉。 */
+    private fun refreshNodePromptAsync(force: Boolean = false) {
+        val ready = nodePluginHost.state.value as? NodePluginHost.State.Ready ?: return
+        if (!force && nodePromptPid == ready.pid) return
+        nodePromptPid = ready.pid
+        nodePromptJob?.cancel()
+        nodePromptJob = viewModelScope.launch { refreshNodePrompt() }
+    }
+
+    private suspend fun refreshNodePrompt() {
+        val payload = nodePluginHost.promptPayload()
+        if (payload == null) {
+            nodePromptSections = emptyList()
+            nodePromptContexts = emptyList()
+            nodePromptVariables = emptyMap()
+            return
+        }
+        nodePromptSections = payload.sections.mapNotNull { it.toNodePromptSection() }
+        nodePromptContexts = payload.contexts.mapNotNull { it.toNodePromptSection() }
+        nodePromptVariables = payload.variables
+        Log.i(
+            "DshNodeHost",
+            "prompt source=${payload.source} sections=${nodePromptSections.size} " +
+                "contexts=${nodePromptContexts.size} variables=${nodePromptVariables.size} " +
+                "names=${nodePromptSections.map { it.name }}",
+        )
+    }
+
+    /** 宿主回的段：`{name, text, order?}`；没有 order 的排在原生段之后（900），同名互相覆盖。 */
+    private fun JsonObject.toNodePromptSection(): PluginPromptSection? {
+        val name = (this["name"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+        val text = (this["text"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        if (text.isBlank()) return null
+        val order = (this["order"] as? JsonPrimitive)?.intOrNull ?: 900
+        return PluginPromptSection(name = name, order = order, text = text)
+    }
+
+    override fun reloadNodeHost() {
+        viewModelScope.launch {
+            runCatching { nodePluginHost.reload() }
+            refreshNodeHostDiagnostics()
+            refreshNodePromptAsync(force = true)
+        }
+    }
+
+    override fun importNodePlugin(uri: Uri) {
+        viewModelScope.launch {
+            val name = runCatching { uri.lastPathSegment?.substringAfterLast('/') }.getOrNull().orEmpty()
+            val result = runCatching {
+                val bytes = withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("打不开这个文件：$uri")
+                }
+                nodePluginHost.installPluginZip(bytes, name.ifBlank { "plugin" }).getOrThrow()
+            }
+            result.onSuccess { specifier ->
+                Log.i("DshNodeHost", "node plugin imported: $specifier → ${nodePluginHost.describeState()}")
+                refreshNodePromptAsync(force = true)
+            }.onFailure { error ->
+                Log.w("DshNodeHost", "node plugin import failed: ${error.message}")
+            }
+            refreshNodeHostDiagnostics()
+        }
+    }
+
+    /** 把宿主 manifest 里的工具并进 registry（`node_` 前缀，冲突只记日志）。 */
+    private fun syncNodeTools() {
+        runCatching {
+            val tools = nodePluginHost.dshTools()
+            val names = tools.map { it.name }.toSet()
+            (nodeToolNames - names).forEach { registry.unregister(it) }
+            nodeToolNames.clear()
+            tools.forEach { tool ->
+                if (registry.register(tool)) {
+                    nodeToolNames += tool.name
+                } else {
+                    Log.w("DshNodeHost", "工具名冲突，未注入：${tool.name}")
+                }
+            }
+            nodeApiTools = nodePluginHost.apiTools().filter { it.name in nodeToolNames }
+            nodeHostStateText = nodePluginHost.describeState()
+            Log.i("DshNodeHost", "merge tools=${nodeToolNames.size} apiTools=${nodeApiTools.size} names=$nodeToolNames")
+        }.onFailure { Log.w("DshNodeHost", "sync node tools failed: ${it.message}") }
+    }
+
     private fun syncPluginTools() {
         runCatching { loadingSnapshotStore.refresh(pluginsUi, prefs.getString("dsh_loading", null)) }
             .onSuccess { loadingSafetyNotice = it.unavailableReason }
@@ -8281,7 +8539,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
                 toolContext = childToolContext,
                 stop = stop,
                 apiTools = {
-                    promptPack.androidApiTools().filter { it.name in offeredToolNames() } + pluginApiTools +
+                    promptPack.androidApiTools().filter { it.name in offeredToolNames() } + pluginApiTools + nodeApiTools +
                         pluginDevTools.apiTools().filter { it.name in offeredToolNames() }
                 },
                 systemPrompt = {
@@ -8874,6 +9132,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
         // Activity 真被销毁（划掉任务/退出）：turn 跟着 viewModelScope 取消，保活服务也要收掉
         TurnKeepAliveService.stopListener = null
         TurnKeepAliveService.stop(getApplication())
+        // docs/185 P2：ViewModel 真销毁才收摊 Node 宿主（关开关只是 shutdown，不 close）。
+        runCatching { nodePluginHost.close() }
         // 悬浮窗的桥也要断开：否则悬浮窗会拿着已销毁的 ViewModel 发消息
         if (ChatMirror.host === this) ChatMirror.host = null
         ChatMirror.state = null
@@ -8917,16 +9177,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
      * `complete:true` 会整体接管 system，手机版不启用（权限过大）。
      */
     private fun pluginPromptSections(): List<xin.dshaa.core.prompt.PromptSection> =
-        pluginsUi
-            .filter { it.enabled }
-            .flatMap { it.promptSections.filterNot { section -> section.complete } }
-            .map { section ->
+        (
+            pluginsUi
+                .filter { it.enabled }
+                .flatMap { it.promptSections.filterNot { section -> section.complete } }
+                .map { section ->
+                    xin.dshaa.core.prompt.PromptSection(
+                        name = section.name,
+                        order = section.order,
+                        text = section.text,
+                    )
+                } + nodePromptSections.map { section ->
+                // Node 插件（真 cordis 宿主）注册的段：同一张表里排序、同名互相覆盖。
                 xin.dshaa.core.prompt.PromptSection(
                     name = section.name,
                     order = section.order,
                     text = section.text,
                 )
             }
+            )
 
     /**
      * 插件用 `ctx.systemPrompt.variable(name, fn)` 求值出的变量（M74）：段文本里的 `{{name}}`
@@ -8935,6 +9204,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
     private fun pluginPromptVariables(): Map<String, String> {
         val merged = LinkedHashMap<String, String>()
         pluginsUi.filter { it.enabled }.forEach { merged.putAll(it.promptVariables) }
+        // Node 宿主里的插件（`ctx.systemPrompt.variable`）后注册的覆盖同名原生变量。
+        merged.putAll(nodePromptVariables)
         return merged
     }
 
@@ -8945,9 +9216,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
      */
     private fun pluginContextText(): String {
         val variables = pluginPromptVariables()
-        return pluginsUi
+        val native = pluginsUi
             .filter { it.enabled }
             .flatMap { it.contexts }
+        return (native + nodePromptContexts)
             .sortedWith(compareBy({ it.order }, { it.name }))
             .map { promptPack.interpolate(it.text.trim(), settings.model, providerLabel(), variables) }
             .filter { it.isNotEmpty() }

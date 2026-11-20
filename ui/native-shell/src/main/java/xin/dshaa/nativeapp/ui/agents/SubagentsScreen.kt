@@ -1,5 +1,9 @@
 package xin.dshaa.nativeapp.ui.agents
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -87,12 +91,12 @@ fun SubagentsScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         // ---------- 顶栏 ----------
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(c.surface)
+                .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                 .statusBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -175,7 +179,7 @@ fun SubagentsScreen(
     stopFor?.let { target ->
         AlertDialog(
             onDismissRequest = { stopFor = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("停止子代理？", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {

@@ -150,9 +150,13 @@ class PromptPack(
     }
 
     /**
-     * Android 工具表：上游桌面版第 15 个工具是 `pwsh`，Android 换成 `bash`
-     * （docs/port/02 §3.3：只改 name、description、properties.description.description、
-     * properties.command.description 四处，键序与 required 不动）。
+     * Android 工具表：上游桌面版第 15 个工具是 `pwsh`，Android 换成 `bash`。
+     *
+     * 逐字对齐部分（docs/port/02 §3.3）：name、description、properties.description/command 的
+     * description（键序与 required 不动）。
+     * Android 侧补全（2026-11-20）：workdir 的说明按真机事实重写（越界直接拒绝，没有分级沙箱），
+     * 并**追加** `env` / `stdin` 两个真正可用的参数（[xin.dshaa.core.tools.shell.BashTool] 已实现）。
+     * `sandbox_permissions` / `justification` 保留（上游同形）但设备上被忽略，description 里已说明。
      */
     fun androidApiTools(): List<ApiTool> {
         val base = apiTools().map { tool ->
@@ -181,9 +185,32 @@ class PromptPack(
                 when (key) {
                     "description" -> put(key, replaceDescription(value, BASH_ARG_DESCRIPTION))
                     "command" -> put(key, replaceDescription(value, BASH_COMMAND_DESCRIPTION))
+                    "workdir" -> put(key, replaceDescription(value, BASH_WORKDIR_DESCRIPTION))
                     else -> put(key, value)
                 }
             }
+            // 2026-11-20 补全：`env` / `stdin` 是设备上真实可用的参数（BashTool 已实现）。
+            // 追加在末尾——上游既有键的键序与 required 一个都不动，桌面/Android 的共同部分仍然同形。
+            put(
+                "env",
+                kotlinx.serialization.json.buildJsonObject {
+                    put("type", kotlinx.serialization.json.JsonPrimitive("object"))
+                    put("description", kotlinx.serialization.json.JsonPrimitive(BASH_ENV_DESCRIPTION))
+                    put(
+                        "additionalProperties",
+                        kotlinx.serialization.json.buildJsonObject {
+                            put("type", kotlinx.serialization.json.JsonPrimitive("string"))
+                        },
+                    )
+                },
+            )
+            put(
+                "stdin",
+                kotlinx.serialization.json.buildJsonObject {
+                    put("type", kotlinx.serialization.json.JsonPrimitive("string"))
+                    put("description", kotlinx.serialization.json.JsonPrimitive(BASH_STDIN_DESCRIPTION))
+                },
+            )
         }
         return kotlinx.serialization.json.buildJsonObject {
             schema.forEach { (key, value) ->
@@ -223,21 +250,44 @@ class PromptPack(
          */
         private val PLACEHOLDER = Regex("\\{\\{([A-Za-z0-9_.:\\-]+)\\}\\}")
 
-        /** docs/port/02 §3.3 bash 段全文（Android 专用，逐字来自 dsh-tool-bash）。 */
+        /**
+         * bash 段全文（Android 专用）。
+         *
+         * 2026-11-20 校正：上游这段是**桌面**事实（`bash -c`、完整 coreutils、分级沙箱 + `[sandbox: …]` 报告）。
+         * 设备上没有 bash、没有沙箱、越界路径是直接报错而不是策略拒绝——照抄会让模型试一些永远不会成功的事，
+         * 用户反馈的「bash 工具箱不全」有一半是这段文案在骗人。这里改成真机事实，并写清实际可用的参数。
+         */
         private const val BASH_DESCRIPTION =
-            "Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell; " +
-                "pass `workdir` instead of using `cd`. Managed `\$DSH_*` variables expose current harness environment facts. " +
+            "Execute a shell command (`sh -c` on Android: a toybox userland with no bash, no interactive TTY " +
+                "and no python/curl/node unless one is installed) and return its stdout/stderr. Each call runs in a fresh shell; " +
+                "pass `workdir` instead of using `cd`. Paths outside the workspace are refused outright (`path escapes workspace: …`, " +
+                "a hard error, not a policy denial you can retry another way). " +
+                "Managed `\$DSH_WORKSPACE` / `\$DSH_CWD` / `\$DSH_TIMEOUT_MS` / `\$DSH_SESSION` expose current harness environment facts; " +
+                "`env` adds extra variables and `stdin` feeds standard input. When `<workspace>/.dsh/bin` exists it is prepended to `PATH`. " +
                 "Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. " +
                 "Provide `description` before `command` in the arguments. Before any delete or move, verify that the resolved absolute target path is the intended one; " +
                 "never run it against a computed path you have not checked. An unset variable expands to an empty string, so guard variables in such paths with `\${VAR:?}`. " +
-                "Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]`, a policy denial: do not retry another way."
+                "There is no graded sandbox on this device: `sandbox_permissions` and `justification` are accepted but ignored."
 
         private const val BASH_ARG_DESCRIPTION =
             "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). " +
                 "Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; " +
                 "\"npm install\" → \"Install package dependencies\"."
 
-        private const val BASH_COMMAND_DESCRIPTION = "The bash command to execute."
+        private const val BASH_COMMAND_DESCRIPTION =
+            "The shell command to execute (`sh -c` on Android: toybox userland, no bash builtins, no interactive prompt)."
+
+        private const val BASH_WORKDIR_DESCRIPTION =
+            "Directory to run the command in; must resolve inside the workspace (absolute path, or relative to the " +
+                "current directory). Defaults to the current directory. Use this instead of `cd`."
+
+        private const val BASH_ENV_DESCRIPTION =
+            "Extra environment variables for this command only, merged over the inherited environment and the managed " +
+                "`\$DSH_*` values."
+
+        private const val BASH_STDIN_DESCRIPTION =
+            "Text fed to the command's standard input; the pipe is closed afterwards. Without it stdin is empty. " +
+                "Not supported with `run_in_background`."
 
         private val json = Json { ignoreUnknownKeys = true }
 

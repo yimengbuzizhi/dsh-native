@@ -25,30 +25,60 @@ private fun JsonObject.str(key: String): String? = runCatching { this[key]?.json
 private fun JsonObject.int(key: String): Int? = runCatching { this[key]?.jsonPrimitive?.intOrNull }.getOrNull()
 private fun JsonObject.bool(key: String): Boolean? = runCatching { this[key]?.jsonPrimitive?.booleanOrNull }.getOrNull()
 
+/** 结果最大字符数（超出取尾部；完整输出落盘，路径写在结果第一行）。 */
+private const val MAX_OUTPUT_CHARS = 30_000
+
+/** 落盘的完整输出最多保留多少字节（再大就只留尾部，避免把手机存储写满）。 */
+private const val MAX_LOG_BYTES = 4 * 1024 * 1024
+
+/** 工作区里的「自有工具箱」目录：存在就前置进 PATH（用户/模型往里丢静态 busybox、curl 等）。 */
+private const val WORKSPACE_BIN_DIR = ".dsh/bin"
+
 /**
  * `bash` 工具（Android 用 toybox `sh -c`；桌面 JVM 测试用 cmd / sh）。
  *
- * 前台：输出取尾部 30k 字符，非零退出码追加 `[exit code: N]`（与上游一致）。
+ * 前台：输出取尾部 30k 字符（完整输出落盘并报路径），非零退出码追加 `[exit code: N]`（与上游一致）。
  * 后台（`run_in_background: true`）：进程登记进 `ctx.jobs`，立刻返回 `started background job <id>`；
  * 输出按 stdout/stderr 分流进环形缓冲，模型用 `job_output` 消费、`job_kill` 取消。
+ *
+ * 2026-11-20 能力补全（用户反馈「bash 工具箱有点不全」）：
+ * - `description`：模型必填的人话说明（UI 展示用，执行端不参与）——以前完全没读；
+ * - `env`：给这条命令加环境变量；`stdin`：喂标准输入（不给就立刻 EOF，避免 `cat` 之类的命令把管道读挂）；
+ * - 托管变量 `DSH_WORKSPACE` / `DSH_CWD` / `DSH_TIMEOUT_MS` / `DSH_SESSION`（prompt 里承诺过，以前没实现）；
+ * - `<workspace>/.dsh/bin` 存在时前置进 `PATH`（手机上没有 bash/curl/busybox 时的补位口）；
+ * - 截断时把完整输出写进 `<tmp>/dsh-bash-logs/`（写不进去就退到 `<workspace>/.dsh/bash-logs/`），
+ *   并把路径写进结果第一行（prompt 里承诺过「full output is saved to a file whose path is reported」）；
+ * - `sandbox_permissions` / `justification`：Android 没有分级沙箱（越界路径直接 `path escapes workspace`），
+ *   两个字段按上游 schema 保留但**故意忽略**，不假装提权成功。
  */
 class BashTool : DshTool {
     override val name = "bash"
 
     override suspend fun execute(args: JsonObject, ctx: ToolContext): ToolResult {
         val command = args.str("command") ?: return ToolResult.err("missing command")
+        // `description` 是模型侧的必填人话说明（工具卡副行显示），执行端不参与，这里读一次只为
+        // 不被误当成未知参数丢掉（null 也允许：老会话/子代理可能不带）。
+        args.str("description")
         val timeoutMs = (args.int("timeoutMs")?.toLong() ?: ctx.timeoutMs).coerceIn(1_000, 600_000)
         val workdir = args.str("workdir")?.let { resolvePath(it, ctx) } ?: ctx.cwd
+        val extraEnv = envArgs(args) ?: return ToolResult.err("env must be an object of string values")
+        val stdin = args.str("stdin")
         val shell = shellFor(command)
         if (args.bool("run_in_background") == true) {
-            return startBackground(command, shell, workdir, ctx)
+            if (stdin != null) {
+                return ToolResult.err("stdin is not supported with run_in_background: the process outlives this call")
+            }
+            return startBackground(command, shell, workdir, ctx, extraEnv)
         }
-        val process = runCatching {
-            ProcessBuilder(shell)
-                .directory(workdir)
-                .redirectErrorStream(true)
-                .start()
-        }.getOrElse { return ToolResult.err("spawn failed: ${it.message}") }
+        val builder = ProcessBuilder(shell)
+            .directory(workdir)
+            .redirectErrorStream(true)
+        applyEnvironment(builder, ctx, workdir, timeoutMs, extraEnv)
+        val process = runCatching { builder.start() }
+            .getOrElse { return ToolResult.err("spawn failed: ${it.message}") }
+
+        // 不给 stdin 也要把管道关上：否则 `cat` / `grep` 这类命令会一直等输入直到超时。
+        if (stdin != null) feedStdin(process, stdin) else runCatching { process.outputStream.close() }
 
         val bytes = try {
             withTimeoutOrNull(timeoutMs) { readCancellable(process) }
@@ -63,8 +93,10 @@ class BashTool : DshTool {
         }
         val exit = runCatching { process.waitFor() }.getOrDefault(-1)
         var text = bytes.toString(Charsets.UTF_8)
-        if (text.length > 30_000) {
-            text = "…(output truncated to tail)\n" + text.takeLast(30_000)
+        if (text.length > MAX_OUTPUT_CHARS) {
+            val logPath = saveFullOutput(ctx, bytes)
+            val note = if (logPath != null) "full output: $logPath" else "full output not saved"
+            text = "…(output truncated to tail; $note)\n" + text.takeLast(MAX_OUTPUT_CHARS)
         }
         if (exit != 0) {
             text += (if (text.endsWith("\n") || text.isEmpty()) "" else "\n") + "[exit code: $exit]"
@@ -72,8 +104,94 @@ class BashTool : DshTool {
         return ToolResult.ok(text.ifEmpty { "(no output)" })
     }
 
+    /**
+     * 环境变量：托管 `DSH_*` + 工作区工具箱 PATH 前缀 + 模型给的 `env`（最后写入，可覆盖托管值）。
+     *
+     * 后台与前台共用，保证 `run_in_background` 的进程看到同样的环境。
+     */
+    private fun applyEnvironment(
+        builder: ProcessBuilder,
+        ctx: ToolContext,
+        workdir: File,
+        timeoutMs: Long?,
+        extraEnv: Map<String, String>,
+    ) {
+        val env = builder.environment()
+        val binDir = runCatching { File(ctx.workspace, WORKSPACE_BIN_DIR) }.getOrNull()
+        if (binDir != null && binDir.isDirectory) {
+            val pathKey = env.keys.firstOrNull { it.equals("PATH", ignoreCase = true) } ?: "PATH"
+            val current = env[pathKey].orEmpty()
+            env[pathKey] = if (current.isEmpty()) {
+                binDir.absolutePath
+            } else {
+                binDir.absolutePath + File.pathSeparator + current
+            }
+        }
+        env["DSH_WORKSPACE"] = runCatching { ctx.workspace.absolutePath }.getOrDefault("")
+        env["DSH_CWD"] = runCatching { workdir.absolutePath }.getOrDefault("")
+        env["DSH_TIMEOUT_MS"] = timeoutMs?.toString() ?: ""
+        ctx.jobOwner()?.let { env["DSH_SESSION"] = it }
+        extraEnv.forEach { (k, v) -> env[k] = v }
+    }
+
+    /** 解析 `env`：必须是 `{key: string}`；键里有 `=` 或 NUL 是非法的（ProcessBuilder 也会拒绝）。 */
+    private fun envArgs(args: JsonObject): Map<String, String>? {
+        val raw = args["env"] ?: return emptyMap()
+        if (raw !is JsonObject) return null
+        val out = LinkedHashMap<String, String>()
+        for ((key, value) in raw) {
+            val text = runCatching { value.jsonPrimitive.contentOrNull }.getOrNull() ?: return null
+            if (key.isEmpty() || key.any { it == '=' || it == '\u0000' }) return null
+            out[key] = text
+        }
+        return out
+    }
+
+    /** 后台写 stdin（不阻塞调用协程）；写完关流让子进程看到 EOF。 */
+    private fun feedStdin(process: Process, data: String) {
+        Thread({
+            runCatching {
+                process.outputStream.use { it.write(data.toByteArray(Charsets.UTF_8)) }
+            }
+        }, "dsh-bash-stdin").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    /**
+     * 完整输出落盘：优先系统临时目录（App 缓存），不可写退到 `<workspace>/.dsh/bash-logs/`。
+     * 超过 [MAX_LOG_BYTES] 只留尾部（与「truncated to tail」的语义一致）。
+     */
+    private fun saveFullOutput(ctx: ToolContext, bytes: ByteArray): String? {
+        val dirs = listOfNotNull(
+            System.getProperty("java.io.tmpdir")?.takeIf { it.isNotBlank() }?.let { File(it, "dsh-bash-logs") },
+            runCatching { File(ctx.workspace, ".dsh/bash-logs") }.getOrNull(),
+        )
+        val payload = if (bytes.size > MAX_LOG_BYTES) {
+            bytes.copyOfRange(bytes.size - MAX_LOG_BYTES, bytes.size)
+        } else {
+            bytes
+        }
+        val fileName = "bash-${System.currentTimeMillis()}.log"
+        for (dir in dirs) {
+            val target = runCatching {
+                if (!dir.isDirectory && !dir.mkdirs()) null else File(dir, fileName)
+            }.getOrNull() ?: continue
+            val written = runCatching { target.writeBytes(payload) }.isSuccess
+            if (written) return runCatching { target.absolutePath }.getOrNull()
+        }
+        return null
+    }
+
     /** 后台执行：登记 job 后立刻返回 id（无超时；取消走 job_kill）。 */
-    private fun startBackground(command: String, shell: List<String>, workdir: File, ctx: ToolContext): ToolResult {
+    private fun startBackground(
+        command: String,
+        shell: List<String>,
+        workdir: File,
+        ctx: ToolContext,
+        extraEnv: Map<String, String>,
+    ): ToolResult {
         val jobs = ctx.jobs
             ?: return ToolResult.err("background jobs unavailable: load the job runtime in this composition")
         val snapshot = jobs.start(
@@ -81,14 +199,17 @@ class BashTool : DshTool {
             label = command,
             owner = ctx.jobOwner(),
         ) { control ->
+            val builder = ProcessBuilder(shell)
+                .directory(workdir)
+                .redirectErrorStream(false)
+            applyEnvironment(builder, ctx, workdir, null, extraEnv)
             val process = try {
-                ProcessBuilder(shell)
-                    .directory(workdir)
-                    .redirectErrorStream(false)
-                    .start()
+                builder.start()
             } catch (e: Exception) {
                 return@start JobOutcome(JobStatus.FAILED, "spawn failed: ${e.message}")
             }
+            // 后台没有 stdin：立刻 EOF，别让命令挂在等输入。
+            runCatching { process.outputStream.close() }
             control.onCancel { runCatching { process.destroyForcibly() } }
             if (control.isCancelled()) process.destroyForcibly()
             val exit = coroutineScope {

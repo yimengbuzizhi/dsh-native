@@ -1,5 +1,9 @@
 package xin.dshaa.nativeapp.ui.onboarding
 
+import androidx.compose.foundation.layout.offset
+import xin.dshaa.ui.design.component.WaterOrb
+import xin.dshaa.ui.design.component.WaterOrbShadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -63,7 +67,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
         scope.launch { pager.animateScrollToPage(pager.currentPage - 1) }
     }
 
-    Column(Modifier.fillMaxSize().background(c.background).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent).statusBarsPadding()) {
         // 右上角跳过：不强迫配置（权限页以后能从设置里进）
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
             Spacer(Modifier.weight(1f))
@@ -154,11 +158,13 @@ private fun WelcomePage() {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(26.dp))
-        Box(Modifier.size(96.dp).clip(CircleShape).background(c.brand), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(58.dp).clip(CircleShape).background(c.surface), contentAlignment = Alignment.Center) {
+        // 首屏就是那颗「鲸歌」水球（设计稿 .water-orb）：会呼吸、点一下会颤
+        Box(contentAlignment = Alignment.Center) {
+            WaterOrbShadow(Modifier.offset(y = 62.dp))
+            WaterOrb(size = 152.dp) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.size(12.dp).clip(CircleShape).background(c.text))
-                    Box(Modifier.size(12.dp).clip(CircleShape).background(c.text))
+                    Box(Modifier.size(11.dp).clip(CircleShape).background(c.text))
+                    Box(Modifier.size(11.dp).clip(CircleShape).background(c.text))
                 }
             }
         }

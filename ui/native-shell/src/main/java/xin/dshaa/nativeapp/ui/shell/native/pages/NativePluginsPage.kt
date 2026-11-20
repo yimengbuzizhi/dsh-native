@@ -73,6 +73,14 @@ internal fun NativePluginsPage(
         pluginExtensions = host.pluginExtensionsUi,
         pluginMiddlewareEnabled = host.pluginMiddlewareEnabled,
         onTogglePluginMiddleware = host::setPluginMiddlewareEnabled,
+        // docs/185 P2：Node 插件宿主（实验开关）。
+        nodeHostEnabled = host.nodePluginHostEnabled,
+        nodeHostState = host.nodeHostStateText,
+        onToggleNodeHost = host::setNodePluginHostEnabled,
+        nodeHostPlugins = host.nodeHostPlugins,
+        nodeHostLogs = host.nodeHostLogs,
+        onReloadNodeHost = host::reloadNodeHost,
+        onImportNodePlugin = host::importNodePlugin,
         onRefreshExtensions = host::refreshPluginExtensions,
     )
 }

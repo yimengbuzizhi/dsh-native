@@ -30,6 +30,9 @@ object BuiltinPageIds {
     const val ModelConfig = "ModelConfig"
     const val Assistant = "Assistant"
     const val Behavior = "Behavior"
+
+    /** 主题和外观（深浅模式 / 强调色 / 预览）。 */
+    const val Appearance = "Appearance"
     const val Backup = "Backup"
     const val DataMigration = "DataMigration"
     const val Skills = "Skills"
@@ -43,7 +46,7 @@ object BuiltinPageIds {
     val all: List<String> = listOf(
         Sessions, Workspace, Agents, Jobs, Terminal, VirtualScreen, Accessibility,
         Plugins, Packages, Memory, Settings,
-        ModelConfig, Assistant, Behavior, Backup, DataMigration, Skills, Workspaces,
+        ModelConfig, Assistant, Behavior, Appearance, Backup, DataMigration, Skills, Workspaces,
         Permissions, Privacy, RemoteDsh, About,
     )
 }

@@ -29,3 +29,16 @@ data class PluginExtensionChainUi(
     val stats: String = "",
     val detail: String? = null,
 )
+
+/**
+ * docs/185 P2：Node 宿主里加载成功/失败的一个插件。
+ *
+ * [tools] 是这个插件注册进 `ctx.tools` 的工具名（宿主按加载前后差集算的），
+ * 用户/模型看到的注册名是 `node_<tools[i]>`。
+ */
+data class NodeHostPluginUi(
+    val module: String,
+    val ok: Boolean,
+    val error: String? = null,
+    val tools: List<String> = emptyList(),
+)

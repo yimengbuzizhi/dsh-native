@@ -103,6 +103,7 @@ import xin.dshaa.nativeapp.device.floating.FloatingWindowState
 import xin.dshaa.nativeapp.device.floating.isInternalNotice
 import xin.dshaa.ui.design.component.MarkdownText
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 
 /**
  * Operit `FloatingChatWindowScreen.kt`(1402) 的 WINDOW 模式移植。
@@ -355,7 +356,7 @@ private fun TitleBar(
         Modifier
             .fillMaxWidth()
             .height(48.dp)
-            .background(c.surfaceAlt.copy(alpha = 0.55f))
+            .background(c.surfaceAlt.wash(0.55f))
             .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -556,7 +557,7 @@ private fun ProcessRow(
     val lastTool = toolCalls.lastOrNull()?.name ?: "工具"
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = c.surfaceAlt.copy(alpha = 0.65f),
+        color = c.surfaceAlt.wash(0.65f),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
@@ -604,7 +605,7 @@ private fun ReasoningRow(text: String, streaming: Boolean) {
     var expanded by remember { mutableStateOf(false) }
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = c.surfaceAlt.copy(alpha = 0.65f),
+        color = c.surfaceAlt.wash(0.65f),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
@@ -667,7 +668,7 @@ private fun ProcessingStatus(status: String?, error: String?, streaming: Boolean
         )
     } else if (streaming && !status.isNullOrBlank()) {
         Row(
-            Modifier.fillMaxWidth().background(c.surfaceAlt.copy(alpha = 0.9f))
+            Modifier.fillMaxWidth().background(c.surfaceAlt.wash(0.9f))
                 .padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1144,7 +1145,7 @@ private fun HistoryOverlay(
     ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = c.surface,
+            color = c.panel,
             modifier = Modifier.fillMaxWidth().padding(12.dp).align(Alignment.TopCenter),
         ) {
             Column {

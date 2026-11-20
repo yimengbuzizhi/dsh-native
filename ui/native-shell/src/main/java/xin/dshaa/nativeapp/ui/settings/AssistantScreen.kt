@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -75,6 +80,7 @@ import xin.dshaa.ui.design.component.SettingsInfoBanner
 import xin.dshaa.ui.design.component.SettingsSectionHeader
 import xin.dshaa.ui.design.component.SettingsTextField
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 import java.io.File
 
 /**
@@ -116,9 +122,9 @@ fun AssistantScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {
@@ -146,7 +152,7 @@ fun AssistantScreen(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (isEditing) c.surfaceAlt.copy(alpha = 0.55f) else c.surface)
+                            .background(if (isEditing) c.surfaceAlt.wash(0.55f) else c.surface)
                             .clickable { editingId = profile.id }
                             .padding(horizontal = 10.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -202,7 +208,7 @@ fun AssistantScreen(
                         }
                     }
                     if (index != profiles.lastIndex) {
-                        Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp).height(1.dp).background(c.line.copy(alpha = 0.5f)))
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp).height(1.dp).background(c.line.wash(0.5f)))
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -241,7 +247,7 @@ fun AssistantScreen(
                         Spacer(Modifier.height(6.dp))
                         Surface(
                             shape = RoundedCornerShape(999.dp),
-                            color = c.surfaceAlt.copy(alpha = 0.7f),
+                            color = c.surfaceAlt.wash(0.7f),
                             modifier = Modifier.clickable {
                                 picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                             },
@@ -268,7 +274,7 @@ fun AssistantScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
                                 shape = RoundedCornerShape(999.dp),
-                                color = c.surfaceAlt.copy(alpha = 0.7f),
+                                color = c.surfaceAlt.wash(0.7f),
                                 modifier = Modifier.clickable {
                                     settings.updateAssistantProfile(editing.copy(avatar = ""))
                                     AvatarLoader.clear()
@@ -374,8 +380,8 @@ fun AssistantScreen(
                                     .fillMaxWidth()
                                     .padding(top = 6.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(c.surfaceAlt.copy(alpha = 0.45f))
-                                    .border(1.dp, c.line.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                    .background(c.surfaceAlt.wash(0.45f))
+                                    .border(1.dp, c.line.wash(0.5f), RoundedCornerShape(10.dp))
                                     .padding(horizontal = 10.dp, vertical = 8.dp),
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -484,8 +490,8 @@ fun AssistantScreen(
                                         .fillMaxWidth()
                                         .padding(bottom = 6.dp)
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(c.surfaceAlt.copy(alpha = 0.45f))
-                                        .border(1.dp, c.line.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                        .background(c.surfaceAlt.wash(0.45f))
+                                        .border(1.dp, c.line.wash(0.5f), RoundedCornerShape(10.dp))
                                         .padding(horizontal = 10.dp, vertical = 8.dp),
                                 ) {
                                     Text(
@@ -514,7 +520,7 @@ fun AssistantScreen(
                             }
                         }
                         if (index != withPrompt.lastIndex) {
-                            Box(Modifier.fillMaxWidth().height(1.dp).background(c.line.copy(alpha = 0.5f)))
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(c.line.wash(0.5f)))
                         }
                     }
                 }
@@ -667,10 +673,10 @@ private fun FullscreenTextDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Surface(modifier = Modifier.fillMaxSize(), color = c.background) {
+        Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
                 Row(
-                    Modifier.fillMaxWidth().background(c.surface).padding(horizontal = 8.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(onClick = onDismiss) { Text("取消", color = c.sub) }
@@ -700,7 +706,7 @@ private fun FullscreenTextDialog(
                         .fillMaxWidth()
                         .padding(12.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(c.surface)
+                        .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                         .padding(14.dp),
                     textStyle = TextStyle(color = c.text, fontSize = 15.sp, lineHeight = 23.sp),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(c.brand),

@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.remote
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -65,8 +70,8 @@ fun RemoteDshScreen(
         editing = true
         notice = null
     }
-    Column(Modifier.fillMaxSize().background(c.background)) {
-        Row(Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 6.dp, vertical = 6.dp),
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "返回", tint = c.text) }
             Text("远程电脑", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
@@ -79,7 +84,7 @@ fun RemoteDshScreen(
                 style = MaterialTheme.typography.bodySmall, color = c.sub)
             if (controller.profiles.isEmpty() && !editing) Text("还没有远程电脑，点右上角添加。", color = c.faint)
             controller.profiles.forEach { profile ->
-                Surface(shape = RoundedCornerShape(14.dp), color = c.surface, modifier = Modifier.fillMaxWidth()) {
+                Surface(shape = RoundedCornerShape(14.dp), color = c.panel, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f).clickable { onSelectTarget(profile.id) }) {
@@ -131,6 +136,6 @@ fun RemoteDshScreen(
                 notice = if (controller.removeProfile(profile.id)) "已删除配置" else controller.errorText ?: "删除失败"
                 deleting = null
             }) { Text("删除", color = c.danger) } },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } }, containerColor = c.surface)
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } }, containerColor = c.panel)
     }
 }

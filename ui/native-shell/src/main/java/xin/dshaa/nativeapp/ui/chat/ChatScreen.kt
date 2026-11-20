@@ -24,7 +24,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -56,6 +59,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Alarm
+import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Add
@@ -119,8 +125,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
@@ -131,6 +139,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -139,6 +148,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
@@ -178,6 +188,19 @@ import xin.dshaa.ui.design.chat.parseQuotedAttachment
 import xin.dshaa.ui.design.component.MarkdownText
 import xin.dshaa.ui.design.component.StatusDot
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import xin.dshaa.ui.design.component.WaterOrb
+import xin.dshaa.ui.design.component.WaterOrbShadow
+import xin.dshaa.ui.design.component.WaterOrbWhale
+import xin.dshaa.ui.design.component.threadEdgeFade
+import xin.dshaa.ui.design.theme.LiquidMotion
+import xin.dshaa.ui.design.theme.LocalLiquidTokens
+import xin.dshaa.ui.design.component.liquidClickable
+import xin.dshaa.ui.design.component.liquidEnter
+import xin.dshaa.ui.design.component.inkReveal
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.wash
 
 /** 时间上下文折叠行的时钟：从注入正文的 ISO 时间戳里取 `HH:mm:ss`（M42）。 */
 private val TIME_CONTEXT_CLOCK = Regex("""T(\d{2}:\d{2}:\d{2})""")
@@ -599,14 +622,14 @@ fun ChatScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(c.background)
+            .background(Color.Transparent)
             .imePadding(),
     ) {
         // 顶栏：返回 + 标题/模型 + 搜索 + 更多；搜索态换成输入框 + 命中计数 + 上/下
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(c.surface)
+                .padding(start = 12.dp, end = 12.dp, top = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                 .statusBarsPadding()
                 .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -782,7 +805,7 @@ fun ChatScreen(
         exported?.takeIf { it.ok }?.let { result ->
             AlertDialog(
                 onDismissRequest = { exported = null },
-                containerColor = c.surface,
+                containerColor = c.panel,
                 title = { Text("已导出 Markdown", style = MaterialTheme.typography.titleMedium, color = c.text) },
                 text = {
                     Column {
@@ -830,7 +853,10 @@ fun ChatScreen(
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (visible.isEmpty()) {
-                EmptyChat(assistantName, assistantAvatar, assistantOpening)
+                EmptyChat(assistantName, assistantAvatar, assistantOpening) { picked ->
+                    input = TextFieldValue(picked)
+                    inputFocus.requestFocus()
+                }
             } else {
                 // LazyColumn：长会话（含 41 条导入会话、5000+ 消息）只组合可见项；
                 // key 用消息 id，搜索跳转/流式追加都不会错位。
@@ -838,10 +864,13 @@ fun ChatScreen(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 18.dp)
+                        .padding(horizontal = 14.dp)
+                        // 设计稿 .thread 的 mask：气泡从悬浮顶栏/输入台背后穿过去，两端渐隐
+                        .threadEdgeFade(topSolid = 54.dp, bottomSolid = 88.dp)
                         .nestedScroll(followConnection),
-                    contentPadding = PaddingValues(vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                    // 设计稿 padding：顶部留出悬浮顶栏（safe+68），底部留出输入台（122）
+                    contentPadding = PaddingValues(top = 68.dp, bottom = 118.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     items(rows, key = { row -> rowKey(row) }) { row ->
                         val highlighted = when (row) {
@@ -893,23 +922,40 @@ fun ChatScreen(
                 }
                 if ((!followOutput || listState.canScrollForward) && visible.isNotEmpty()) {
                     val scope = rememberCoroutineScope()
+                    // 「回到底部」是**胶囊**（不是 38dp 圆钮）：之前误把顶栏的
+                    // padding(12,12,6) 注入到了 .size(38.dp) 上，净宽只剩 14dp。
                     Box(
                         Modifier
                             .align(Alignment.BottomCenter)
                             .padding(bottom = 12.dp)
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(c.surface)
+                            .heightIn(min = 38.dp)
+                            .clip(RoundedCornerShape(LiquidRadius.pill))
+                            .liquidGlass(shape = RoundedCornerShape(LiquidRadius.pill), level = LiquidLevel.Panel)
                             .clickable {
                                 followOutput = true
                                 scope.launch {
                                     listState.animateScrollToItem(rows.lastIndex.coerceAtLeast(0))
                                     listState.animateScrollBy(100_000f)
                                 }
-                            },
+                            }
+                            .padding(horizontal = 16.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Rounded.ExpandMore, "回到底部", tint = c.brand, modifier = Modifier.size(20.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Rounded.ExpandMore,
+                                "回到底部",
+                                tint = c.brand,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                "回到底部",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontSize = 12.5.sp,
+                                color = c.sub,
+                            )
+                        }
                     }
                 }
             }
@@ -1514,20 +1560,38 @@ private fun AgentSettledRow(message: ChatMessage) {
 /**
  * 子代理主动发给父代理的消息（`source.kind:"agent-message"`）：正文就是子代理的报告，
  * 界面用一张轻卡片展示（不伪装成用户气泡），让用户能看到委派结果。
+ *
+ * 折叠（2026-11-20 用户反馈「那条消息全部显示、特别长」）：报告往往是整份实现总结，
+ * 默认只显示 [AGENT_MESSAGE_COLLAPSED_LINES] 行纯文本预览 + 行数，点标题行或「展开全文」
+ * 才摊开全文（Markdown 渲染、限高 420dp 内滚，不带动整个聊天列表）；长报告才给折叠控件，
+ * 短报告保持原样全显示（折叠一个三行小消息反而是多余的交互）。
  */
 @Composable
 private fun AgentMessageRow(message: ChatMessage) {
     val c = DshTheme2.colors
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val raw = message.content.filter { it.type == BlockType.TEXT }.joinToString("\n") { it.text }
     val sender = Regex("^Agent (\\S+) sent a message:").find(raw)?.groupValues?.get(1).orEmpty()
     val body = raw.replaceFirst(Regex("^Agent \\S+ sent a message: \\n?"), "")
+    val lineCount = body.count { it == '\n' } + 1
+    val collapsible = body.length > AGENT_MESSAGE_COLLAPSED_CHARS || lineCount > AGENT_MESSAGE_COLLAPSED_LINES
+    // 按消息 id 记忆：同一条消息滚出屏幕再回来仍是折叠态，不同消息互不影响。
+    var expanded by rememberSaveable(message.id) { mutableStateOf(false) }
+    val showFull = expanded || !collapsible
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = if (c.isDark) c.surface else Color(0xFFF3F6FD),
         border = BorderStroke(1.dp, c.brand.copy(alpha = 0.24f)),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(enabled = collapsible) { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(Icons.Rounded.Build, null, tint = c.brand, modifier = Modifier.size(13.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(
@@ -1535,13 +1599,79 @@ private fun AgentMessageRow(message: ChatMessage) {
                     style = MaterialTheme.typography.labelSmall,
                     color = c.brand,
                 )
+                if (collapsible) {
+                    Spacer(Modifier.weight(1f))
+                    Text("$lineCount 行", style = MaterialTheme.typography.labelSmall, color = c.faint)
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = if (expanded) "收起" else "展开",
+                        tint = c.faint,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
             }
             if (body.isNotBlank()) {
                 Spacer(Modifier.height(5.dp))
-                Text(body, style = MaterialTheme.typography.bodyMedium, color = c.text)
+                if (showFull) {
+                    val bodyScroll = rememberScrollState()
+                    MarkdownText(
+                        text = body,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = c.text,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp)
+                            // 报告自己滚，不要带动整个聊天列表（与思考块同一套处理）。
+                            .consumeInnerScroll(bodyScroll)
+                            .verticalScroll(bodyScroll),
+                    )
+                } else {
+                    Text(
+                        agentMessagePreview(body),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = c.text,
+                        maxLines = AGENT_MESSAGE_COLLAPSED_LINES,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (collapsible) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PresentedAction(if (expanded) "收起" else "展开全文") { expanded = !expanded }
+                    Spacer(Modifier.weight(1f))
+                    Text("${body.length} 字", style = MaterialTheme.typography.labelSmall, color = c.faint)
+                    PresentedAction("复制") { copyMessage(clipboard, context, body) }
+                }
             }
         }
     }
+}
+
+/** 折叠态的行数上限 / 字符阈值（超过任一条就出现折叠控件）。 */
+private const val AGENT_MESSAGE_COLLAPSED_LINES = 6
+private const val AGENT_MESSAGE_COLLAPSED_CHARS = 480
+
+/**
+ * 折叠预览用的纯文本：去掉 Markdown 记法（标题井号、引用符、列表符、强调/行内代码记号、
+ * 代码围栏行），否则预览里全是 `##`/`**` 这些噪音。
+ */
+private fun agentMessagePreview(body: String): String {
+    val sb = StringBuilder()
+    for (line in body.lineSequence()) {
+        val l = line.trim()
+        // 代码围栏行整行丢掉（内容仍保留，只是不再出现 ``` 噪音）
+        if (l.startsWith("```")) continue
+        when {
+            l.startsWith("#") -> sb.append(l.trimStart('#').trimStart())
+            l.startsWith("> ") -> sb.append(l.substring(2))
+            l.startsWith("- ") || l.startsWith("* ") || l.startsWith("+ ") -> sb.append("· ").append(l.substring(2))
+            else -> sb.append(l)
+        }
+        sb.append('\n')
+    }
+    val plain = sb.toString().replace(Regex("\\*\\*|__|`|~~"), "").trim()
+    return plain.ifBlank { body.trim() }
 }
 
 /**
@@ -1575,7 +1705,7 @@ private fun GoalDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Flag, null, tint = phaseColor, modifier = Modifier.size(20.dp))
@@ -1740,7 +1870,7 @@ private fun PlanModeStrip(active: Boolean, pending: Boolean?, onExit: () -> Unit
                 Row(
                     Modifier
                         .clip(RoundedCornerShape(999.dp))
-                        .background(c.surface.copy(alpha = 0.85f))
+                        .background(c.surface.wash(0.85f))
                         .clickable { onExit() }
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
@@ -2000,7 +2130,7 @@ private fun ReadOnlyInputNotice(reason: String?) {
             .navigationBarsPadding()
             .padding(horizontal = 12.dp, vertical = 8.dp),
         shape = RoundedCornerShape(16.dp),
-        color = c.surfaceAlt.copy(alpha = 0.75f),
+        color = c.surfaceAlt.wash(0.75f),
         border = BorderStroke(1.dp, c.line2),
     ) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2068,7 +2198,7 @@ private fun AskUserDialog(
         // 点外部/返回键不再「把已选的提交上去」：2026-11-08 用户反馈「没法取消预设回答的选择」，
         // 误触外部区域会把半截选择当成答案发出去；改成等同「跳过」。
         onDismissRequest = { onAnswer(questions.map { xin.dshaa.core.tools.AskAnswer(it.id) }) },
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = {
             Text(
                 questions.firstOrNull()?.header?.takeIf { it.isNotBlank() } ?: "需要你确认",
@@ -2097,7 +2227,7 @@ private fun AskUserDialog(
                                     .fillMaxWidth()
                                     .heightIn(max = 300.dp),
                                 shape = RoundedCornerShape(10.dp),
-                                color = c.surfaceAlt.copy(alpha = 0.7f),
+                                color = c.surfaceAlt.wash(0.7f),
                                 border = BorderStroke(1.dp, c.line2),
                             ) {
                                 Box(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
@@ -2122,7 +2252,7 @@ private fun AskUserDialog(
                                         }
                                     },
                                 shape = RoundedCornerShape(12.dp),
-                                color = if (isOn) c.brandSoft.copy(alpha = if (c.isDark) 0.85f else 0.9f) else c.surfaceAlt.copy(alpha = 0.6f),
+                                color = if (isOn) c.brandSoft.wash(if (c.isDark) 0.85f else 0.9f) else c.surfaceAlt.wash(0.6f),
                                 border = BorderStroke(if (isOn) 1.5.dp else 1.dp, if (isOn) c.brand else c.line2),
                             ) {
                                 Row(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2167,7 +2297,7 @@ private fun AskUserDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(c.surfaceAlt.copy(alpha = 0.5f))
+                                .background(c.surfaceAlt.wash(0.5f))
                                 .border(1.dp, c.line2, RoundedCornerShape(10.dp))
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                             textStyle = TextStyle(color = c.text, fontSize = MaterialTheme.typography.bodySmall.fontSize),
@@ -2304,7 +2434,7 @@ private fun DaySeparator(label: String) {
             style = MaterialTheme.typography.labelSmall,
             color = c.faint,
             modifier = Modifier
-                .background(c.line2.copy(alpha = 0.6f), RoundedCornerShape(50))
+                .background(c.line2.wash(0.6f), RoundedCornerShape(50))
                 .padding(horizontal = 10.dp, vertical = 3.dp),
         )
     }
@@ -2338,7 +2468,7 @@ private fun MessageMenuDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(14.dp),
-            color = c.surface,
+            color = c.panel,
             border = BorderStroke(1.dp, c.line),
             modifier = Modifier.width(228.dp),
         ) {
@@ -2388,7 +2518,7 @@ private fun MessageInfoDialog(message: ChatMessage, onDismiss: () -> Unit) {
     val blocks = message.content
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("消息信息", style = MaterialTheme.typography.titleMedium, color = c.text) },
         text = {
             Column {
@@ -2436,7 +2566,7 @@ private fun SettingsChip(text: String, accent: Boolean = false) {
     val c = DshTheme2.colors
     Surface(
         shape = RoundedCornerShape(50),
-        color = if (accent) c.brand.copy(alpha = 0.12f) else c.line2.copy(alpha = 0.45f),
+        color = if (accent) c.brand.copy(alpha = 0.12f) else c.line2.wash(0.45f),
     ) {
         Text(
             text,
@@ -2492,16 +2622,27 @@ private fun UserMessage(
 
     // Operit Cursor 风：右对齐圆角卡片，整张卡片可长按（文本本身仍可选片段复制）
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-        Surface(
-            shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp),
-            color = c.brandSoft,
+        Box(
             modifier = Modifier
                 .widthIn(max = 340.dp)
+                .liquidGlass(
+                    // 设计稿 .bub：border-radius 20/20/6/20 + background accent-soft（不是玻璃）
+                    shape = RoundedCornerShape(
+                        topStart = 20.dp,
+                        topEnd = 20.dp,
+                        bottomStart = 20.dp,
+                        bottomEnd = 6.dp,
+                    ),
+                    level = LiquidLevel.Pill,
+                    tint = c.brandSoft,
+                    tintGradient = 1f,
+                    elevated = false,
+                )
                 .pointerInput(message.id) {
                     detectTapGestures(onLongPress = { onLongPress(message) })
                 },
         ) {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Column(Modifier.padding(horizontal = 15.dp, vertical = 10.dp)) {
                 images.forEachIndexed { index, (path, _) ->
                     val bitmap = remember(path) { decodeSampledBitmap(path, 1200) }
                     if (bitmap != null) {
@@ -2626,32 +2767,53 @@ private fun AssistantTurn(
             else -> "正在生成回复"
         }
     }
+    // 本轮创建 / 修改 / 交付的文件：统一收到回复末尾（见 TurnFilesCard）。
+    // 页面插件关掉工具导航时，present 的交付物卡片照旧不显示。
+    val turnFiles = remember(messages, results, workspacePath, localArtifacts) {
+        collectTurnFiles(messages, results, workspacePath)
+            .filter { localArtifacts || it.action != FILE_ACTION_PRESENTED }
+    }
 
-    Column(Modifier.fillMaxWidth()) {
-        // Operit Cursor 风：左侧固定 "Response" 小标题，右侧角色名 · 模型（半透明小字）
+    // 设计稿 .reply：整轮回复是一张 22dp 圆角的厚透镜玻璃卡（padding 15/16/7），
+    // 卡里依次是 who 行（青点 + 角色名 + 模型元信息）、思考框、正文、操作栏。
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .liquidEnter()
+            .liquidGlass(
+                shape = RoundedCornerShape(LiquidRadius.l),
+                level = LiquidLevel.Card,
+            )
+            .padding(start = 16.dp, end = 16.dp, top = 15.dp, bottom = 7.dp),
+    ) {
+        // 设计稿 .reply__who：6dp 青点 + 名字，右侧 meta-tag
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(bottom = 6.dp)
+                .padding(bottom = 10.dp)
                 .pointerInput(messages.firstOrNull()?.id) {
                     detectTapGestures(onLongPress = { messages.lastOrNull()?.let(onAction) })
                 },
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Response", style = MaterialTheme.typography.labelSmall, color = c.sub.copy(alpha = 0.7f))
-                if (generating && emptyStep) {
-                    Spacer(Modifier.width(8.dp))
-                    Text("生成中…", style = MaterialTheme.typography.labelSmall, color = c.brand)
-                }
-            }
+            Box(Modifier.size(6.dp).clip(CircleShape).background(c.success))
+            Spacer(Modifier.width(7.dp))
             Text(
                 assistantName.ifBlank { "DSH" },
                 style = MaterialTheme.typography.labelSmall,
-                color = c.faint,
+                color = c.sub,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+            if (generating && emptyStep) {
+                Spacer(Modifier.width(8.dp))
+                Text("生成中…", style = MaterialTheme.typography.labelSmall, color = c.brand)
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "Response",
+                style = MaterialTheme.typography.labelSmall,
+                color = c.faint,
             )
         }
 
@@ -2679,31 +2841,30 @@ private fun AssistantTurn(
             }
             toolCalls.forEach { call ->
                 if (foldProcessBlocks) return@forEach
+                // 交付物卡片不再夹在过程里：统一收到本轮末尾的 TurnFilesCard。
+                if (call.name == "present") return@forEach
                 Spacer(Modifier.height(8.dp))
-                if (localArtifacts && call.name == "present") {
-                    PresentedCard(
-                        arguments = call.arguments,
-                        result = call.toolCallId?.let { results[it] },
-                        workspacePath = workspacePath,
-                    )
-                } else {
-                    ToolCallCard(
-                        name = call.name.orEmpty(),
-                        arguments = call.arguments,
-                        result = call.toolCallId?.let { results[it] },
-                        imagePath = imagePath,
-                        linksEnabled = linksEnabled,
-                        onOpenSubagent = onOpenSubagent,
-                        onOpenJobs = onOpenJobs,
-                        jobsPageEnabled = jobsPageEnabled,
-                    )
-                }
+                ToolCallCard(
+                    name = call.name.orEmpty(),
+                    arguments = call.arguments,
+                    result = call.toolCallId?.let { results[it] },
+                    imagePath = imagePath,
+                    linksEnabled = linksEnabled,
+                    onOpenSubagent = onOpenSubagent,
+                    onOpenJobs = onOpenJobs,
+                    jobsPageEnabled = jobsPageEnabled,
+                )
             }
             if (text.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
                 // 助手正文保留系统文本选择（长按选片段复制）；整条消息的操作菜单只在用户气泡上
+                // 设计稿三.3：水墨晕染式流式打字——流式时正文做一次从左到右的洇出。
                 MarkdownText(
                     text = text,
+                    modifier = Modifier.inkReveal(
+                        trigger = message.id,
+                        enabled = message.streaming,
+                    ),
                     style = MaterialTheme.typography.bodyLarge,
                     color = c.text,
                 )
@@ -2714,23 +2875,48 @@ private fun AssistantTurn(
             }
             if (!message.streaming && (text.isNotBlank() || toolCalls.isNotEmpty())) {
                 Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(formatMessageTime(message.createdAt), style = MaterialTheme.typography.labelSmall, color = c.faint)
+                // 设计稿 .acts：顶边 1px flat 分隔线，操作项 38dp 高 / 11dp 圆角 / 12.5sp dim / 按下 scale(.94)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 5.dp)
+                        .drawBehind {
+                            drawLine(
+                                color = c.line2,
+                                start = Offset(0f, 0f),
+                                end = Offset(size.width, 0f),
+                                strokeWidth = 1.dp.toPx(),
+                            )
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        formatMessageTime(message.createdAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = c.faint,
+                        modifier = Modifier.padding(start = 2.dp),
+                    )
+                    Spacer(Modifier.weight(1f))
                     // 助手正文保留系统文本选择；整条复制/引用走这个小「⋯」，不抢长按手势（M22）。
                     // 只有工具调用、没有正文的消息不给入口（复制/引用都无内容可操作）。
                     if (text.isNotBlank()) {
                         Box(
                             Modifier
-                                .size(24.dp)
-                                .clip(CircleShape)
-                                .clickable { onAction(message) },
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(11.dp))
+                                .liquidClickable(scale = 0.94f) { onAction(message) },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(Icons.Rounded.MoreVert, "消息操作", tint = c.faint, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Rounded.MoreVert, "消息操作", tint = c.sub, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
             }
+        }
+        // 本轮文件卡片：固定收在这一轮的最底部（正文 / 工具过程 / 操作栏之后）。
+        if (turnFiles.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            TurnFilesCard(files = turnFiles, workspacePath = workspacePath)
         }
         // M87-D：助手回合 footer 附加行（插件 `chat.node.assistant`），每轮一条。
         SlotDock("chat.node.assistant", horizontalPadding = 0, verticalPadding = 2)
@@ -2844,58 +3030,63 @@ private fun ThinkingBlock(text: String, streaming: Boolean, defaultExpanded: Boo
         label = "arrow",
     )
 
-    Column(Modifier.fillMaxWidth()) {
+    // 设计稿 .think：flat-l1 底、14dp 圆角、下边距 12dp；头 40dp 高（6dp 品牌呼吸点 + 12.5sp dim + 右侧 chevron）
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surfaceAlt),
+    ) {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable {
-                userToggled = true
-                expanded = !expanded
-            }.padding(vertical = 4.dp),
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 40.dp)
+                .clickable {
+                    userToggled = true
+                    expanded = !expanded
+                }
+                .padding(start = 12.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(
+                        c.brand.copy(alpha = if (shimmer == null) 0.55f else 0.45f + 0.55f * shimmer),
+                    ),
+            )
+            Spacer(Modifier.width(8.dp))
+            ThinkingTitle("思考过程", pulse = shimmer)
+            Spacer(Modifier.weight(1f))
+            Text("${text.length} 字", style = MaterialTheme.typography.labelSmall, color = c.faint)
+            Spacer(Modifier.width(6.dp))
             Icon(
                 Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                 contentDescription = if (expanded) "收起" else "展开",
-                tint = c.brand.copy(alpha = 0.7f),
-                modifier = Modifier.size(20.dp).rotate(arrowRotation),
+                tint = c.sub.copy(alpha = 0.7f),
+                modifier = Modifier.size(16.dp).rotate(arrowRotation),
             )
-            Spacer(Modifier.width(4.dp))
-            ThinkingTitle("思考过程", pulse = shimmer)
-            Spacer(Modifier.width(8.dp))
-            Text("${text.length} 字", style = MaterialTheme.typography.labelSmall, color = c.faint)
         }
         AnimatedVisibility(
             visible = expanded,
             enter = expandVertically(tween(220)) + fadeIn(tween(220)),
             exit = shrinkVertically(tween(220)) + fadeOut(tween(160)),
         ) {
-            // Operit CanvasIndentedGuide：正文左侧一条 1dp、主色@20%、上下渐隐的竖线
+            // 设计稿 .think__body：padding 2/13/11/26、13px / 1.72、dim
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 10.dp, top = 2.dp, bottom = 2.dp)
-                    .drawBehind {
-                        val stroke = 1.dp.toPx()
-                        drawRoundRect(
-                            brush = Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                0.16f to c.brand.copy(alpha = 0.20f),
-                                0.84f to c.brand.copy(alpha = 0.20f),
-                                1f to Color.Transparent,
-                            ),
-                            topLeft = Offset(0f, 0f),
-                            size = Size(stroke, size.height),
-                            cornerRadius = CornerRadius(999f, 999f),
-                        )
-                    },
+                    .padding(start = 26.dp, end = 13.dp, top = 2.dp, bottom = 11.dp),
             ) {
                 val reasoningScroll = rememberScrollState()
                 Text(
                     text,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 22.4.sp),
                     color = c.sub,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 12.dp, end = 4.dp, bottom = 6.dp)
                         .heightIn(max = 300.dp)
                         // 思考正文滚到底后不要带动整个聊天列表（用户 2026-11-11 反馈）。
                         .consumeInnerScroll(reasoningScroll)
@@ -2917,7 +3108,11 @@ private fun ThinkingTitle(title: String, pulse: Float?) {
 private fun Int.toDp() = this.dp
 
 /**
- * `present` 的交付物卡：文件名 + 说明 + 大小 + 打开 / 分享（FileProvider）。
+ * 本轮**文件卡片**：把这一轮里创建 / 修改 / 交付的文件统一收在回复的最底部。
+ *
+ * 为什么挪到底部（用户 2026-11-20「创建或修改文件时自动把文件卡片放到最底部」）：
+ * `write` / `edit` / `present` 的卡片原来夹在过程里，把正文切得七零八落；现在正文先讲完，
+ * 产物固定收尾，滚到底一眼就能看到「这一轮动了哪些文件」。数据由 [collectTurnFiles] 汇总。
  *
  * 路径解析顺序（修复「点打开必然打不开」）：
  * 1. 工具结果里每行的**绝对路径**——PresentTool 用 `resolvePath(path, ctx)` 按会话 cwd 解析过，
@@ -2930,80 +3125,134 @@ private fun Int.toDp() = this.dp
  * directory"，所以模型传相对路径是合法调用，客户端必须自己补上工作区。
  */
 @Composable
-private fun PresentedCard(arguments: String, result: ChatMessage?, workspacePath: String?) {
-    val c = DshTheme2.colors
-    val context = LocalContext.current
-    val files = remember(arguments, result, workspacePath) {
-        mergePresentedResult(parsePresentedFiles(arguments), parsePresentedResult(result))
-    }
+private fun TurnFilesCard(files: List<PresentedFile>, workspacePath: String?) {
     if (files.isEmpty()) return
+    val c = DshTheme2.colors
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val allPresented = files.all { it.action == FILE_ACTION_PRESENTED }
+    val collapsible = files.size > TURN_FILES_PREVIEW
+    val shown = if (collapsible && !expanded) files.take(TURN_FILES_PREVIEW) else files
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = c.surface,
+        color = c.panel,
         border = BorderStroke(1.dp, c.line),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.CheckCircle, null, tint = c.success, modifier = Modifier.size(16.dp))
+                Icon(
+                    if (allPresented) Icons.Rounded.CheckCircle else Icons.Rounded.FolderOpen,
+                    null,
+                    tint = if (allPresented) c.success else c.brand,
+                    modifier = Modifier.size(16.dp),
+                )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "已产出 ${files.size} 个文件",
+                    if (allPresented) "已产出 ${files.size} 个文件" else "本轮文件 · ${files.size} 个",
                     style = MaterialTheme.typography.labelMedium,
                     color = c.text,
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
-            }
-            files.forEach { file ->
-                val target = remember(file, workspacePath) { resolvePresentedFile(workspacePath, file) }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(c.brandSoft),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            file.extensionLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = c.brandBright,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            file.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = c.text,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            // 说明 + 大小（大小来自工具结果；没有结果时退回原始 path）
-                            listOf(file.description.ifBlank { file.path }, file.size)
-                                .filter { it.isNotBlank() }
-                                .joinToString(" · "),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = c.sub,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    if (target != null) {
-                        PresentedAction("打开") { openPresentedFile(context, target) }
-                        PresentedAction("分享") { sharePresentedFile(context, target) }
-                    } else {
-                        Text(
-                            "位置未知",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = c.faint,
-                            modifier = Modifier.padding(horizontal = 6.dp),
-                        )
-                    }
+                if (collapsible) {
+                    Text(
+                        if (expanded) "收起" else "全部 ${files.size} 个",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = c.brand,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { expanded = !expanded }
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                    )
                 }
+            }
+            shown.forEach { file ->
+                TurnFileRow(file = file, workspacePath = workspacePath)
             }
         }
     }
+}
+
+/** 文件卡片里的一行：类型角标 + 文件名 + 新建/修改标记 + 说明/大小 + 打开/分享。 */
+@Composable
+private fun TurnFileRow(file: PresentedFile, workspacePath: String?) {
+    val c = DshTheme2.colors
+    val context = LocalContext.current
+    val target = remember(file, workspacePath) { resolvePresentedFile(workspacePath, file) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(c.brandSoft),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                file.extensionLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = c.brandBright,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    file.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = c.text,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (file.action.isNotBlank()) {
+                    Spacer(Modifier.width(6.dp))
+                    FileActionChip(file.action)
+                }
+            }
+            Text(
+                // 说明 + 大小（大小来自工具结果；没有结果时退回原始 path）
+                listOf(file.description.ifBlank { file.path }, file.size)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = c.sub,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (target != null) {
+            PresentedAction("打开") { openPresentedFile(context, target) }
+            PresentedAction("分享") { sharePresentedFile(context, target) }
+        } else {
+            Text(
+                "位置未知",
+                style = MaterialTheme.typography.labelSmall,
+                color = c.faint,
+                modifier = Modifier.padding(horizontal = 6.dp),
+            )
+        }
+    }
+}
+
+/** `新建` / `修改` / `已产出` 小标记（14% 淡底 + 同色字）。 */
+@Composable
+private fun FileActionChip(action: String) {
+    val c = DshTheme2.colors
+    val tint = when (action) {
+        FILE_ACTION_CREATED -> c.success
+        FILE_ACTION_EDITED -> c.brand
+        else -> c.brandBright
+    }
+    Text(
+        action,
+        style = MaterialTheme.typography.labelSmall,
+        color = tint,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(tint.copy(alpha = 0.14f))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    )
 }
 
 /** 卡片行尾的小按钮（打开 / 分享）。 */
@@ -3030,6 +3279,8 @@ private data class PresentedFile(
     val description: String,
     val absolutePath: String? = null,
     val size: String = "",
+    /** 这个文件在本轮里是怎么来的：`新建` / `修改` / `已产出`（present）。 */
+    val action: String = "",
 ) {
     private val displayPath: String get() = absolutePath ?: path
     val name: String get() = displayPath.substringAfterLast('/')
@@ -3102,6 +3353,82 @@ private fun resolvePresentedFile(workspacePath: String?, file: PresentedFile): F
     if (direct.isAbsolute) return direct
     val root = workspacePath?.takeIf { it.isNotBlank() } ?: return null
     return File(root, raw)
+}
+
+/** 文件卡片里每条的本轮来源。 */
+private const val FILE_ACTION_CREATED = "新建"
+private const val FILE_ACTION_EDITED = "修改"
+private const val FILE_ACTION_PRESENTED = "已产出"
+
+/** 文件卡片默认最多铺几行，超出的折在「全部 N 个」里。 */
+private const val TURN_FILES_PREVIEW = 6
+
+/** 会改动文件的工具：write 新建或覆盖、edit 局部替换（与 core/tools FileTools 的 name 对齐）。 */
+private val fileMutatingTools = setOf("write", "edit")
+
+/** 工具参数里的 `file_path`（write / edit 都用这个名字）。 */
+private val toolFilePathRegex = Regex("\"file_path\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+
+/** 从工具参数 JSON 里取 `file_path`，并把 JSON 转义还原成真实路径。 */
+private fun parseToolFilePath(arguments: String): String? {
+    val raw = toolFilePathRegex.find(arguments)?.groupValues?.get(1) ?: return null
+    return raw.replace("\\\"", "\"")
+        .replace("\\\\", "\\")
+        .replace("\\/", "/")
+        .ifBlank { null }
+}
+
+/**
+ * 汇总一轮里的文件：`present` 的交付物 + `write` / `edit` 改动的文件，按绝对路径去重，
+ * `present` 优先（它带说明和大小）。顺序 = 首次出现的顺序。
+ *
+ * 失败 / 结果没回来的调用**不进卡片**（工具卡片里仍留着原始错误，证据不丢）。
+ */
+private fun collectTurnFiles(
+    messages: List<ChatMessage>,
+    results: Map<String, ChatMessage>,
+    workspacePath: String?,
+): List<PresentedFile> {
+    val out = LinkedHashMap<String, PresentedFile>()
+    fun keyOf(file: PresentedFile): String {
+        val raw = file.absolutePath?.takeIf { it.isNotBlank() }
+            ?: resolvePresentedFile(workspacePath, file)?.path
+            ?: file.path
+        return runCatching { File(raw).canonicalPath }.getOrDefault(raw)
+    }
+    messages.forEach { message ->
+        message.content.filter { it.type == BlockType.TOOL_CALL }.forEach { call ->
+            val name = call.name.orEmpty()
+            val result = call.toolCallId?.let { results[it] }
+            val resultText = result?.content
+                ?.filter { it.type == BlockType.TEXT }
+                ?.joinToString("") { it.text }
+                .orEmpty()
+            when {
+                name == "present" -> {
+                    mergePresentedResult(parsePresentedFiles(call.arguments), parsePresentedResult(result))
+                        .forEach { file ->
+                            val withAction = file.copy(action = FILE_ACTION_PRESENTED)
+                            out[keyOf(withAction)] = withAction
+                        }
+                }
+                name in fileMutatingTools -> {
+                    if (result == null || toolResultLooksFailed(resultText)) return@forEach
+                    val path = parseToolFilePath(call.arguments) ?: return@forEach
+                    val created = name == "write" && resultText.contains("Created file")
+                    val file = PresentedFile(
+                        path = path,
+                        description = "",
+                        action = if (created) FILE_ACTION_CREATED else FILE_ACTION_EDITED,
+                    )
+                    val key = keyOf(file)
+                    // present 的条目带说明和大小，不要被 write/edit 的简版覆盖
+                    if (out[key] == null) out[key] = file
+                }
+            }
+        }
+    }
+    return out.values.toList()
 }
 
 /** FileProvider 的 authority 与 AndroidManifest 里的声明一致（无 applicationIdSuffix）。 */
@@ -3200,7 +3527,7 @@ private fun TodoPanel(todos: List<TodoItem>) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
         shape = RoundedCornerShape(12.dp),
-        color = c.surfaceAlt.copy(alpha = 0.6f),
+        color = c.surfaceAlt.wash(0.6f),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(
@@ -3267,6 +3594,8 @@ private fun ToolCallCard(
     jobsPageEnabled: Boolean = true,
 ) {
     val c = DshTheme2.colors
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     var expanded by rememberSaveable { mutableStateOf(false) }
     var previewPath by remember { mutableStateOf<String?>(null) }
     val resultText = result?.content?.filter { it.type == BlockType.TEXT }?.joinToString("") { it.text }.orEmpty()
@@ -3284,6 +3613,31 @@ private fun ToolCallCard(
     } else {
         null
     }
+    // 参数面补全（2026-11-20）：`description` / `workdir` / `timeoutMs` / 后台标记 / env 项数
+    // 之前只能在展开的原始 JSON 里读到，折叠态完全看不出这条命令在干什么、跑在哪个目录。
+    val argObject = remember(arguments) {
+        runCatching {
+            kotlinx.serialization.json.Json.parseToJsonElement(arguments.ifBlank { "{}" })
+                as? kotlinx.serialization.json.JsonObject
+        }.getOrNull()
+    }
+    fun argText(key: String): String? = argObject?.get(key)
+        ?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() }
+        ?.takeIf { it.isNotBlank() }
+    val argDescription = argText("description")?.takeIf { it != compactArgs(name, arguments) }
+    val argWorkdir = argText("workdir")
+    val argTimeout = argText("timeoutMs")?.toLongOrNull()?.let {
+        if (it % 1000L == 0L) "${it / 1000}s" else "${it}ms"
+    }
+    val argBackground = argObject?.get("run_in_background")
+        ?.let { runCatching { it.jsonPrimitive.booleanOrNull }.getOrNull() } == true
+    val argEnvCount = (argObject?.get("env") as? kotlinx.serialization.json.JsonObject)?.size ?: 0
+    val argMeta = listOfNotNull(
+        "后台运行".takeIf { argBackground },
+        argTimeout?.let { "超时 $it" },
+        argWorkdir?.let { "目录 $it" },
+        if (argEnvCount > 0) "env $argEnvCount 项" else null,
+    ).joinToString(" · ")
 
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -3326,6 +3680,29 @@ private fun ToolCallCard(
                     modifier = Modifier.size(17.dp),
                 )
             }
+            // 工具卡的「人话」副行（2026-11-20 补全）：不展开也能看清这条命令干什么、跑在哪。
+            if (argDescription != null || argMeta.isNotEmpty()) {
+                Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 6.dp)) {
+                    if (argDescription != null) {
+                        Text(
+                            argDescription,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = c.sub,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (argMeta.isNotEmpty()) {
+                        Text(
+                            argMeta,
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                            color = c.faint,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
             // M87-A：插件改写了这次工具结果 → 明确标出改写者与原始哈希（证据不因改写失真）。
             result?.sourceSummary?.takeIf { it.startsWith("已由 ") }?.let { rewrite ->
                 Row(
@@ -3361,7 +3738,7 @@ private fun ToolCallCard(
                                 Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(if (c.isDark) c.surfaceAlt else c.brandSoft.copy(alpha = 0.55f))
+                                    .background(if (c.isDark) c.surfaceAlt else c.brandSoft.wash(0.55f))
                                     .padding(horizontal = 10.dp, vertical = 8.dp),
                             ) {
                                 if (q.isNotBlank()) {
@@ -3431,10 +3808,26 @@ private fun ToolCallCard(
                     )
                     if (resultText.isNotBlank()) {
                         Spacer(Modifier.height(10.dp))
-                        Text("结果", style = MaterialTheme.typography.labelSmall, color = c.faint)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("结果", style = MaterialTheme.typography.labelSmall, color = c.faint)
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                "${resultText.length} 字",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = c.faint,
+                            )
+                            PresentedAction("复制结果") { copyMessage(clipboard, context, resultText) }
+                        }
                         val resultScroll = rememberScrollState()
                         Text(
-                            resultText.take(3000),
+                            // 2026-11-20：原来硬截断到 3000 字符、不给提示也没有复制入口——长输出
+                            // （bash 尾部 30k）既看不全也拿不走；现在渲染到 [TOOL_RESULT_OPEN_CHARS]，
+                            // 超出部分明说，并提供「复制结果」拿全文。
+                            if (resultText.length > TOOL_RESULT_OPEN_CHARS) {
+                                resultText.take(TOOL_RESULT_OPEN_CHARS)
+                            } else {
+                                resultText
+                            },
                             style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
                             color = if (failed) c.danger else c.sub,
                             modifier = Modifier
@@ -3443,6 +3836,15 @@ private fun ToolCallCard(
                                 .verticalScroll(resultScroll)
                                 .padding(top = 3.dp),
                         )
+                        if (resultText.length > TOOL_RESULT_OPEN_CHARS) {
+                            Text(
+                                "…（卡片只渲染前 $TOOL_RESULT_OPEN_CHARS 字符，实际 ${resultText.length} 字符；" +
+                                    "点「复制结果」拿全文）",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = c.faint,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -3549,6 +3951,9 @@ private fun humanBytes(bytes: Int): String = when {
     else -> "$bytes B"
 }
 
+/** 工具结果在卡片里最多渲染多少字符（超出只提示，全文走「复制结果」）。 */
+private const val TOOL_RESULT_OPEN_CHARS = 20_000
+
 private fun compactArgs(name: String, args: String): String {
     val raw = when (name) {
         "bash" -> Regex("\"command\"\\s*:\\s*\"([^\"]*)\"").find(args)?.groupValues?.get(1)
@@ -3560,23 +3965,75 @@ private fun compactArgs(name: String, args: String): String {
     return raw.replace("\n", " ").take(90)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun EmptyChat(assistantName: String, assistantAvatar: String, assistantOpening: String = "") {
+private fun EmptyChat(
+    assistantName: String,
+    assistantAvatar: String,
+    assistantOpening: String = "",
+    onQuickAsk: (String) -> Unit = {},
+) {
     val c = DshTheme2.colors
+    val liquid = LocalLiquidTokens.current
+    val context = LocalContext.current
+    val orbName = assistantName.ifBlank { "鲸歌" }.filterNot { it.isWhitespace() }.take(4)
+    // 设计稿 .is-capsule：球 ⇄ 水囊（218×94）两边都能拨，点球本体或第一颗胶囊都行
+    var capsule by remember { mutableStateOf(false) }
+    val toggleShape: () -> Unit = {
+        capsule = !capsule
+        Toast.makeText(
+            context,
+            if (capsule) "已切换为「厚透镜液态水囊」" else "已切换为「厚透镜失重水球」",
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 24.dp),
+        Modifier.fillMaxSize().padding(horizontal = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        DshAvatar(avatar = assistantAvatar, name = assistantName, size = 64.dp)
-        Spacer(Modifier.height(18.dp))
-        Text(assistantName.ifBlank { "DSH" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = c.text)
-        Spacer(Modifier.height(6.dp))
+        // 中央舞台（设计稿 .hero__stage 240×172）：144dp 厚透镜水球 + 底下跟着呼吸的焦散光斑
+        Box(
+            modifier = Modifier.width(240.dp).height(172.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            WaterOrbShadow(Modifier.align(Alignment.BottomCenter))
+            // reserveCapsuleSpace：形变过程中不重新测量布局，胶囊不会把舞台撑开
+            WaterOrb(
+                size = 144.dp,
+                capsule = capsule,
+                reserveCapsuleSpace = true,
+                onTap = toggleShape,
+            ) {
+                // 设计稿 .water-orb 内容：鲸鱼 glyph + 名称（14px / letter-spacing .30em）
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    WaterOrbWhale(
+                        color = c.text,
+                        modifier = Modifier.width(32.dp).height(21.dp),
+                    )
+                    Text(
+                        text = orbName,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 4.2.sp, // .30em @14px
+                        textAlign = TextAlign.Center,
+                        color = c.text.copy(alpha = 0.95f),
+                        // letter-spacing 会在最后一个字后面多留一份，右移半格抵消（等价 CSS text-indent）
+                        modifier = Modifier.offset(x = 2.1.dp),
+                    )
+                }
+            }
+        }
         if (assistantOpening.isNotBlank()) {
             // 角色卡开场白（M71）：像一条 AI 气泡，但不进会话历史（不伪造 assistant 消息）
+            Spacer(Modifier.height(8.dp))
             Surface(
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-                color = c.surface,
+                shape = RoundedCornerShape(14.dp),
+                color = c.panel,
             ) {
                 Text(
                     assistantOpening,
@@ -3585,12 +4042,107 @@ private fun EmptyChat(assistantName: String, assistantAvatar: String, assistantO
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 )
             }
-            Spacer(Modifier.height(10.dp))
         }
-        Text("说需求，或者让它直接动手。", style = MaterialTheme.typography.bodyMedium, color = c.sub)
+        // 设计稿 .hero：stage / line / pills 之间统一 18 的间距
+        Spacer(Modifier.height(18.dp))
+        // 设计稿 .hero__line：13.5px、dim、letter-spacing .06em
+        Text(
+            "说需求，或者让它直接动手。",
+            style = MaterialTheme.typography.bodyMedium,
+            fontSize = 13.5.sp,
+            color = c.sub,
+            letterSpacing = 0.8.sp,
+        )
+        Spacer(Modifier.height(18.dp))
+        // 快捷提问胶囊（设计稿 .qpill）：38dp 高、pill-fill 底色、不上滤镜、按下缩到 .96
+        val quick = listOf(
+            "这个工作区里有什么" to Icons.Rounded.FolderOpen,
+            "能装哪些插件" to Icons.Rounded.Extension,
+            "帮我配个每日提醒" to Icons.Rounded.Alarm,
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            maxItemsInEachRow = 2,
+            modifier = Modifier.widthIn(max = 400.dp),
+        ) {
+            // 第 0 颗（设计稿 #orbShapeToggle）：切换球 / 水囊，图标跟着目标形状走
+            Row(
+                modifier = Modifier
+                    .liquidEnter(index = 0)
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(LiquidRadius.pill))
+                    .background(liquid.pillFill)
+                    .liquidClickable(scale = 0.96f, onClick = toggleShape)
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                OrbShapeIcon(
+                    capsule = capsule,
+                    tint = c.brand,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    if (capsule) "切换为圆形失重水球" else "切换为液态胶囊水囊",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontSize = 12.5.sp,
+                    color = c.text,
+                )
+            }
+            quick.forEachIndexed { i, item ->
+                Row(
+                    modifier = Modifier
+                        .liquidEnter(index = i + 1)
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(LiquidRadius.pill))
+                        .background(liquid.pillFill)
+                        .liquidClickable(scale = 0.96f, onClick = { onQuickAsk(item.first) })
+                        .padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Icon(item.second, contentDescription = null, tint = c.brand, modifier = Modifier.size(14.dp))
+                    Text(
+                        item.first,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontSize = 12.5.sp,
+                        color = c.text,
+                    )
+                }
+            }
+        }
     }
 }
 
+/**
+ * 设计稿 #orbShapeToggle 的小图标：圆形失重水球 ⇄ 液态胶囊水囊。
+ * 14dp 的画布里画一个 1.6dp 的描边轮廓，圆 ↔ 胶囊之间按 440ms 的厚透镜缓动插值。
+ */
+@Composable
+private fun OrbShapeIcon(
+    capsule: Boolean,
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    val m by animateFloatAsState(
+        targetValue = if (capsule) 1f else 0f,
+        animationSpec = tween(durationMillis = 440, easing = LiquidMotion.enterEasing),
+        label = "orbShapeIcon",
+    )
+    Canvas(modifier) {
+        val sphere = size.minDimension * 0.72f
+        val w = sphere + (size.width - sphere) * m
+        val h = sphere + (size.height * 0.58f - sphere) * m
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset((size.width - w) / 2f, (size.height - h) / 2f),
+            size = Size(w, h),
+            cornerRadius = CornerRadius(h / 2f, h / 2f),
+            style = Stroke(width = 1.6.dp.toPx()),
+        )
+    }
+}
 @Composable
 private fun ApprovalDialog(
     approval: PendingApproval,
@@ -3600,7 +4152,7 @@ private fun ApprovalDialog(
     val c = DshTheme2.colors
     AlertDialog(
         onDismissRequest = { onApproval(false, false) },
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("允许执行 ${approval.toolName}？") },
         text = {
             Column {
@@ -3651,7 +4203,7 @@ private fun SchedulesDialog(
     val c = DshTheme2.colors
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("会话提醒", fontWeight = FontWeight.SemiBold) },
         text = {
             Column(

@@ -249,6 +249,28 @@ interface NativeShellHost {
 
     fun setPluginMiddlewareEnabled(enabled: Boolean)
 
+    // ── docs/185 P2：Node 插件宿主（实验） ─────────────────────────────────────────
+
+    /** 插件页「扩展点」里的 Node 宿主开关（默认关）。 */
+    val nodePluginHostEnabled: Boolean
+
+    /** 宿主状态人话版：`解析运行时 42%` / `已就绪 · 4 个工具 · v26.4.0` / `启动失败：…`。 */
+    val nodeHostStateText: String
+
+    fun setNodePluginHostEnabled(enabled: Boolean)
+
+    /** 宿主里已经加载的模块 + 各自注册的工具（就绪后才有内容）。 */
+    val nodeHostPlugins: List<NodeHostPluginUi>
+
+    /** 宿主日志尾巴（最近 N 行，排障用）。 */
+    val nodeHostLogs: List<String>
+
+    /** 重启宿主，重新按清单加载插件。 */
+    fun reloadNodeHost()
+
+    /** 导入一个 Node 插件 zip（解到 `dsh/plugins/`、写清单、重启宿主）。 */
+    fun importNodePlugin(uri: Uri)
+
     // ── M88-E：AI 全控制插件（审计 / 开关 / 撤销） ─────────────────────────────────
 
     /** 设置里的「AI 全控制插件」总开关（关 = grant/revoke/config/role 直接拒绝）。 */

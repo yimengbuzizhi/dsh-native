@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -10,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -83,6 +89,8 @@ fun SettingsScreen(
     onOpenModelConfig: () -> Unit,
     onOpenAssistant: () -> Unit,
     onOpenBehavior: () -> Unit,
+    /** 主题和外观：深浅模式 / 强调色 / 预览（之前错误地指向 onOpenBehavior）。 */
+    onOpenAppearance: () -> Unit = {},
     onOpenPrivacy: () -> Unit,
     onOpenBackup: () -> Unit,
     onOpenMigration: () -> Unit,
@@ -128,10 +136,10 @@ fun SettingsScreen(
     val featureOn = memoryOn || packagesOn || skillsOn || agentsOn || jobsOn || terminalOn ||
         virtualScreenOn || accessibilityOn || permissionsOn || remoteOn
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         // Operit 顶栏：☰ + 页面标题
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (menuVisible) {
@@ -183,8 +191,12 @@ fun SettingsScreen(
                         SettingsNavRow(
                             icon = Icons.Rounded.Palette,
                             title = "主题和外观",
-                            subtitle = "跟随系统深色模式",
-                            onClick = onOpenBehavior,
+                            subtitle = when (settings.themeMode) {
+                                "light" -> "浅色 · 亮蓝白墙面"
+                                "dark" -> "深色 · 深蓝夜海"
+                                else -> "跟随系统深色模式"
+                            },
+                            onClick = onOpenAppearance,
                         )
                     }
                 }

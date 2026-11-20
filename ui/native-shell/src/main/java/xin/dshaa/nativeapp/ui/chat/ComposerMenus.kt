@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 
 /**
  * 输入栏的浮层菜单（M60，逐项照 Operit `AgentModelSelectorPopup` / `AgentExtraSettingsPopup`）。
@@ -98,7 +99,7 @@ fun ComposerMenuPopup(
                         onClick = {},
                     ),
                 shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(containerColor = c.surface),
+                colors = CardDefaults.cardColors(containerColor = c.panel),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
             ) {
                 Column(
@@ -191,9 +192,9 @@ fun ComposerMenuGroupBody(content: @Composable ColumnScope.() -> Unit) {
     val c = DshTheme2.colors
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = c.surfaceAlt.copy(alpha = 0.55f)),
+            colors = CardDefaults.cardColors(containerColor = c.surfaceAlt.wash(0.55f)),
             shape = RoundedCornerShape(8.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, c.line.copy(alpha = 0.6f)),
+            border = androidx.compose.foundation.BorderStroke(1.dp, c.line.wash(0.6f)),
         ) {
             Column(Modifier.fillMaxWidth().padding(vertical = 3.dp), content = content)
         }

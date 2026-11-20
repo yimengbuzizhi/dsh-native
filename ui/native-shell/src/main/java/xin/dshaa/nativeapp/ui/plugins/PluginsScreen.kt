@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.plugins
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import android.Manifest
 import android.net.Uri
 import android.os.Build
@@ -90,6 +95,7 @@ import xin.dshaa.ui.design.component.MiniChip
 import xin.dshaa.ui.design.component.SectionHeader
 import xin.dshaa.ui.design.component.SettingsSwitchRow
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.shellapi.NodeHostPluginUi
 import xin.dshaa.ui.shellapi.PluginExtensionUi
 import xin.dshaa.ui.shellapi.visibleInRoleList
 import kotlinx.serialization.json.Json
@@ -168,6 +174,14 @@ fun PluginsScreen(
     pluginExtensions: List<PluginExtensionUi> = emptyList(),
     pluginMiddlewareEnabled: Boolean = true,
     onTogglePluginMiddleware: (Boolean) -> Unit = {},
+    /** docs/185 P2：Node 插件宿主（跑真 dsh Node 插件）的开关与状态文案。 */
+    nodeHostEnabled: Boolean = false,
+    nodeHostState: String = "",
+    onToggleNodeHost: (Boolean) -> Unit = {},
+    nodeHostPlugins: List<NodeHostPluginUi> = emptyList(),
+    nodeHostLogs: List<String> = emptyList(),
+    onReloadNodeHost: () -> Unit = {},
+    onImportNodePlugin: (Uri) -> Unit = {},
     onRefreshExtensions: () -> Unit = {},
     /** M88-E：AI 授予后的横幅「撤销」与详情审计/AI 授予标记。 */
     onUndoAiGrant: () -> Unit = {},
@@ -210,15 +224,21 @@ fun PluginsScreen(
         if (uri != null) onImport(uri)
     }
 
+    // docs/185 P4 最小导入：Node 插件 zip → dsh/plugins/ + node-host-plugins.json。
+    val nodePluginPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onImportNodePlugin(uri)
+    }
+    var nodeLogsOpen by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) { onRefresh() }
     // M87-F：切到「扩展点」页签时重算一次快照（命中/耗时只在本进程内存里）。
     LaunchedEffect(tab) { if (tab == 3) onRefreshExtensions() }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(c.surface)
+                .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                 .statusBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -245,7 +265,7 @@ fun PluginsScreen(
             TextButton(onClick = { showCapabilities = true }) { Text("帮助", color = c.sub) }
         }
 
-        TabRow(selectedTabIndex = tab, containerColor = c.surface, contentColor = c.brand) {
+        TabRow(selectedTabIndex = tab, containerColor = c.panel, contentColor = c.brand) {
             listOf("导入", "内置", "角色", "扩展点").forEachIndexed { index, label ->
                 Tab(selected = tab == index, onClick = { tab = index }, text = { Text(label) })
             }
@@ -362,6 +382,168 @@ fun PluginsScreen(
                     }
                 }
                 3 -> {
+                    // docs/185 P2：Node 插件宿主（实验）——跑真 dsh Node 插件的独立进程。
+                    item {
+                        DshCard(Modifier.fillMaxWidth()) {
+                            Column {
+                                SettingsSwitchRow(
+                                    title = "Node 插件宿主（实验）",
+                                    subtitle = if (nodeHostState.isBlank()) {
+                                        "装好就用：原生先起，1.5s 后在后台起 Node 进程跑真 dsh 插件（cordis / npm 原样零补丁）；首次要解压约 25MB 运行时"
+                                    } else {
+                                        "状态：$nodeHostState"
+                                    },
+                                    checked = nodeHostEnabled,
+                                    onCheckedChange = onToggleNodeHost,
+                                )
+                                if (nodeHostEnabled) {
+                                    RowDivider()
+                                    Text(
+                                        "插件不用进单独页面：原生插件和 Node 插件在同一个插件页里列，工具统一以 node_ 前缀进模型工具表。" +
+                                            "崩溃会自动重启（最多 3 次）；关掉开关回收进程与工具名。",
+                                        color = c.faint,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(14.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (nodeHostEnabled) {
+                        // 看得见的部分：宿主里到底加载了什么、每个插件注册了哪些工具、日志尾巴。
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "Node 插件（${nodeHostPlugins.size}）",
+                                    color = c.sub,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    "导入 .zip",
+                                    color = c.brand,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.clickable {
+                                        nodePluginPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                                    },
+                                )
+                                Spacer(Modifier.width(14.dp))
+                                Text(
+                                    "重新加载",
+                                    color = c.brand,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.clickable(enabled = nodeHostState.isNotBlank()) { onReloadNodeHost() },
+                                )
+                            }
+                        }
+                        if (nodeHostPlugins.isEmpty()) {
+                            item {
+                                DshCard(Modifier.fillMaxWidth()) {
+                                    Text(
+                                        "宿主还没报上来模块（要等它就绪；就绪前状态行会显示「正在解压 / 正在启动」）。",
+                                        color = c.faint,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(14.dp),
+                                    )
+                                }
+                            }
+                        }
+                        items(nodeHostPlugins, key = { "node:" + it.module }) { plugin ->
+                            DshCard(Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(14.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(if (plugin.ok) c.success else c.danger),
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            when {
+                                                plugin.module.startsWith("./plugins/") ->
+                                                    plugin.module.removePrefix("./plugins/").substringBeforeLast('/')
+                                                else -> plugin.module.substringAfterLast('/').ifBlank { plugin.module }
+                                            },
+                                            color = c.text,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Text(
+                                            if (plugin.ok) "已加载" else "加载失败",
+                                            color = if (plugin.ok) c.sub else c.danger,
+                                            style = MaterialTheme.typography.labelSmall,
+                                        )
+                                    }
+                                    Text(
+                                        plugin.module,
+                                        color = c.faint,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    when {
+                                        plugin.tools.isNotEmpty() -> Text(
+                                            "注册工具：" + plugin.tools.joinToString("、") { "node_$it" },
+                                            color = c.sub,
+                                            style = MaterialTheme.typography.labelSmall,
+                                        )
+                                        plugin.ok -> Text(
+                                            "这个插件没注册工具（可能只注册了提示词段/供应商/命令，P3 才接）。",
+                                            color = c.faint,
+                                            style = MaterialTheme.typography.labelSmall,
+                                        )
+                                    }
+                                    plugin.error?.let { message ->
+                                        Text(
+                                            message,
+                                            color = c.danger,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            maxLines = 5,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        item {
+                            DshCard(Modifier.fillMaxWidth()) {
+                                Column {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            "宿主日志（${nodeHostLogs.size} 行）",
+                                            color = c.sub,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Text(
+                                            if (nodeLogsOpen) "收起" else "展开",
+                                            color = c.brand,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.clickable { nodeLogsOpen = !nodeLogsOpen },
+                                        )
+                                    }
+                                    if (nodeLogsOpen) {
+                                        Text(
+                                            nodeHostLogs.joinToString("\n").ifBlank { "（还没有日志）" },
+                                            color = c.faint,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // M87-F：总开关 + 逐链快照（注册者/顺序/命中/耗时/异常/改写哈希）。
                     item {
                         DshCard(Modifier.fillMaxWidth()) {
@@ -415,7 +597,7 @@ fun PluginsScreen(
                 DetailField("说明", item.plugin.description)
                 if (item.plugin.tools.isNotEmpty()) DetailField("工具", item.plugin.tools.joinToString("、"))
                 if (item.plugin.screens.isNotEmpty()) DetailField("页面", item.plugin.screens.joinToString("、"))
-            } }, confirmButton = { TextButton(onClick = { builtinDetailId = null }) { Text("关闭") } }, containerColor = c.surface)
+            } }, confirmButton = { TextButton(onClick = { builtinDetailId = null }) { Text("关闭") } }, containerColor = c.panel)
     }
 
     val detailRecord = plugins.firstOrNull { it.id == detailId }
@@ -462,7 +644,7 @@ fun PluginsScreen(
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text("取消", color = c.sub) }
             },
-            containerColor = c.surface,
+            containerColor = c.panel,
         )
     }
 
@@ -541,7 +723,7 @@ private fun CapabilityDialog(onDismiss: () -> Unit) {
     val done = PluginCapabilities.all.count { it.implemented }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("插件 API 参考", color = c.text) },
         text = {
             Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
@@ -594,7 +776,7 @@ private fun ImportCard(busy: Boolean, onPick: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) { onPick() },
         shape = RoundedCornerShape(18.dp),
-        color = c.surface,
+        color = c.panel,
         border = BorderStroke(1.dp, if (busy) c.brand else c.line),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -707,7 +889,7 @@ private fun PluginCard(
     val c = DshTheme2.colors
     Surface(
         modifier = Modifier.fillMaxWidth().clickable { onOpen() },
-        shape = RoundedCornerShape(16.dp), color = c.surface,
+        shape = RoundedCornerShape(16.dp), color = c.panel,
         border = BorderStroke(1.dp, if (record.error != null) c.danger.copy(alpha = 0.45f) else c.line2),
     ) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1288,7 +1470,7 @@ private fun ConfigEditDialog(
                 },
                 confirmButton = { TextButton(onClick = { onSave(selected) }) { Text("保存", color = c.brand) } },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1305,7 +1487,7 @@ private fun ConfigEditDialog(
                 },
                 confirmButton = { TextButton(onClick = { onSave(JsonPrimitive(checked)) }) { Text("保存", color = c.brand) } },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1364,7 +1546,7 @@ private fun ConfigEditDialog(
                     }) { Text("保存", color = c.brand) }
                 },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1396,7 +1578,7 @@ private fun ConfigEditDialog(
                     }) { Text("保存", color = c.brand) }
                 },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1454,7 +1636,7 @@ private fun ConfigEditDialog(
                     }) { Text("保存", color = c.brand) }
                 },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
     }
@@ -1527,7 +1709,7 @@ private fun PermissionConfirmDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消", color = c.sub) }
         },
-        containerColor = c.surface,
+        containerColor = c.panel,
     )
 }
 
