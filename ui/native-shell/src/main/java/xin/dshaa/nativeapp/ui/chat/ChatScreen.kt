@@ -24,7 +24,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -56,6 +59,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Alarm
+import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Add
@@ -119,8 +125,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
@@ -131,6 +139,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -178,6 +187,19 @@ import xin.dshaa.ui.design.chat.parseQuotedAttachment
 import xin.dshaa.ui.design.component.MarkdownText
 import xin.dshaa.ui.design.component.StatusDot
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import xin.dshaa.ui.design.component.WaterOrb
+import xin.dshaa.ui.design.component.WaterOrbShadow
+import xin.dshaa.ui.design.component.WaterOrbWhale
+import xin.dshaa.ui.design.component.threadEdgeFade
+import xin.dshaa.ui.design.theme.LiquidMotion
+import xin.dshaa.ui.design.theme.LocalLiquidTokens
+import xin.dshaa.ui.design.component.liquidClickable
+import xin.dshaa.ui.design.component.liquidEnter
+import xin.dshaa.ui.design.component.inkReveal
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.wash
 
 /** 时间上下文折叠行的时钟：从注入正文的 ISO 时间戳里取 `HH:mm:ss`（M42）。 */
 private val TIME_CONTEXT_CLOCK = Regex("""T(\d{2}:\d{2}:\d{2})""")
@@ -599,14 +621,14 @@ fun ChatScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(c.background)
+            .background(Color.Transparent)
             .imePadding(),
     ) {
         // 顶栏：返回 + 标题/模型 + 搜索 + 更多；搜索态换成输入框 + 命中计数 + 上/下
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(c.surface)
+                .padding(start = 12.dp, end = 12.dp, top = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                 .statusBarsPadding()
                 .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -782,7 +804,7 @@ fun ChatScreen(
         exported?.takeIf { it.ok }?.let { result ->
             AlertDialog(
                 onDismissRequest = { exported = null },
-                containerColor = c.surface,
+                containerColor = c.panel,
                 title = { Text("已导出 Markdown", style = MaterialTheme.typography.titleMedium, color = c.text) },
                 text = {
                     Column {
@@ -830,7 +852,10 @@ fun ChatScreen(
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (visible.isEmpty()) {
-                EmptyChat(assistantName, assistantAvatar, assistantOpening)
+                EmptyChat(assistantName, assistantAvatar, assistantOpening) { picked ->
+                    input = TextFieldValue(picked)
+                    inputFocus.requestFocus()
+                }
             } else {
                 // LazyColumn：长会话（含 41 条导入会话、5000+ 消息）只组合可见项；
                 // key 用消息 id，搜索跳转/流式追加都不会错位。
@@ -838,10 +863,13 @@ fun ChatScreen(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 18.dp)
+                        .padding(horizontal = 14.dp)
+                        // 设计稿 .thread 的 mask：气泡从悬浮顶栏/输入台背后穿过去，两端渐隐
+                        .threadEdgeFade(topSolid = 54.dp, bottomSolid = 88.dp)
                         .nestedScroll(followConnection),
-                    contentPadding = PaddingValues(vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                    // 设计稿 padding：顶部留出悬浮顶栏（safe+68），底部留出输入台（122）
+                    contentPadding = PaddingValues(top = 68.dp, bottom = 118.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     items(rows, key = { row -> rowKey(row) }) { row ->
                         val highlighted = when (row) {
@@ -893,23 +921,40 @@ fun ChatScreen(
                 }
                 if ((!followOutput || listState.canScrollForward) && visible.isNotEmpty()) {
                     val scope = rememberCoroutineScope()
+                    // 「回到底部」是**胶囊**（不是 38dp 圆钮）：之前误把顶栏的
+                    // padding(12,12,6) 注入到了 .size(38.dp) 上，净宽只剩 14dp。
                     Box(
                         Modifier
                             .align(Alignment.BottomCenter)
                             .padding(bottom = 12.dp)
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(c.surface)
+                            .heightIn(min = 38.dp)
+                            .clip(RoundedCornerShape(LiquidRadius.pill))
+                            .liquidGlass(shape = RoundedCornerShape(LiquidRadius.pill), level = LiquidLevel.Panel)
                             .clickable {
                                 followOutput = true
                                 scope.launch {
                                     listState.animateScrollToItem(rows.lastIndex.coerceAtLeast(0))
                                     listState.animateScrollBy(100_000f)
                                 }
-                            },
+                            }
+                            .padding(horizontal = 16.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Rounded.ExpandMore, "回到底部", tint = c.brand, modifier = Modifier.size(20.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Rounded.ExpandMore,
+                                "回到底部",
+                                tint = c.brand,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                "回到底部",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontSize = 12.5.sp,
+                                color = c.sub,
+                            )
+                        }
                     }
                 }
             }
@@ -1575,7 +1620,7 @@ private fun GoalDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Flag, null, tint = phaseColor, modifier = Modifier.size(20.dp))
@@ -1740,7 +1785,7 @@ private fun PlanModeStrip(active: Boolean, pending: Boolean?, onExit: () -> Unit
                 Row(
                     Modifier
                         .clip(RoundedCornerShape(999.dp))
-                        .background(c.surface.copy(alpha = 0.85f))
+                        .background(c.surface.wash(0.85f))
                         .clickable { onExit() }
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
@@ -2000,7 +2045,7 @@ private fun ReadOnlyInputNotice(reason: String?) {
             .navigationBarsPadding()
             .padding(horizontal = 12.dp, vertical = 8.dp),
         shape = RoundedCornerShape(16.dp),
-        color = c.surfaceAlt.copy(alpha = 0.75f),
+        color = c.surfaceAlt.wash(0.75f),
         border = BorderStroke(1.dp, c.line2),
     ) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2068,7 +2113,7 @@ private fun AskUserDialog(
         // 点外部/返回键不再「把已选的提交上去」：2026-11-08 用户反馈「没法取消预设回答的选择」，
         // 误触外部区域会把半截选择当成答案发出去；改成等同「跳过」。
         onDismissRequest = { onAnswer(questions.map { xin.dshaa.core.tools.AskAnswer(it.id) }) },
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = {
             Text(
                 questions.firstOrNull()?.header?.takeIf { it.isNotBlank() } ?: "需要你确认",
@@ -2097,7 +2142,7 @@ private fun AskUserDialog(
                                     .fillMaxWidth()
                                     .heightIn(max = 300.dp),
                                 shape = RoundedCornerShape(10.dp),
-                                color = c.surfaceAlt.copy(alpha = 0.7f),
+                                color = c.surfaceAlt.wash(0.7f),
                                 border = BorderStroke(1.dp, c.line2),
                             ) {
                                 Box(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
@@ -2122,7 +2167,7 @@ private fun AskUserDialog(
                                         }
                                     },
                                 shape = RoundedCornerShape(12.dp),
-                                color = if (isOn) c.brandSoft.copy(alpha = if (c.isDark) 0.85f else 0.9f) else c.surfaceAlt.copy(alpha = 0.6f),
+                                color = if (isOn) c.brandSoft.wash(if (c.isDark) 0.85f else 0.9f) else c.surfaceAlt.wash(0.6f),
                                 border = BorderStroke(if (isOn) 1.5.dp else 1.dp, if (isOn) c.brand else c.line2),
                             ) {
                                 Row(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2167,7 +2212,7 @@ private fun AskUserDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(c.surfaceAlt.copy(alpha = 0.5f))
+                                .background(c.surfaceAlt.wash(0.5f))
                                 .border(1.dp, c.line2, RoundedCornerShape(10.dp))
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                             textStyle = TextStyle(color = c.text, fontSize = MaterialTheme.typography.bodySmall.fontSize),
@@ -2304,7 +2349,7 @@ private fun DaySeparator(label: String) {
             style = MaterialTheme.typography.labelSmall,
             color = c.faint,
             modifier = Modifier
-                .background(c.line2.copy(alpha = 0.6f), RoundedCornerShape(50))
+                .background(c.line2.wash(0.6f), RoundedCornerShape(50))
                 .padding(horizontal = 10.dp, vertical = 3.dp),
         )
     }
@@ -2338,7 +2383,7 @@ private fun MessageMenuDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(14.dp),
-            color = c.surface,
+            color = c.panel,
             border = BorderStroke(1.dp, c.line),
             modifier = Modifier.width(228.dp),
         ) {
@@ -2388,7 +2433,7 @@ private fun MessageInfoDialog(message: ChatMessage, onDismiss: () -> Unit) {
     val blocks = message.content
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("消息信息", style = MaterialTheme.typography.titleMedium, color = c.text) },
         text = {
             Column {
@@ -2436,7 +2481,7 @@ private fun SettingsChip(text: String, accent: Boolean = false) {
     val c = DshTheme2.colors
     Surface(
         shape = RoundedCornerShape(50),
-        color = if (accent) c.brand.copy(alpha = 0.12f) else c.line2.copy(alpha = 0.45f),
+        color = if (accent) c.brand.copy(alpha = 0.12f) else c.line2.wash(0.45f),
     ) {
         Text(
             text,
@@ -2492,16 +2537,27 @@ private fun UserMessage(
 
     // Operit Cursor 风：右对齐圆角卡片，整张卡片可长按（文本本身仍可选片段复制）
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-        Surface(
-            shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp),
-            color = c.brandSoft,
+        Box(
             modifier = Modifier
                 .widthIn(max = 340.dp)
+                .liquidGlass(
+                    // 设计稿 .bub：border-radius 20/20/6/20 + background accent-soft（不是玻璃）
+                    shape = RoundedCornerShape(
+                        topStart = 20.dp,
+                        topEnd = 20.dp,
+                        bottomStart = 20.dp,
+                        bottomEnd = 6.dp,
+                    ),
+                    level = LiquidLevel.Pill,
+                    tint = c.brandSoft,
+                    tintGradient = 1f,
+                    elevated = false,
+                )
                 .pointerInput(message.id) {
                     detectTapGestures(onLongPress = { onLongPress(message) })
                 },
         ) {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Column(Modifier.padding(horizontal = 15.dp, vertical = 10.dp)) {
                 images.forEachIndexed { index, (path, _) ->
                     val bitmap = remember(path) { decodeSampledBitmap(path, 1200) }
                     if (bitmap != null) {
@@ -2627,31 +2683,46 @@ private fun AssistantTurn(
         }
     }
 
-    Column(Modifier.fillMaxWidth()) {
-        // Operit Cursor 风：左侧固定 "Response" 小标题，右侧角色名 · 模型（半透明小字）
+    // 设计稿 .reply：整轮回复是一张 22dp 圆角的厚透镜玻璃卡（padding 15/16/7），
+    // 卡里依次是 who 行（青点 + 角色名 + 模型元信息）、思考框、正文、操作栏。
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .liquidEnter()
+            .liquidGlass(
+                shape = RoundedCornerShape(LiquidRadius.l),
+                level = LiquidLevel.Card,
+            )
+            .padding(start = 16.dp, end = 16.dp, top = 15.dp, bottom = 7.dp),
+    ) {
+        // 设计稿 .reply__who：6dp 青点 + 名字，右侧 meta-tag
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(bottom = 6.dp)
+                .padding(bottom = 10.dp)
                 .pointerInput(messages.firstOrNull()?.id) {
                     detectTapGestures(onLongPress = { messages.lastOrNull()?.let(onAction) })
                 },
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Response", style = MaterialTheme.typography.labelSmall, color = c.sub.copy(alpha = 0.7f))
-                if (generating && emptyStep) {
-                    Spacer(Modifier.width(8.dp))
-                    Text("生成中…", style = MaterialTheme.typography.labelSmall, color = c.brand)
-                }
-            }
+            Box(Modifier.size(6.dp).clip(CircleShape).background(c.success))
+            Spacer(Modifier.width(7.dp))
             Text(
                 assistantName.ifBlank { "DSH" },
                 style = MaterialTheme.typography.labelSmall,
-                color = c.faint,
+                color = c.sub,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+            if (generating && emptyStep) {
+                Spacer(Modifier.width(8.dp))
+                Text("生成中…", style = MaterialTheme.typography.labelSmall, color = c.brand)
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "Response",
+                style = MaterialTheme.typography.labelSmall,
+                color = c.faint,
             )
         }
 
@@ -2702,8 +2773,13 @@ private fun AssistantTurn(
             if (text.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
                 // 助手正文保留系统文本选择（长按选片段复制）；整条消息的操作菜单只在用户气泡上
+                // 设计稿三.3：水墨晕染式流式打字——流式时正文做一次从左到右的洇出。
                 MarkdownText(
                     text = text,
+                    modifier = Modifier.inkReveal(
+                        trigger = message.id,
+                        enabled = message.streaming,
+                    ),
                     style = MaterialTheme.typography.bodyLarge,
                     color = c.text,
                 )
@@ -2714,19 +2790,39 @@ private fun AssistantTurn(
             }
             if (!message.streaming && (text.isNotBlank() || toolCalls.isNotEmpty())) {
                 Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(formatMessageTime(message.createdAt), style = MaterialTheme.typography.labelSmall, color = c.faint)
+                // 设计稿 .acts：顶边 1px flat 分隔线，操作项 38dp 高 / 11dp 圆角 / 12.5sp dim / 按下 scale(.94)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 5.dp)
+                        .drawBehind {
+                            drawLine(
+                                color = c.line2,
+                                start = Offset(0f, 0f),
+                                end = Offset(size.width, 0f),
+                                strokeWidth = 1.dp.toPx(),
+                            )
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        formatMessageTime(message.createdAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = c.faint,
+                        modifier = Modifier.padding(start = 2.dp),
+                    )
+                    Spacer(Modifier.weight(1f))
                     // 助手正文保留系统文本选择；整条复制/引用走这个小「⋯」，不抢长按手势（M22）。
                     // 只有工具调用、没有正文的消息不给入口（复制/引用都无内容可操作）。
                     if (text.isNotBlank()) {
                         Box(
                             Modifier
-                                .size(24.dp)
-                                .clip(CircleShape)
-                                .clickable { onAction(message) },
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(11.dp))
+                                .liquidClickable(scale = 0.94f) { onAction(message) },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(Icons.Rounded.MoreVert, "消息操作", tint = c.faint, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Rounded.MoreVert, "消息操作", tint = c.sub, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -2844,58 +2940,63 @@ private fun ThinkingBlock(text: String, streaming: Boolean, defaultExpanded: Boo
         label = "arrow",
     )
 
-    Column(Modifier.fillMaxWidth()) {
+    // 设计稿 .think：flat-l1 底、14dp 圆角、下边距 12dp；头 40dp 高（6dp 品牌呼吸点 + 12.5sp dim + 右侧 chevron）
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surfaceAlt),
+    ) {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable {
-                userToggled = true
-                expanded = !expanded
-            }.padding(vertical = 4.dp),
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 40.dp)
+                .clickable {
+                    userToggled = true
+                    expanded = !expanded
+                }
+                .padding(start = 12.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(
+                        c.brand.copy(alpha = if (shimmer == null) 0.55f else 0.45f + 0.55f * shimmer),
+                    ),
+            )
+            Spacer(Modifier.width(8.dp))
+            ThinkingTitle("思考过程", pulse = shimmer)
+            Spacer(Modifier.weight(1f))
+            Text("${text.length} 字", style = MaterialTheme.typography.labelSmall, color = c.faint)
+            Spacer(Modifier.width(6.dp))
             Icon(
                 Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                 contentDescription = if (expanded) "收起" else "展开",
-                tint = c.brand.copy(alpha = 0.7f),
-                modifier = Modifier.size(20.dp).rotate(arrowRotation),
+                tint = c.sub.copy(alpha = 0.7f),
+                modifier = Modifier.size(16.dp).rotate(arrowRotation),
             )
-            Spacer(Modifier.width(4.dp))
-            ThinkingTitle("思考过程", pulse = shimmer)
-            Spacer(Modifier.width(8.dp))
-            Text("${text.length} 字", style = MaterialTheme.typography.labelSmall, color = c.faint)
         }
         AnimatedVisibility(
             visible = expanded,
             enter = expandVertically(tween(220)) + fadeIn(tween(220)),
             exit = shrinkVertically(tween(220)) + fadeOut(tween(160)),
         ) {
-            // Operit CanvasIndentedGuide：正文左侧一条 1dp、主色@20%、上下渐隐的竖线
+            // 设计稿 .think__body：padding 2/13/11/26、13px / 1.72、dim
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 10.dp, top = 2.dp, bottom = 2.dp)
-                    .drawBehind {
-                        val stroke = 1.dp.toPx()
-                        drawRoundRect(
-                            brush = Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                0.16f to c.brand.copy(alpha = 0.20f),
-                                0.84f to c.brand.copy(alpha = 0.20f),
-                                1f to Color.Transparent,
-                            ),
-                            topLeft = Offset(0f, 0f),
-                            size = Size(stroke, size.height),
-                            cornerRadius = CornerRadius(999f, 999f),
-                        )
-                    },
+                    .padding(start = 26.dp, end = 13.dp, top = 2.dp, bottom = 11.dp),
             ) {
                 val reasoningScroll = rememberScrollState()
                 Text(
                     text,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 22.4.sp),
                     color = c.sub,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 12.dp, end = 4.dp, bottom = 6.dp)
                         .heightIn(max = 300.dp)
                         // 思考正文滚到底后不要带动整个聊天列表（用户 2026-11-11 反馈）。
                         .consumeInnerScroll(reasoningScroll)
@@ -2939,7 +3040,7 @@ private fun PresentedCard(arguments: String, result: ChatMessage?, workspacePath
     if (files.isEmpty()) return
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = c.surface,
+        color = c.panel,
         border = BorderStroke(1.dp, c.line),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -3200,7 +3301,7 @@ private fun TodoPanel(todos: List<TodoItem>) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
         shape = RoundedCornerShape(12.dp),
-        color = c.surfaceAlt.copy(alpha = 0.6f),
+        color = c.surfaceAlt.wash(0.6f),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(
@@ -3361,7 +3462,7 @@ private fun ToolCallCard(
                                 Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(if (c.isDark) c.surfaceAlt else c.brandSoft.copy(alpha = 0.55f))
+                                    .background(if (c.isDark) c.surfaceAlt else c.brandSoft.wash(0.55f))
                                     .padding(horizontal = 10.dp, vertical = 8.dp),
                             ) {
                                 if (q.isNotBlank()) {
@@ -3560,23 +3661,75 @@ private fun compactArgs(name: String, args: String): String {
     return raw.replace("\n", " ").take(90)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun EmptyChat(assistantName: String, assistantAvatar: String, assistantOpening: String = "") {
+private fun EmptyChat(
+    assistantName: String,
+    assistantAvatar: String,
+    assistantOpening: String = "",
+    onQuickAsk: (String) -> Unit = {},
+) {
     val c = DshTheme2.colors
+    val liquid = LocalLiquidTokens.current
+    val context = LocalContext.current
+    val orbName = assistantName.ifBlank { "鲸歌" }.filterNot { it.isWhitespace() }.take(4)
+    // 设计稿 .is-capsule：球 ⇄ 水囊（218×94）两边都能拨，点球本体或第一颗胶囊都行
+    var capsule by remember { mutableStateOf(false) }
+    val toggleShape: () -> Unit = {
+        capsule = !capsule
+        Toast.makeText(
+            context,
+            if (capsule) "已切换为「厚透镜液态水囊」" else "已切换为「厚透镜失重水球」",
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 24.dp),
+        Modifier.fillMaxSize().padding(horizontal = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        DshAvatar(avatar = assistantAvatar, name = assistantName, size = 64.dp)
-        Spacer(Modifier.height(18.dp))
-        Text(assistantName.ifBlank { "DSH" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = c.text)
-        Spacer(Modifier.height(6.dp))
+        // 中央舞台（设计稿 .hero__stage 240×172）：144dp 厚透镜水球 + 底下跟着呼吸的焦散光斑
+        Box(
+            modifier = Modifier.width(240.dp).height(172.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            WaterOrbShadow(Modifier.align(Alignment.BottomCenter))
+            // reserveCapsuleSpace：形变过程中不重新测量布局，胶囊不会把舞台撑开
+            WaterOrb(
+                size = 144.dp,
+                capsule = capsule,
+                reserveCapsuleSpace = true,
+                onTap = toggleShape,
+            ) {
+                // 设计稿 .water-orb 内容：鲸鱼 glyph + 名称（14px / letter-spacing .30em）
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    WaterOrbWhale(
+                        color = c.text,
+                        modifier = Modifier.width(32.dp).height(21.dp),
+                    )
+                    Text(
+                        text = orbName,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 4.2.sp, // .30em @14px
+                        textAlign = TextAlign.Center,
+                        color = c.text.copy(alpha = 0.95f),
+                        // letter-spacing 会在最后一个字后面多留一份，右移半格抵消（等价 CSS text-indent）
+                        modifier = Modifier.offset(x = 2.1.dp),
+                    )
+                }
+            }
+        }
         if (assistantOpening.isNotBlank()) {
             // 角色卡开场白（M71）：像一条 AI 气泡，但不进会话历史（不伪造 assistant 消息）
+            Spacer(Modifier.height(8.dp))
             Surface(
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-                color = c.surface,
+                shape = RoundedCornerShape(14.dp),
+                color = c.panel,
             ) {
                 Text(
                     assistantOpening,
@@ -3585,12 +3738,107 @@ private fun EmptyChat(assistantName: String, assistantAvatar: String, assistantO
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 )
             }
-            Spacer(Modifier.height(10.dp))
         }
-        Text("说需求，或者让它直接动手。", style = MaterialTheme.typography.bodyMedium, color = c.sub)
+        // 设计稿 .hero：stage / line / pills 之间统一 18 的间距
+        Spacer(Modifier.height(18.dp))
+        // 设计稿 .hero__line：13.5px、dim、letter-spacing .06em
+        Text(
+            "说需求，或者让它直接动手。",
+            style = MaterialTheme.typography.bodyMedium,
+            fontSize = 13.5.sp,
+            color = c.sub,
+            letterSpacing = 0.8.sp,
+        )
+        Spacer(Modifier.height(18.dp))
+        // 快捷提问胶囊（设计稿 .qpill）：38dp 高、pill-fill 底色、不上滤镜、按下缩到 .96
+        val quick = listOf(
+            "这个工作区里有什么" to Icons.Rounded.FolderOpen,
+            "能装哪些插件" to Icons.Rounded.Extension,
+            "帮我配个每日提醒" to Icons.Rounded.Alarm,
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            maxItemsInEachRow = 2,
+            modifier = Modifier.widthIn(max = 400.dp),
+        ) {
+            // 第 0 颗（设计稿 #orbShapeToggle）：切换球 / 水囊，图标跟着目标形状走
+            Row(
+                modifier = Modifier
+                    .liquidEnter(index = 0)
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(LiquidRadius.pill))
+                    .background(liquid.pillFill)
+                    .liquidClickable(scale = 0.96f, onClick = toggleShape)
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                OrbShapeIcon(
+                    capsule = capsule,
+                    tint = c.brand,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    if (capsule) "切换为圆形失重水球" else "切换为液态胶囊水囊",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontSize = 12.5.sp,
+                    color = c.text,
+                )
+            }
+            quick.forEachIndexed { i, item ->
+                Row(
+                    modifier = Modifier
+                        .liquidEnter(index = i + 1)
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(LiquidRadius.pill))
+                        .background(liquid.pillFill)
+                        .liquidClickable(scale = 0.96f, onClick = { onQuickAsk(item.first) })
+                        .padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Icon(item.second, contentDescription = null, tint = c.brand, modifier = Modifier.size(14.dp))
+                    Text(
+                        item.first,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontSize = 12.5.sp,
+                        color = c.text,
+                    )
+                }
+            }
+        }
     }
 }
 
+/**
+ * 设计稿 #orbShapeToggle 的小图标：圆形失重水球 ⇄ 液态胶囊水囊。
+ * 14dp 的画布里画一个 1.6dp 的描边轮廓，圆 ↔ 胶囊之间按 440ms 的厚透镜缓动插值。
+ */
+@Composable
+private fun OrbShapeIcon(
+    capsule: Boolean,
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    val m by animateFloatAsState(
+        targetValue = if (capsule) 1f else 0f,
+        animationSpec = tween(durationMillis = 440, easing = LiquidMotion.enterEasing),
+        label = "orbShapeIcon",
+    )
+    Canvas(modifier) {
+        val sphere = size.minDimension * 0.72f
+        val w = sphere + (size.width - sphere) * m
+        val h = sphere + (size.height * 0.58f - sphere) * m
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset((size.width - w) / 2f, (size.height - h) / 2f),
+            size = Size(w, h),
+            cornerRadius = CornerRadius(h / 2f, h / 2f),
+            style = Stroke(width = 1.6.dp.toPx()),
+        )
+    }
+}
 @Composable
 private fun ApprovalDialog(
     approval: PendingApproval,
@@ -3600,7 +3848,7 @@ private fun ApprovalDialog(
     val c = DshTheme2.colors
     AlertDialog(
         onDismissRequest = { onApproval(false, false) },
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("允许执行 ${approval.toolName}？") },
         text = {
             Column {
@@ -3651,7 +3899,7 @@ private fun SchedulesDialog(
     val c = DshTheme2.colors
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("会话提醒", fontWeight = FontWeight.SemiBold) },
         text = {
             Column(

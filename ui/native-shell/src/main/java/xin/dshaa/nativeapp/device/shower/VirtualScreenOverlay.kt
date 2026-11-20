@@ -709,7 +709,7 @@ private class OverlayInstance(
     @Composable
     private fun SmallControls() {
         Box(
-            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.3f)),
+            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f)),
             contentAlignment = Alignment.Center,
         ) {
             Column(

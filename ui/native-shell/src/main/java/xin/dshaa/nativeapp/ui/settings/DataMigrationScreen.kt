@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -70,6 +75,7 @@ import xin.dshaa.ui.design.component.MiniChip
 import xin.dshaa.ui.design.component.SettingsCard
 import xin.dshaa.ui.design.component.SettingsInfoBanner
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
@@ -216,10 +222,10 @@ fun DataMigrationScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         // 顶栏
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {
@@ -441,7 +447,7 @@ private fun LegacyEntryRow(
             .clip(RoundedCornerShape(14.dp))
             .clickable(enabled = enabled) { onClick() },
         shape = RoundedCornerShape(14.dp),
-        color = c.surface,
+        color = c.panel,
         border = BorderStroke(1.dp, if (checked) c.brand.copy(alpha = 0.45f) else c.line2),
     ) {
         Row(Modifier.padding(start = 4.dp, end = 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -508,7 +514,7 @@ private fun BottomBar(
     val importing = state as? MigrationState.Importing
     val done = state as? MigrationState.Done
     if (ready == null && importing == null && done == null && state !is MigrationState.Scanning) return
-    Surface(color = c.surface, shadowElevation = 8.dp) {
+    Surface(color = c.panel, shadowElevation = 8.dp) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
             when {
                 importing != null -> {
@@ -577,7 +583,7 @@ private fun LegacyPreviewDialog(
     val c = DshTheme2.colors
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = {
             Column {
                 Text(entry.title.ifBlank { "未命名会话" }, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -599,7 +605,7 @@ private fun LegacyPreviewDialog(
                     color = c.sub,
                 )
                 entry.preview.forEach { line ->
-                    Surface(shape = RoundedCornerShape(10.dp), color = c.surfaceAlt.copy(alpha = 0.7f)) {
+                    Surface(shape = RoundedCornerShape(10.dp), color = c.surfaceAlt.wash(0.7f)) {
                         Column(Modifier.padding(10.dp)) {
                             Text(
                                 if (line.role == "user") "用户" else "助手",

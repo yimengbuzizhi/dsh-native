@@ -1,5 +1,9 @@
 package xin.dshaa.nativeapp.ui.sessions
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -55,6 +59,7 @@ import xin.dshaa.ui.design.component.DshAvatar
 import xin.dshaa.ui.design.component.DshCard
 import xin.dshaa.ui.design.component.MiniChip
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -97,11 +102,11 @@ fun SessionsScreen(
     }
     val grouped = shown.groupBy { dayLabel(it.updatedAt) }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(c.surface)
+                .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                 .statusBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -142,7 +147,7 @@ fun SessionsScreen(
         Surface(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp).fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
-            color = c.surface,
+            color = c.panel,
             border = androidx.compose.foundation.BorderStroke(1.dp, c.line2),
         ) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -203,7 +208,7 @@ fun SessionsScreen(
     menuFor?.let { target ->
         AlertDialog(
             onDismissRequest = { menuFor = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text(target.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
@@ -229,12 +234,12 @@ fun SessionsScreen(
         var text by remember(target.id) { mutableStateOf(target.title) }
         AlertDialog(
             onDismissRequest = { renameFor = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("重命名会话") },
             text = {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = c.surfaceAlt.copy(alpha = 0.6f),
+                    color = c.surfaceAlt.wash(0.6f),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     BasicTextField(
@@ -260,7 +265,7 @@ fun SessionsScreen(
     purgeFor?.let { target ->
         AlertDialog(
             onDismissRequest = { purgeFor = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("彻底删除这条会话？", color = c.danger) },
             text = {
                 Column {
@@ -288,7 +293,7 @@ fun SessionsScreen(
     if (showTrash) {
         AlertDialog(
             onDismissRequest = { showTrash = false },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("回收站", modifier = Modifier.weight(1f))
@@ -307,7 +312,7 @@ fun SessionsScreen(
                         trash.forEach { entry ->
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = c.surfaceAlt.copy(alpha = 0.5f),
+                                color = c.surfaceAlt.wash(0.5f),
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                             ) {
                                 Column(Modifier.padding(10.dp)) {
@@ -358,7 +363,7 @@ fun SessionsScreen(
     if (confirmEmptyTrash) {
         AlertDialog(
             onDismissRequest = { confirmEmptyTrash = false },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("清空回收站？", color = c.danger) },
             text = {
                 Text(

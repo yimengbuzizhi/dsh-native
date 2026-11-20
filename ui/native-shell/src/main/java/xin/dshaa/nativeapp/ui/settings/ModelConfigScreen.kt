@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardActions
@@ -67,6 +72,7 @@ import xin.dshaa.ui.design.component.SettingsSelectorRow
 import xin.dshaa.ui.design.component.SettingsTextField
 import xin.dshaa.ui.design.component.SettingsSwitchRow
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 
 /**
  * 模型与参数配置（独立页）——照 Operit `ModelConfigScreen` 的页面拆分与字段顺序：
@@ -143,9 +149,9 @@ fun ModelConfigScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {
@@ -292,7 +298,7 @@ fun ModelConfigScreen(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .background(c.surfaceAlt.copy(alpha = 0.45f)),
+                        .background(c.surfaceAlt.wash(0.45f)),
                 ) {
                     availableModels.forEach { m ->
                         val selected = m == settings.model
@@ -430,7 +436,7 @@ fun ModelConfigScreen(
                 if (effortPicker) {
                     AlertDialog(
                         onDismissRequest = { effortPicker = false },
-                        containerColor = c.surface,
+                        containerColor = c.panel,
                         title = { Text("思考强度", fontWeight = FontWeight.SemiBold) },
                         text = {
                             Column {
@@ -520,7 +526,7 @@ fun ModelConfigScreen(
                                 showProviderDialog = false
                             },
                             shape = RoundedCornerShape(10.dp),
-                            color = if (selected) c.brand.copy(alpha = 0.12f) else c.surfaceAlt.copy(alpha = 0.6f),
+                            color = if (selected) c.brand.copy(alpha = 0.12f) else c.surfaceAlt.wash(0.6f),
                         ) {
                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
@@ -539,7 +545,7 @@ fun ModelConfigScreen(
                 }
             },
             confirmButton = { TextButton(onClick = { showProviderDialog = false }) { Text("关闭") } },
-            containerColor = c.surface,
+            containerColor = c.panel,
         )
     }
 
@@ -564,7 +570,7 @@ fun ModelConfigScreen(
                                 showChannelDialog = false
                             },
                             shape = RoundedCornerShape(10.dp),
-                            color = if (selected) c.brand.copy(alpha = 0.12f) else c.surfaceAlt.copy(alpha = 0.6f),
+                            color = if (selected) c.brand.copy(alpha = 0.12f) else c.surfaceAlt.wash(0.6f),
                         ) {
                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
@@ -590,7 +596,7 @@ fun ModelConfigScreen(
                 }
             },
             confirmButton = { TextButton(onClick = { showChannelDialog = false }) { Text("关闭") } },
-            containerColor = c.surface,
+            containerColor = c.panel,
         )
     }
 
@@ -607,7 +613,7 @@ fun ModelConfigScreen(
         }
         AlertDialog(
             onDismissRequest = { fetchedModels = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = {
                 Text(
                     "选择要启用的模型（已选 ${selection.size}/${models.size}）",

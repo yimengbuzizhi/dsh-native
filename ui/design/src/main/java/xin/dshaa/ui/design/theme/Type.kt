@@ -37,12 +37,12 @@ val DshTypography = Typography(
     ),
     bodyLarge = TextStyle(
         fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Normal,
-        fontSize = 17.sp, lineHeight = 26.35.sp,
+        fontSize = 17.sp, lineHeight = 29.6.sp, letterSpacing = 0.2.sp,
         lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Normal,
-        fontSize = 15.sp, lineHeight = 23.25.sp,
+        fontSize = 15.sp, lineHeight = 26.sp, letterSpacing = 0.18.sp,
     ),
     bodySmall = TextStyle(
         fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Normal,
