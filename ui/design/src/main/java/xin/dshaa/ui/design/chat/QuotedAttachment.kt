@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 
 /**
  * 一条被引用的附件（M74）：聊天页只显示摘要，点开看原文；模型侧内容不变。
@@ -106,8 +107,8 @@ fun QuotedAttachmentChip(item: QuotedAttachment) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(c.surface.copy(alpha = if (c.isDark) 0.35f else 0.6f))
-            .border(1.dp, c.line.copy(alpha = 0.6f), RoundedCornerShape(10.dp)),
+            .background(c.surface.wash(if (c.isDark) 0.35f else 0.6f))
+            .border(1.dp, c.line.wash(0.6f), RoundedCornerShape(10.dp)),
     ) {
         Row(
             Modifier

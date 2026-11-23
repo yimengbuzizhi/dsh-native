@@ -21,7 +21,18 @@
   }
   #ds-root { z-index: 1; }
   #ds-slots { z-index: 2; pointer-events: none; }
-  #ds-slots > * { pointer-events: auto; }
+  /* slot 挂载盒（host.js 建的 div[data-slot]）：给插件根一个「视口大小」的定位盒
+     （相对百分比/absolute 都能解析），但盒子自身绝不吃触摸——只有真正渲染出的内容
+     节点接收 pointer-events。否则整屏挂载盒会把悬浮窗/小窗下层 App 的触摸全挡住，
+     且 host.js 的 reportTouchRegion() 会把整屏 rect 报给原生。通用规则，不含插件类名。 */
+  #ds-slots > [data-slot] {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  #ds-slots > [data-slot] > * {
+    pointer-events: auto;
+  }
   #ds-status {
     position: absolute;
     z-index: 9;
@@ -36,6 +47,59 @@
     font: 12px/1.45 -apple-system, "PingFang SC", sans-serif;
     white-space: pre-wrap;
     word-break: break-all;
+  }
+</style>
+<!--
+  DSH 插件页通用设计 token 兜底（宿主级，不针对任何插件）。
+
+  为什么需要：上游 client 插件的 CSS 全部写 `var(--dsw-alias-*)` / `var(--ds-ease-*)` 且
+  基本不带 fallback；宿主页此前一个 token 都没定义。按 CSS 规范，无 fallback 的自定义属性
+  缺失 = 该声明在 computed-value 阶段无效：color 回 inherit（页面默认黑）、background /
+  box-shadow / filter 回 none（透明）、border 颜色回 currentColor、animation / transition
+  整条失效。深色容器（#14171C）上就是「黑字 + 透明气泡 + 不动」。
+
+  取值来源：上游 @deepseek-ai/dsh-client-ui-theme 的 base + design_platform CSS（已把
+  --dsw-static-* → --dsw-alias-* 的 var 链解析成最终色值），不是猜的；只补实测被引用的
+  13 个 token（11 颜色 + 2 动效），不替上游猜尺寸/阴影/字体。
+
+  外观选择：` :root ` 放浅色（上游默认外观），系统深色时用 dark 值。本机 uiMode 是浅色但
+  容器 chrome 底色是深色 #14171C，浅色段给出白底气泡 + 深色字，压在深色容器上仍可读；
+  dark 段则与上游深色外观一致。两段都不改尺寸/定位（布局归插件自己的 CSS）。
+-->
+<style id="ds-host-theme">
+  :root {
+    /* 动效（缺失会让插件关键帧动画/过渡整条失效） */
+    --ds-ease-in-out: cubic-bezier(.4, 0, .2, 1);
+    --ds-transition-duration-fast: .1s;
+
+    /* 浅色 */
+    --dsw-alias-label-primary: #0f1115;
+    --dsw-alias-label-secondary: #61666b;
+    --dsw-alias-border-l2: #0000001a;
+    --dsw-alias-border-l3: #0000001f;
+    --dsw-alias-bg-mask-1: #0000003d;
+    --dsw-alias-bg-mask-2: #0000001f;
+    --dsw-alias-button-elevated-fill: #ffffff;
+    --dsw-alias-button-floating-hover: #f1f3f5;
+    --dsw-alias-state-business-primary: #4176e6;
+    --dsw-alias-state-error-primary: #ec1313;
+    --dsw-specific-bubble: #edf3fe;
+  }
+  /* 系统深色（WebView 的 prefers-color-scheme 跟随 uiMode，与 themeJson().dark 同源） */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --dsw-alias-label-primary: #f9fafb;
+      --dsw-alias-label-secondary: #cfd3d6;
+      --dsw-alias-border-l2: #ffffff1f;
+      --dsw-alias-border-l3: #ffffff29;
+      --dsw-alias-bg-mask-1: #00000080;
+      --dsw-alias-bg-mask-2: #00000033;
+      --dsw-alias-button-elevated-fill: #43454a;
+      --dsw-alias-button-floating-hover: #353638;
+      --dsw-alias-state-business-primary: #7aaaff;
+      --dsw-alias-state-error-primary: #f25a5a;
+      --dsw-specific-bubble: #2c2c2e;
+    }
   }
 </style>
 </head>

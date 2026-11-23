@@ -48,31 +48,31 @@ class CapabilityTools(
             val id = args.text("id").trim()
             val available = availableIds()
             if (id.isEmpty()) {
-                return ToolResult.err("capability 需要 id。可用能力（${available.size}）：${idList(available)}")
+                return ToolResult.err("capability requires id. Available capabilities (${available.size}): ${idList(available)}")
             }
             if (id.equals("root.exec", ignoreCase = true)) {
                 // M88-B：root.exec 已并入 shell.exec。不是「未知 id」，直接给合并说明。
                 return ToolResult.err(
-                    "${xin.dshaa.nativeapp.device.ShellCapability.MERGED_ROOT_EXEC_REASON}：" +
+                    "${xin.dshaa.nativeapp.device.ShellCapability.MERGED_ROOT_EXEC_REASON}: " +
                         CapabilityHost.mergedRootExecMessage(),
                 )
             }
             if (id !in available) {
                 return ToolResult.err(
-                    "未知能力 id：$id。可用能力（${available.size}）：${idList(available)}。" +
-                        "插件能力需要插件已启用且拿到 capability 授权。",
+                    "Unknown capability id: $id. Available capabilities (${available.size}): ${idList(available)}. " +
+                        "Plugin capabilities require the plugin to be enabled and granted the capability permission.",
                 )
             }
             val extra = when (val raw = args["args"]) {
                 null -> "{}"
                 is JsonObject -> raw.toString()
-                else -> return ToolResult.err("capability 的 args 必须是 JSON 对象，收到：${typeName(raw)}")
+                else -> return ToolResult.err("capability args must be a JSON object; received: ${typeName(raw)}")
             }
             val result = invoke(id, extra)
             return if (result.ok) {
                 ToolResult.ok(result.valueJson)
             } else {
-                ToolResult.err("能力 $id 调用失败：${result.error ?: result.summary.ifBlank { "未知原因" }}")
+                ToolResult.err("Capability $id failed: ${result.error ?: result.summary.ifBlank { "unknown reason" }}")
             }
         }
     }
@@ -84,12 +84,12 @@ class CapabilityTools(
             val title = args.text("title").trim()
             val body = args.text("body").trim()
             if (title.isEmpty() && body.isEmpty()) {
-                return ToolResult.err("notify 需要 title 或 body 至少一个")
+                return ToolResult.err("notify requires at least one of title or body")
             }
             if (!notificationsAllowed()) {
                 return ToolResult.err(
-                    "系统通知权限未开：去 设置 → 权限与能力 → 通知 打开鲸歌的通知权限，" +
-                        "或改用 capability {id:\"notify.toast\"} 只弹 Toast。本次未发送。",
+                    "System notification permission is not granted. Open Settings → Permissions & Capabilities → Notifications " +
+                        "and allow notifications for this app, or use capability {id:\"notify.toast\"} to show only a Toast. Nothing was sent.",
                 )
             }
             val payload = buildJsonObject {
@@ -98,10 +98,10 @@ class CapabilityTools(
             }
             val result = invoke("notify", payload.toString())
             if (!result.ok) {
-                return ToolResult.err("通知发送失败：${result.error ?: result.summary.ifBlank { "未知原因" }}")
+                return ToolResult.err("Failed to send notification: ${result.error ?: result.summary.ifBlank { "unknown reason" }}")
             }
-            val text = if (title.isEmpty()) body else "$title：$body"
-            return ToolResult.ok("通知已发送：$text")
+            val text = if (title.isEmpty()) body else "$title: $body"
+            return ToolResult.ok("Notification sent: $text")
         }
     }
 
@@ -109,7 +109,7 @@ class CapabilityTools(
         runCatching { this[key]?.jsonPrimitive?.contentOrNull }.getOrNull().orEmpty()
 
     private fun idList(ids: List<String>): String =
-        if (ids.isEmpty()) "（无；请先在插件页启用并授权能力）" else ids.joinToString("、")
+        if (ids.isEmpty()) "(none; enable and authorize capabilities on the Plugins page first)" else ids.joinToString(", ")
 
-    private fun typeName(value: JsonElement): String = value::class.simpleName ?: "非对象"
+    private fun typeName(value: JsonElement): String = value::class.simpleName ?: "non-object"
 }

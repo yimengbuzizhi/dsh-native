@@ -353,11 +353,19 @@ class OpenAiClient(
             this[key]?.jsonPrimitive?.intOrNull?.takeIf { it >= 0 }
         }.getOrNull()
         val details = runCatching { usage["prompt_tokens_details"]?.jsonObject }.getOrNull()
+        // DSH 同口径：`prompt_tokens = cache_hit + cache_miss`（互不相交）。
+        // cacheReadTokens 单独报，inputTokens 只留未缓存部分；DeepSeek 用扁平的
+        // `prompt_cache_hit_tokens`，OpenAI 用 `prompt_tokens_details.cached_tokens`。
+        val cacheRead = details?.tokens("cached_tokens") ?: usage.tokens("prompt_cache_hit_tokens")
+        val prompt = usage.tokens("prompt_tokens")
         return TokenUsage(
-            // OpenAI prompt_tokens already includes cached_tokens. DeepSeek uses the flat hit field.
-            inputTokens = usage.tokens("prompt_tokens"),
+            inputTokens = prompt?.let { total ->
+                (total.toLong() - (cacheRead ?: 0)).coerceAtLeast(0).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            },
             outputTokens = usage.tokens("completion_tokens"),
-            cacheReadInputTokens = details?.tokens("cached_tokens") ?: usage.tokens("prompt_cache_hit_tokens"),
+            cacheReadInputTokens = cacheRead,
+            // OpenAI 协议没有缓存写；个别兼容端点会回这个字段，原样映射不参与减法。
+            cacheCreationInputTokens = usage.tokens("cache_creation_input_tokens"),
         )
     }
 

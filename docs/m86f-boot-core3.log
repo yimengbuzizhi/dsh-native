@@ -1,0 +1,19 @@
+﻿PASS startup:selection
+PASS startup:snapshot-owner
+PASS startup:draw-order
+PASS second:explicit-declaration
+PASS disabled:snapshot-default
+PASS disabled:snapshot-owner
+PASS disabled:draw-order
+PASS corrupt:snapshot-owner
+PASS corrupt:draw-order
+PASS default:explicit-selection
+PASS onboarding:snapshot-owner
+PASS onboarding:draw-order
+PASS onboarding:welcome
+PASS onboarding:permissions-page
+PASS onboarding:completed-by-ui
+PASS safe-mode:visible
+PASS safe-mode:manager
+PASS cleanup:original-snapshot-bytes-restored
+FAILED restore native button unavailable after scrolling

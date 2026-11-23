@@ -62,7 +62,9 @@ internal const val INTERRUPTED_TOOL_RESULT =
  */
 internal const val TRUNCATED_TOOL_RESULT =
     "Tool call was not executed: the response hit the max_tokens limit, so its arguments may be " +
-        "incomplete. Treat this call as failed; do not retry it unless the user asks."
+        "incomplete. Treat this call as failed; do not retry the same oversized call. For a large file, " +
+        "write it in chunks with the `write` tool: first call append=false to create it, then append=true " +
+        "for each remaining chunk."
 
 /** M87-B：`agent/pre-step` 注入的 user 消息来源（会话日志用；UI 折叠成一行）。 */
 internal const val PLUGIN_INJECT_KIND = "plugin-inject"
@@ -617,6 +619,8 @@ class TurnEngine(private val deps: EngineDeps) {
                         }
                     }
                     notifyUsage(if (failure == null) RequestUsageStatus.COMPLETED else RequestUsageStatus.FAILED)
+                    // 工作流 D（docs/187 §7.2）：每个 step 的一次请求尝试落一行缓存诊断。
+                    writeCacheDebug(request, requestUsage, config, turnRequestNo, provider)
                     activeRequestNo = null
                     if (failure == null) break
                     val failed = failedEvent
@@ -750,7 +754,7 @@ class TurnEngine(private val deps: EngineDeps) {
                             "persisted without executing them",
                     )
                     truncated = true
-                    errorText = "达到 max_tokens 上限，输出被截断（工具调用未执行）；可点「继续生成」，或让我分几段写。"
+                    errorText = "达到 max_tokens 上限，输出被截断（工具调用未执行）；可点「继续生成」，或用 write 的 append 分块写。"
                     ui.setError(errorText)
                     hookStepEnd(turnNumber, stepNumber)
                     withContext(Dispatchers.IO) { session.endStep() }
@@ -837,7 +841,7 @@ class TurnEngine(private val deps: EngineDeps) {
                     val denialText = when {
                         restricted -> {
                             deps.log("tool-restrict: ${call.name} blocked by restrict rules")
-                            "工具 ${call.name} 已被插件的 restrict 规则禁用，本次调用未执行。"
+                            "Tool ${call.name} is disabled by a plugin restrict rule; this call was not executed."
                         }
                         guard != null -> {
                             deps.log("tool-guard: ${call.name} denied by ${guard.middlewareId}")
@@ -1162,7 +1166,8 @@ class TurnEngine(private val deps: EngineDeps) {
     } catch (e: SessionAppendVetoed) {
         val message = e.message ?: "插件拒绝写入工具结果"
         deps.log("tool-result-veto: call=$callId $message")
-        val fallback = "工具结果被插件拒绝写入（$message）。宿主已保留失败状态，原始输出未落盘。"
+        val fallback = "The plugin rejected writing this tool result ($message). " +
+            "The host kept the failure state; the original output was not persisted."
         val seq = withContext(Dispatchers.IO) { session.appendToolResultTrusted(callId, fallback, true) }
         GuardedToolResult(seq, fallback, isError = true, vetoed = true)
     }
@@ -1279,6 +1284,33 @@ class TurnEngine(private val deps: EngineDeps) {
         }
         deps.onRequest(++requestNo, request)
         return request
+    }
+
+    /**
+     * 工作流 D（docs/187 §7.2）：一次请求尝试的缓存诊断。
+     *
+     * 只有宿主注入了 sink（debug 包 + `--ez dsh_cache_debug true`）才落盘；写失败不能影响回合，
+     * 所以整体 runCatching（日志走 [EngineDeps.log]，真机上就是 logcat）。
+     */
+    private fun writeCacheDebug(
+        request: ApiRequest,
+        usage: TokenUsage,
+        config: LlmConfig,
+        requestNo: Int,
+        providerLabel: String,
+    ) {
+        val sink = deps.cacheDebug() ?: return
+        runCatching {
+            sink.emit(
+                CacheDebugRecord.of(
+                    request = request,
+                    usage = usage,
+                    config = config,
+                    providerLabel = providerLabel,
+                    requestNo = requestNo,
+                ).toJsonLine(),
+            )
+        }.onFailure { deps.log("cache-debug: ${it.message ?: it.javaClass.simpleName}") }
     }
 
     /**

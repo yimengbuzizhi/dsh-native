@@ -26,7 +26,8 @@ import xin.dshaa.nativeapp.ui.surface.WebViewShellScreen
  * 具体界面由 `shell/v1` 的后端提供：
  * - **native 后端**（默认）：内置界面插件 `builtin.shell.native`，现有 Compose UI 原样搬进
  *   `ui/shell/native/NativeShellRoot.kt`（聊天/抽屉/22 页/设置/onboarding）；
- * - **Surface 后端**（可选）：`builtin.shell.whale` 等 JS 壳返回 UI 树，由 `PluginShellScreen` 渲染；
+ * - **Surface 后端**（可选）：第三方 JS 壳返回 UI 树，由 `PluginShellScreen` 渲染
+ *   （随包示例壳 `builtin.shell.whale` 已于 docs/187 §5.1 删除）；
  * - 内置界面插件被停用且没选可选壳 → [SafeModeScreen]（可从安全模式重新打开）。
  *
  * 本文件不允许 import 任何具体页面/聊天页/抽屉——那是界面插件的事（`docs/152` 源码扫描验收）。
@@ -38,7 +39,16 @@ fun DshApp(vm: AppViewModel = viewModel()) {
         "dark" -> true
         else -> isSystemInDarkTheme()
     }
-    xin.dshaa.ui.design.theme.DshTheme(darkTheme = dark, accentId = vm.settings.accentId) {
+    // docs/187 §4：两套界面壳共用同一份页面代码，靠 `LocalLiquidUi` 分支。
+    // 液态玻璃只是可选壳（角色页「界面：液态玻璃（实验）」），原生是默认，外观与 0.3.5 一致。
+    androidx.compose.runtime.CompositionLocalProvider(
+        xin.dshaa.ui.design.theme.LocalLiquidUi provides vm.liquidUiEnabled,
+    ) {
+    xin.dshaa.ui.design.theme.DshTheme(
+        darkTheme = dark,
+        accentId = vm.settings.accentId,
+        liquid = vm.liquidUiEnabled,
+    ) {
         // 系统栏图标跟着主题走（enableEdgeToEdge 只按系统深色模式取样式，切浅色后图标会看不见）
         val view = LocalView.current
         val context = LocalContext.current
@@ -99,5 +109,6 @@ fun DshApp(vm: AppViewModel = viewModel()) {
             // 3) 内置界面插件被停用（且没选可选壳）：安全模式，可一键重新打开
             else -> SafeModeScreen(vm, onOpenPlugins = { recoveryPlugins = true })
         }
+    }
     }
 }

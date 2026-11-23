@@ -123,6 +123,78 @@ class PluginPackageTest {
     }
 
     @Test
+    fun detectsOwnershipFromDependenciesAndClientExport() {
+        val deps = zipOf(
+            "package.json" to """{"name":"node-tool","main":"lib/index.js","dependencies":{"@deepseek-ai/cordis":"^4.0.1"}}""",
+            "lib/index.js" to "",
+        )
+        val node = PluginPackage.parse((PluginPackage.read(deps) as ArchiveRead.Ok).files) as PackageParse.Ok
+        assertEquals(PluginOwnership.NODE, node.manifest.ownership)
+
+        val client = zipOf(
+            "package.json" to """{"name":"ui-pet","main":"lib/index.js","exports":{"./client":"./lib/client.js"}}""",
+            "lib/index.js" to "",
+            "lib/client.js" to "",
+        )
+        val summary = PluginPackage.summarize((PluginPackage.read(client) as ArchiveRead.Ok).files)!!
+        assertEquals(PluginOwnership.NODE, summary.ownership)
+        assertEquals(true, summary.hasClient)
+        assertTrue(summary.signals.any { it.contains("./client") })
+
+        val native = zipOf("package.json" to """{"name":"whale-plugin","main":"index.js"}""", "index.js" to "")
+        val nativeSummary = PluginPackage.summarize((PluginPackage.read(native) as ArchiveRead.Ok).files)!!
+        assertEquals(PluginOwnership.NATIVE, nativeSummary.ownership)
+    }
+
+    @Test
+    fun registryPersistsOwnershipAndDefaultsOldRecordsToNative() {
+        val dir = createTempDir()
+        try {
+            val file = File(dir, "plugins.json")
+            val registry = PluginRegistryFile(file)
+            val record = PluginRecord(
+                id = "node-ui", name = "node-ui", version = "1.0.0", description = "",
+                path = File(dir, "plugins/node-ui").absolutePath, main = "lib/index.js",
+                format = PluginFormat.DSH.label, enabled = false, tools = emptyList(), imports = emptyList(),
+                error = null, installedAt = 1L, ownership = PluginOwnership.NODE,
+            )
+            registry.upsert(record)
+            assertEquals(PluginOwnership.NODE, registry.find("node-ui")?.ownership)
+            assertTrue(file.readText().contains("\"ownership\":\"node\""))
+
+            // 旧清单没有 ownership：读回按原生，不迁移、不改开关。
+            file.writeText(
+                """{"version":1,"plugins":[{"id":"old","name":"old","path":"/x","main":"index.js","format":"DSH","enabled":true,"tools":[],"imports":[],"installedAt":1}]}""",
+            )
+            assertEquals(PluginOwnership.NATIVE, PluginRegistryFile(file).find("old")?.ownership)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun fiveMbClientBundleBelowNewEntryLimitIsReadable() {
+        // docs/188 P4：单文件上限从 4MB 提到 32MB；5MB 的 client bundle 必须能读进来。
+        val big = ByteArray(5 * 1024 * 1024) { 'x'.code.toByte() }
+        val file = File.createTempFile("plugin-big", ".zip")
+        try {
+            ZipOutputStream(file.outputStream()).use { out ->
+                out.putNextEntry(ZipEntry("package.json"))
+                out.write("""{"name":"big","main":"client.js"}""".toByteArray())
+                out.closeEntry()
+                out.putNextEntry(ZipEntry("client.js"))
+                out.write(big)
+                out.closeEntry()
+            }
+            val read = PluginPackage.read(file)
+            assertTrue(read is ArchiveRead.Ok)
+            assertEquals(5L * 1024 * 1024, (read as ArchiveRead.Ok).files.first { it.path == "client.js" }.bytes.size.toLong())
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun normalizePathRejectsAbsoluteAndDotDot() {
         assertEquals("a/b.js", PluginPackage.normalizePath("./a/b.js"))
         assertEquals("a/b.js", PluginPackage.normalizePath("a\\b.js"))

@@ -70,7 +70,7 @@ fun InputTriggerPanel(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp),
         shape = RoundedCornerShape(16.dp),
-        color = c.surface,
+        color = c.panel,
         border = BorderStroke(1.dp, c.line),
         shadowElevation = 6.dp,
     ) {

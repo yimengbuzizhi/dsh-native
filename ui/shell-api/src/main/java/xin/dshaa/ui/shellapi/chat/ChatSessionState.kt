@@ -75,7 +75,9 @@ class ChatSessionState(modelName: String) {
     var contextInvalidationReason by mutableStateOf<String?>(null)
     val contextHistory = mutableStateListOf<xin.dshaa.core.model.ContextUsage>()
     val contextChanges = mutableStateListOf<String>()
-    val lastPromptTokens: Int get() = contextUsage?.inputTokens ?: 0
+    // 上下文占用要含缓存读/写（docs/187 §7.3）：`inputTokens` 只算未缓存输入，单看它会把
+    // 命中缓存的长会话算成「只占几百 token」。
+    val lastPromptTokens: Int get() = contextUsage?.totalInputTokens ?: 0
     val lastCompletionTokens: Int get() = contextUsage?.outputTokens ?: 0
     var contextWindow by mutableStateOf(0)
     val estSystemTokens: Int get() = contextUsage?.estimatedSystem ?: 0

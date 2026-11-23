@@ -303,4 +303,12 @@ class EngineDeps(
      * 快照，下一次请求/流式增量就拿到新链（不必重建 TurnEngine）。
      */
     val requestMiddleware: () -> RequestMiddlewareChain = { RequestMiddlewareChain.EMPTY },
+    /**
+     * 工作流 D（docs/187 §7.2）：缓存的 debug 诊断落盘口（每个 step 每次请求尝试一行）。
+     *
+     * 只有 debug 包的宿主会注入实现（`--ez dsh_cache_debug true`）；release / JVM 单测默认 null，
+     * 引擎只多做一次 null 判断。core 不依赖 Android：实现方负责把
+     * [CacheDebugRecord.toJsonLine] 追加到 `files/cache-debug.jsonl`。
+     */
+    val cacheDebug: () -> CacheDebugSink? = { null },
 )

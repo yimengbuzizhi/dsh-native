@@ -68,7 +68,35 @@ data class ToolContext(
     var skills: xin.dshaa.core.skill.SkillHost? = null,
     /** `workflow` 的运行时（QuickJS + 子代理 + 后台 job）；null = 本组合不支持 workflow。 */
     val workflowHost: xin.dshaa.core.tools.workflow.WorkflowHost? = null,
+    /**
+     * P1 原语宿主（`docs/185` §四）：`PrimitiveCatalog` 里登记的原语都由它执行；
+     * null = 本组合没有原语层（子代理会话不挂，避免子代理改父话题）。
+     * 工具面只是参数透传/结果转写，不在这里写第二份实现。
+     */
+    val primitives: xin.dshaa.core.primitives.PrimitiveHost? = null,
+    /**
+     * 打包的命令行工具箱（`docs/187` §六）：`bash` 工具用它决定用哪个 shell、注入哪些环境变量。
+     * null = 桌面 JVM / 测试 / 未打包的 ABI —— `bash` 退回 `/system/bin/sh`（桌面 `sh`/`cmd`）。
+     */
+    val shell: ShellHost? = null,
 )
+
+/**
+ * `bash` 工具的命令行能力注入点（由 App 层的 `Toolchain` 实现，core:tools 保持纯 JVM 可单测）。
+ *
+ * 只暴露三样：bash 可执行体、curl 可执行体、要追加进子进程的环境变量（PATH/HOME/CA/LD_LIBRARY_PATH）。
+ * 超时、后台、截断、stdin 仍由 `BashTool` 自己管，不在这里重复。
+ */
+interface ShellHost {
+    /** bundled bash 的绝对路径；null = 没有（Android 退回 `/system/bin/sh`，桌面退回 `sh`/`cmd`）。 */
+    fun bashPath(): String?
+
+    /** bundled curl 的绝对路径（`bash` 里 `curl` 用它）；null = 没有。 */
+    fun curlPath(): String?
+
+    /** 追加进子进程环境的变量；同名键覆盖继承来的值。 */
+    fun environment(): Map<String, String>
+}
 
 /**
  * `exit_plan_mode` 的后端：由 App 层绑定当前会话的 `core:engine` 计划模式状态。
@@ -332,8 +360,28 @@ class ToolRegistry(initial: List<DshTool>) {
     /** 注销一个运行时工具；内置工具也可以被注销（调用方自己保证只删插件工具）。 */
     fun unregister(name: String): Boolean = synchronized(lock) { byName.remove(name) != null }
 
+    /**
+     * 旧名字别名（`docs/187` §6.5）：只能被 [execute] 命中，**不进** [names]/[tools]，
+     * 所以模型既看不到也不会被请求带上（例：`http_request` → `curl`）。
+     */
+    private val aliases: LinkedHashMap<String, DshTool> = LinkedHashMap()
+
+    fun registerAlias(tool: DshTool): Boolean = synchronized(lock) {
+        if (byName.containsKey(tool.name) || aliases.containsKey(tool.name)) {
+            false
+        } else {
+            aliases[tool.name] = tool
+            true
+        }
+    }
+
+    /** 别名表快照（只给测试/调试看；不参与 apiTools）。 */
+    val aliasNames: List<String> get() = synchronized(lock) { aliases.keys.toList() }
+
+    fun unregisterAlias(name: String): Boolean = synchronized(lock) { aliases.remove(name) != null }
+
     suspend fun execute(name: String, args: JsonObject, ctx: ToolContext): ToolResult {
-        val tool = synchronized(lock) { byName[name] } ?: return ToolResult.err("unknown tool: $name")
+        val tool = synchronized(lock) { byName[name] ?: aliases[name] } ?: return ToolResult.err("unknown tool: $name")
         return try {
             tool.execute(args, ctx)
         } catch (e: kotlinx.coroutines.CancellationException) {

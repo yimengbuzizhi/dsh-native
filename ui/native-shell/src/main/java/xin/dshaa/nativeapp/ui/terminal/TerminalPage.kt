@@ -1,5 +1,9 @@
 package xin.dshaa.nativeapp.ui.terminal
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -9,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -54,7 +59,7 @@ fun TerminalPage(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .background(c.surface)
+                    .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                     .statusBarsPadding()
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,

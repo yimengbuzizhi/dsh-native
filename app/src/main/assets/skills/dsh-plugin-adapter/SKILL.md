@@ -1,189 +1,152 @@
 ---
 name: dsh-plugin-adapter
-description: 把 DSH（DeepSeek Harness）社区插件迁到鲸歌 Android 原生版：先判断哪些能力搬得动，再按当前宿主契约改包、装测。覆盖工具/工具与请求中间件/存储事件钩子/UI 插槽/命令/提示词/页面/加载页/整壳/回合/存储/模型/能力/投影的适配判断，以及 npm、Cordis、DOM、Electron 等不可搬部分的替代方案。
-whenToUse: 用户拿来一个 DSH 插件（npm 包 / GitHub 仓库 / dist/index.js / src/index.ts / cordis.patch.yml）问「能不能在鲸歌用」「怎么改成鲸歌插件」「插件导入失败」，或提到 defineTool / @deepseek-ai/dsh-tools / schemastery / cordis / dsh.client / root slot / 让 AI 直接授权或改插件配置时加载。
+description: 判断一个 DSH / 社区插件在鲸歌该走哪套宿主：真 DSH / cordis / npm 插件优先装进 Node 宿主（nodehost_install），保留原包、不改成原生；只有用户明确要（或插件本来就是）鲸歌原生 QuickJS 格式时，才按角色改包走 plugin_dev_*。包含 Node 侧装测/诊断/隔离与原生侧适配映射。
+whenToUse: 用户拿来一个 DSH 插件（npm 包 / GitHub 仓库 / dist/index.js / src/index.ts / cordis.patch.yml）问「能不能在鲸歌用」「怎么装」「导入/加载报错」，或提到 cordis、defineTool、@deepseek-ai/dsh-tools、dsh.client、plugin_manager 时加载。
 ---
 
-# DSH / 社区插件 → 鲸歌插件适配
+# DSH / 社区插件 → 鲸歌：先选宿主，再搬
 
-目标：**先判定、再搬迁、最后真机验证**。鲸歌的插件链是 QuickJS 宿主（无 Node、无 npm、无 DOM、无 Electron），但「插件化」已经覆盖角色而不只是工具：工具、斜杠命令、提示词段/整体提示词、页面与客户端窗口、启动加载页、整壳（Surface/WebView）、回合、只读存储、模型供应商、能力提供方、会话投影、跨插件服务都能接。
+鲸歌现在有两条插件链，**先判断再动手**：
 
-角色级 API、限制与验收细节以技能 `dsh-plugin-authoring` 和宿主 `plugin_dev_*` 的实际返回为准；本技能只负责「旧插件怎么落到这些角色上」。两者冲突时以作者技能/宿主实现为准，不要照搬本文里的示例参数名。
+| 插件是什么 | 走哪条 | 怎么做 |
+|---|---|---|
+| 真 DSH / cordis 插件（`export function apply(ctx)`、`@deepseek-ai/dsh-tools`、npm 依赖、`cordis.patch.yml`） | **Node 宿主**（首选） | 原包装进 Node 宿主；**不改写成原生插件**。用 `nodehost_install` + `nodehost_*` 装测 |
+| 已经是鲸歌原生格式（`package.json` + `apply` + `plugin_dev_*`，或用户点名要原生插件） | 原生 QuickJS | 按角色改包，用 `plugin_dev_test/install/enable` |
+| 需要页面 / 整壳 / slot / WebView 插件 UI | 原生 QuickJS（Node 宿主 v1 没有界面桥） | 按原生 `ui` 角色改，或如实说明 Node 版没有界面 |
+| 只是简单工具/命令/提示词，用户接受换格式 | 原生 QuickJS | 按第 4 节改；先说明这是分叉，不跟上游自动更新 |
+
+**产品纪律（docs/185 D10）**：真 DSH 插件默认**不改写成 Kotlin/QuickJS 原生插件**。能跑就装在 Node 宿主；跑不了先补 Node 环境/依赖，再让 AI 改插件自身的 node 侧适配；最后才说「不支持」。不要为了一个插件在原生里加专属落点。
 
 ## 0. 先读包，再下结论
 
-必看：`package.json`（`main`、`dsh.client`、`dsh.bundle.patch`、`dependencies`）、入口 JS、`dist/` 是否有可直接跑的构建产物。
+必看：`package.json`（`main`、`dsh.client`、`dsh.bundle.patch`、`dependencies`/`peerDependencies`）、入口 JS、`dist/` 是否有可直接跑的 ESM 构建产物。
 
-| 插件里有什么 | 现在的处置 |
-|---|---|
-| `ctx.tools.register(defineTool(...))` | 工具半侧可直接搬，先试导入 |
-| `ctx.tools.restrict/guard/describe/on('pre-execute'|'post-execute'|'result')` | 0.3.5 已支持；`describe/on` 需要 `tools:intercept`，`restrict/guard` 不需要 |
-| `ctx.on('agent/request'|'llm/stream'|'system-prompt/assemble'|'agent/pre-step')` | 0.3.5 已支持，需要 `llm:request`；只改本次请求副本/注入，不改会话历史 |
-| `ctx.storage.on('before-append'|'after-load')` / 插件记录 `session/event` veto | 0.3.5 已支持，需要 `storage:hooks`；v1 只观测+拒绝、不改写 |
-| `ctx.ui.slots.register/action` | 0.3.5 已支持，需要 `ui:slot`；8 个槽位（dock/工具卡/助手/用户/菜单/设置/抽屉/浮层） |
-| `ctx.commands.register` / `ctx.systemPrompt.section` / `ctx.systemPrompt.context` | 已支持，通常零改动 |
-| `ctx.systemPrompt.register`（整体提示词） | 已支持，作为「提示词」角色，需用户主动选中 |
-| `ctx.sessionProjections.register` / `ctx.on(...)` / `ctx.effect(...)` | 已支持（常驻 runtime）；投影/订阅需按会话重放语义改写，见作者技能 |
-| `ctx.ui.registerShell` / `ctx.ui.registerLoading` | 已支持；整壳和加载页都是「可替换角色」，装好还要用户选中 |
-| `ctx.ui.registerRoute` / `registerPage` + `dsh.client` | 已支持：插件自己的 `__ModuleLoader__` 客户端 bundle 跑在插件窗口 |
-| `ctx.agent.register` | 支持 text-only 回合插件；工具/LLM 流式原语仍 UNSUPPORTED |
-| `ctx.storage.register` | 只读存储（v1）；没有写入契约 |
-| `ctx.llm.register`（配置式或 `stream`） | 支持；不要填真实密钥 |
-| `ctx.capability.register` | 支持；模型可用 `capability` 工具按 id 调用（需启用 + `capability` 授权） |
-| React / DOM / Electron / Qt / PowerShell helper | 只有 Web 半侧可跑（客户端 bundle）；原生 helper 不能执行 |
-| `insert:` 展开的 cordis 组合包、npm 子插件 | 不展开、不自动安装；当普通单包处理 |
-| MCP server / 纯主题 / 纯 prompt 包 | 不走这条链，如实说明 |
+- 入口是 `export const name` / `export function apply(ctx)` → Node 宿主。
+- 入口是 `module.exports` / TS 源码 → 先构建成 ESM 再装；Node 宿主用 `import()` 加载。
+- 有 `dependencies` 且不是 `@deepseek-ai/*` → 必须把依赖随包打进 `node_modules/`（不能在手机上 `npm install`）。
+- 有绑定桌面/Electron/原生 helper 的代码 → Node 宿主也跑不了，如实标不支持。
 
-**第一步永远是**：读 `package.json` + `main` 指向的构建后 JS。TS 源码不能直接装。
+## 1. Node 宿主路线（真 DSH 插件首选）
 
-## 1. 旧的适配结论已过期（别按记忆照抄）
+**包形状**：
 
-这些说法在 M71 之前成立，现在**不成立**：
-
-- ❌「鲸歌只保留模型工具这一半」→ 现在工具、命令、提示词、页面、加载页、整壳、回合、存储、模型、能力、投影都能接。
-- ❌「任何接管 DSH 根界面的 root slot 一律拒绝」→ 现在插件可以 `registerShell` 提供整壳，默认仍是内置 `builtin.shell.native`，`builtin.shell.whale` 只是可选第二套；是否切换由用户在「插件 → 角色 → 界面」里决定，安装不等于选中。
-- ❌「`ctx.on` / `ctx.llm` / `ctx.sessionProjections` / `ctx.ui.register*` 只登记不回调」→ 这些都已实现（加载页、整壳、投影、事件订阅、模型流均有真实 dispatch）。
-- ❌「`shell` 权限每次调用都要用户确认」→ 按当前审批策略：`ask` 模式询问、`auto` 模式允许；授权是插件页逐项授予，不是每次弹窗。
-- ❌「AI 不能改插件授权/配置/角色」→ 0.3.5 起 `plugin_dev_grant/revoke/config/role` 可以（默认开、走工具审批、记 `files/plugin-audit.jsonl`，插件页横幅可一键撤销）；系统权限（通知/Shizuku/无障碍/悬浮窗）仍只由系统弹窗授予。
-- ❌「插件 UI 不执行，只能做原生替身」→ 客户端窗口与整壳都是一等能力；原生替身只在 Web 半侧不可移植时考虑。
-
-仍然成立的硬边界：无 npm 安装、无相对 `import`/`require` 解析、无 DEX/APK 动态加载、无完整 Cordis 服务树、无桌面 helper、`ctx.ui.registerView` 未实现、`ctx.agent` 的 `tools.invoke`/`llm.stream`/`storage.append` 返回 UNSUPPORTED、storage v1 只读；AI 能改的只是插件授权表里清单声明过的权限，不能改系统权限或授权文件、不能绕过工具审批。
-
-## 2. 包形状与清单
-
-```
+```text
 my-plugin/
-  package.json      # 必需
-  index.js          # 入口（默认 lib/index.js；建议显式 main）
+  package.json      # name / version / main；main 指向 ESM 入口
+  index.js          # export const name；export function apply(ctx, config)
+  node_modules/     # 可选：插件自己的依赖（随包带）
+```
+
+**装法**：把目录/zip 放在工作区 → `nodehost_install {path:'my-plugin'}`（目录会自动打成单根 zip，手机不需要 `zip` 命令）；`nodehost_uninstall {id}` 卸载。宿主开着会自动重启；关着只落盘。
+
+**可用 `ctx` 能力（v1）**：
+
+- `ctx.tools.register(defineTool({name,description,parameters,output,execute}))` → 原生侧变成 `node_<name>`，Ready 后进模型工具表。
+- `ctx.systemPrompt.section/context` → 原生宿主 Ready 后拉取合并。
+- `ctx.commands.register({name,description,input,handler})` → `/name`。
+- `ctx.llm.register({id,label,protocol,baseUrl,model,apiKey?})` → 声明式供应商，原生走自己的 HTTP 通道；只有 `stream()` 回调的供应商会如实标不可用。
+- `ctx.provide/inject` 等 cordis 依赖只在 Node 宿主内部生效。
+- **没有**页面/整壳/slot/WebView/npm 安装/`dsh web`/turn engine；不要承诺。
+
+**装测**：
+
+1. `nodehost_doctor` 先看 runtime/ABI/清单/坏插件；OFF/FAILED 时按 findings 的 fix 处理。
+2. `nodehost_status` / `nodehost_plugins` 看 enabled/state/pid/tool_count/已加载模块与错误。
+3. `nodehost_install` → 等 Ready → `nodehost_plugins` 确认 `ok=true`、工具/命令/供应商列出 → 真实调用一次 `node_<tool>`。
+4. 失败看 `nodehost_logs {source:'host'}`（脱敏）和 `nodehost_plugins.error`；修工作区包后重装同 id。
+5. 宿主坏了：`nodehost_autofix`（先 `dry_run:true` 看计划）或 `nodehost_repair` 单步。`reinstall-runtime` 只换运行时，插件/配置不动。
+6. 插件连续 2 轮加载失败会被自动隔离（卸载 + 通知 + 审计）；插件把宿主进程搞崩时无法归因到单个插件，只能看 crash loop 日志逐个排查。
+7. 宿主 control 有 3 次/5 分钟退避；写操作走审批 + `node-audit.jsonl`。
+8. **v1 不允许 AI 改设备上已安装插件的 JS**：改工作区源包再装，或隔离后让用户修。
+
+细节以 `dsh-node-plugin-authoring` 为准。
+
+## 2. 旧结论已过期（别按记忆照抄）
+
+- ❌「DSH 插件只能改写成鲸歌原生插件」→ **错**。真 DSH 插件优先原样装 Node 宿主；改原生是用户明确选择的分叉。
+- ❌「鲸歌只保留模型工具这一半」→ 原生链现在工具、命令、提示词、页面、加载页、整壳、回合、存储、模型、能力、投影都能接；Node 链有工具/提示词/命令/模型供应商。
+- ❌「任何接管 DSH 根界面的 root slot 一律拒绝」→ 原生可 `registerShell`；是否切换由用户在「插件 → 角色 → 界面」决定。
+- ❌「`ctx.on` / `ctx.llm` / `ctx.sessionProjections` / `ctx.ui.register*` 只登记不回调」→ 原生链已实现；Node 链的 `ctx` 是真 cordis。
+- ❌「`shell` 权限每次调用都要用户确认」→ 按审批策略：`ask` 询问、`auto` 允许；授权是插件页逐项授予。
+- ❌「AI 不能改插件授权/配置/角色」→ `plugin_dev_grant/revoke/config/role` 一直可用（docs/190-F 已永久删除「AI 全控制」总开关），走工具审批 + `plugin-audit.jsonl`；系统权限（通知/Shizuku/无障碍/悬浮窗）仍只由系统弹窗授予。
+- ❌「插件 UI 不执行，只能做原生替身」→ 原生客户端窗口与整壳是一等能力；Node 宿主 v1 没有 UI 桥，这两件事不要混。
+
+仍然成立的硬边界（原生链）：无 npm 安装、无相对 `import`/`require` 解析、无 DEX/APK 动态加载、无完整 Cordis 服务树、无桌面 helper、`ctx.ui.registerView` 未实现、`ctx.agent` 的 `tools.invoke`/`llm.stream`/`storage.append` 返回 UNSUPPORTED、storage v1 只读。
+
+## 3. 原生 QuickJS 路线（只在明确要原生时）
+
+包形状与装测：见 `dsh-plugin-authoring`。最小包：
+
+```text
+my-plugin/
+  package.json      # name/id/version/main/permissions
+  index.js          # apply(ctx, config)
   client.js         # 仅页面/客户端窗口需要
 ```
 
 ```json
 {
-  "name": "hello-dsh",
-  "id": "hello-dsh",
+  "name": "whale-hello",
+  "id": "whale-hello",
   "version": "0.1.0",
-  "description": "从 DSH 插件 hello 适配",
   "main": "index.js",
-  "permissions": ["ui"],
-  "dsh": { "client": { "platform": "web", "entry": "client.js" } },
-  "exports": { "./client": "./client.js" }
+  "permissions": []
 }
 ```
 
-- `id` 可省（默认 name），1–80 字符，字母数字与 `@ . _ / -`；**不要**用 `builtin.*`。
-- 只声明真正用到的权限，见第 5 节。
-- zip 限制：≤2000 文件、单文件 4 MiB、解压总计 32 MiB、无绝对路径/`..`/重复路径。
-- 同 id 安装 = 升级：保留新 schema 兼容配置、**保留原来的启用开关**（新装默认停用），旧危险授权要重新确认；保留旧包可回退。
+装测工具：`plugin_dev_list` → `plugin_dev_test` → `plugin_dev_install`（新装默认停用）→ `plugin_dev_enable` → 真实调用/页面验证；改包用 `plugin_dev_reload`，删除先停用再 `plugin_dev_delete`。没有工具时交付 zip 到「包管理 → 插件 → 导入 zip」。
 
-## 3. 工具适配（最常见）
+### 原生角色映射（改包时用）
 
-入口导出 `apply(ctx, config)`，ESM/CJS 都接受。DSH 的 `defineTool` 与 schemastery 子集已 shim，纯工具插件多数可零改动：
+| 插件里有什么 | 原生落点 |
+|---|---|
+| `ctx.tools.register(defineTool(...))` | 工具；`ctx.tools.restrict/guard/describe/on` 已支持（describe/on 需 `tools:intercept`） |
+| `ctx.on('agent/request'|'llm/stream'|'system-prompt/assemble'|'agent/pre-step')` | 请求中间件，需 `llm:request` |
+| `ctx.storage.on('before-append'|'after-load')` / 插件记录 veto | 存储钩子，需 `storage:hooks`；v1 只观测+拒绝 |
+| `ctx.ui.slots.register/action` | 插槽，需 `ui:slot`；8 个槽位 |
+| `ctx.commands.register` / `ctx.systemPrompt.section/context` | 命令 / 提示词段，通常零改动 |
+| `ctx.systemPrompt.register` | 整体提示词角色，需用户选中 |
+| `ctx.sessionProjections.register` / `ctx.on` / `ctx.effect` | 常驻 runtime；投影/订阅按会话重放语义改写 |
+| `ctx.ui.registerShell` / `registerLoading` | 整壳 / 启动加载页，装好还要用户选中 |
+| `ctx.ui.registerRoute/registerPage` + `dsh.client` | 插件自己的 `__ModuleLoader__` 客户端 bundle |
+| `ctx.agent.register` | text-only 回合；工具/LLM 流原语 UNSUPPORTED |
+| `ctx.storage.register` | 只读存储 v1 |
+| `ctx.llm.register` | 配置式或 `stream`；不要填真实密钥 |
+| `ctx.capability.register` | 能力；模型用 `capability` 工具按 id 调用 |
+| React/DOM/Electron/Qt/PowerShell helper | 只有 Web 半侧可跑；原生 helper 不能执行 |
+| `insert:` 组合包 / npm 子插件 | 不展开、不自动安装 |
 
-```js
-export function apply(ctx) {
-  ctx.tools.register({
-    name: 'hello',
-    description: '按名字打招呼',
-    parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
-    async execute(args) { return '你好，' + String(args.name) + '！' }
-  })
-}
-```
-
-改造要点：
-
-- **参数**：DSH 的「参数项上的 `required: true`」DSL 会被转成 JSON Schema；认不出的 schema 不会进模型工具表（试运行会报）。优先直接写 JSON Schema。
-- **`output.schema` / `output.render`**：删除；把 render 文案并进 `execute` 返回值（字符串最稳，或可 JSON 序列化值；对象有 `text` 取 `text`）。
-- **`execute(args, exec)`**：`exec.signal/agent` 没有；长任务靠 await，宿主有超时与停止。
-- **模块**：`@deepseek-ai/dsh-tools`、`@deepseek-ai/schemastery`、`node:fs`、`node:path`、`node:os`、`node:child_process`、`fetch`、`console`、`setTimeout` 有 shim；`axios`/`lodash` 等改为原生 JS 或内联；相对 import 必须打包成单文件。
-- **状态**：工具调用会新建 QuickJS 并重新 `apply`，不能用工具闭包保存跨调用状态；`apply` 只登记，副作用放执行函数。
-- **通知**：`notify` 权限已实现（默认仍需确认），Android 13+ 还要系统 `POST_NOTIFICATIONS`；不要把插件通知当唯一交付前提。
-- **参数长度**：模型侧工具输入有硬闸门（`ToolInputGuard`，UTF-8 字节）：普通工具 64KB（插件工具、`plugin_dev_call` 的 `args` 也算在内），`write`/`edit` 512KB；超限或 JSON 半截/非法会显式拒绝、回合继续。插件工具别要求一次塞超大 JSON，改传路径或分段参数。
-
-## 4. 其余角色的落点（要点，细节见作者技能）
-
-- **命令**：`ctx.commands.register({name, description, handler})`；`/name 参数` 执行，结果显示在命令提示条，不进模型历史。
-- **提示词段**：`ctx.systemPrompt.section/context`；`text`/`variable` 在 apply 时求值成快照，不做每请求动态执行；`complete:true` 不启用。
-- **整体提示词**：`ctx.systemPrompt.register({id,label,assemble(req)})`，需要 `prompt` 权限与用户选中。
-- **页面**：Host 侧 `ctx.ui.registerRoute/registerPage` + 清单 `dsh.client`；客户端必须是 `__ModuleLoader__` bundle，不是裸 ESM/HTML。当前客户端面只保证 `sessions/get`、`effect`、`slots`（实际渲染 `shell.overlay`）等最小集，`ctx.on` 是占位。
-- **启动加载页**：`ctx.ui.registerLoading({id,label,tree})`，`loading/v1` 静态树；预算 8 个/包、单声明 ≤32 KiB UTF-8、≤128 节点、深度 ≤12、单 text ≤2000 字符；只能 bind `boot.phase/message/elapsed`。装好后在「插件 → 角色 → 启动加载页」选择，下次冷启动读快照。
-- **整壳**：`ctx.ui.registerShell({id,label,backend:'surface'|'webview',mount,onState,onAction,onEvent})`；Surface 原语 17 种、≤2000 节点/24 层；WebView 返回 `{title,html}` 片段，用 `DshWebShell.action/command/state`。整壳命令（宿主侧 `ctx.surface.command`）包含 `send/stop/cancelQueuedPrompt/resumeQueuedPrompts/setSendWhileRunningMode/newSession/openSession/selectSession/openSettings/closeShell/setDraft/approval/pickFile/screenshot/removeAttachment/setShellView/answer/goal/deleteSchedule/focusSession`；命令在主线程同步执行并有超时，别在 onTap 里做长任务。
-- **回合**：`ctx.agent.register({id,label,run(turn,api)})`，v1 只跑纯文本轮，`api` 仅 notify/status/abort/tools.names；不要宣称自主工具回合。
-- **存储**：`ctx.storage.register({list,load})`，v1 只读；`exportList/exportLoad` 返回宿主信封，先看 `ok`。
-- **模型**：`ctx.llm.register` 配置式（protocol/baseUrl/model/apiKey）或 `stream(request,emit)`；`emit` 增量文本，最终返回 `{text, toolCalls?, stopReason?, usage?}`，缺 usage 如实缺失。
-- **能力**：`ctx.capability.register({id,label,kind,invoke})`；返回 JSON 或 `{ok,value}`；不自动获得 root/NFC/Shizuku/ADB。模型用 `capability {id,args}` 调用（需启用 + `capability` 授权），内置 `notify` 可直接用 `notify` 工具。
-- **AI 代授权限/配置/角色（0.3.5）**：`plugin_dev_grant`（清单内可授予项，`all:true` 授全部）、`plugin_dev_revoke`（`all:true` 撤销全部）、`plugin_dev_config`（按插件 Config schema，`reset:true` 恢复默认）、`plugin_dev_role`（`shell/loading/agent/storage/prompt/model`；value 用角色候选选择值：内置实现 `native`、加载页 `builtin.loading.native`、模型 `deepseek`/`openai`，第三方插件 id 或 `插件id#实现id`）、`plugin_dev_middleware`（全局旁路开关，扩展点插件没效果时先查它）。这些工具受工具审批约束，逐条写 `files/plugin-audit.jsonl`，插件页横幅可一键撤销；系统权限不在其中。
-- **服务/投影/事件**：`provide/inject` 是 JSON 快照；`ctx.effect` 返回同步 cleanup；投影 init/apply/wire 必须同步且返回可存值，改结构升级 `stateVersion`。
-- **工具中间件**：`ctx.tools.restrict/guard/describe` + `ctx.tools.on('pre-execute'/'post-execute'/'result')`；链顺序 = 插件清单顺序，`post-execute` v1 只改 text/isError，工具卡会标改写与原始哈希。
-- **请求中间件**：`ctx.on('system-prompt/assemble'/'agent/request'/'llm/stream'/'agent/pre-step')`；请求副本可改，流式改写会进 UI 与会话日志；pre-step 只能注入不能删。step 1 的 `lastUserText` 可能是技能目录通知，不是用户原文。
-- **插槽**：`ctx.ui.slots.register({slot,id,order,when,tree})` + `slots.action`；Surface 子树预算与只读绑定；8 个槽位见作者技能。
-- **存储钩子**：`ctx.storage.on('before-append'/'after-load')` + 插件记录 `session/event` veto；拒绝不落盘/不占 seq；工具结果被拒时宿主补 `isError` fallback。
-- **中间件总开关**：插件页 →「扩展点」→ 顶部「插件中间件总开关」可一键旁路工具/请求/存储/事件钩子；「插件 → 扩展点」页签看逐链注册者/顺序/命中/耗时。适配验收时可以用它做「关掉后行为回到内置」的对拍。**扩展点插件装好却没效果时先看这个开关**：AI 可用 `plugin_dev_middleware_state` 查状态、`plugin_dev_middleware {enabled:true}` 打开。
-- **组合包**：`dsh.bundle.patch` 只解析展示元数据，`insert:` 不展开，子插件不自动安装——交付说明必须写清。
-
-## 5. 权限（当前表）
+## 4. 原生权限（当前表）
 
 | 声明 | 含义 | 授予方式 |
 |---|---|---|
-| `fs:workspace` | 当前工作区读写（canonical 校验防越界） | 导入即允许 |
-| `fs:any` | App 可访问的任意路径 | 插件页确认 |
+| `fs:workspace` | 当前工作区读写（canonical 防越界） | 导入即允许 |
+| `fs:any` | App 可访问任意路径 | 插件页确认 |
 | `net:<host>` / `net:any` | 仅 https，按域名/子域；本机/内网默认拒绝 | 插件页确认 |
-| `shell` | 自动选择身份执行命令：root → Shizuku → App（root 优先，无 root 自动用 Shizuku/App）；返回 identity，不假装 root | 插件页确认 |
-| `device` / `memory` | 设备信息/操作，鲸歌记忆库 | 插件页确认 |
-| `ui` / `agent` / `storage` / `prompt` / `capability` | 注册对应角色 | 导入即允许，**选中才生效** |
-| `ui:slot` | 往宿主界面加块（8 个槽位） | 插件页确认（危险程度低但仍需确认） |
-| `tools:intercept` | 改工具描述/参数/结果 | 插件页确认（`restrict/guard` 不需要） |
-| `llm:request` | 改请求/提示词/流式输出 | 插件页确认 |
-| `storage:hooks` | 会话写入钩子 / 插件记录 veto | 插件页确认 |
-| `notify` | 系统通知 | 插件页确认 + Android 13+ 系统通知权限 |
+| `shell` | 自动选身份：root → Shizuku → App；返回 identity | 插件页确认 |
+| `device` / `memory` | 设备信息/操作、记忆库 | 插件页确认 |
+| `ui` / `agent` / `storage` / `prompt` / `capability` | 注册对应角色 | 导入即允许，选中才生效 |
+| `ui:slot` / `tools:intercept` / `llm:request` / `storage:hooks` | 插槽 / 改工具 / 改请求 / 写钩子 | 插件页确认（restrict/guard 不需要） |
+| `notify` | 系统通知 | 插件页确认 + Android 13+ 系统权限 |
 | 其它写法 | 未知 | 不授予、不生效 |
 
-安装/启用 ≠ 选中角色 ≠ 授权危险能力；AI 可经 `plugin_dev_grant/revoke` 改已声明授权（有开关、审批与审计，用户可撤销），但不能改系统权限或授权文件、不能绕过审批；缺授权就如实记录。
+## 5. 装测与交付
 
-## 6. 安装与验证流程
+**Node 路线**：`nodehost_install` 成功后必须等 Ready，`nodehost_plugins` 里模块 `ok=true`、工具列出，再真实调用一次 `node_<name>`；失败日志/隔离步骤见第 1 节。
 
-1. `plugin_dev_list`：看已装插件、工具/壳/loadings 登记与权限，确认是否升级同 id。
-2. `plugin_dev_scaffold`：`template` 可取 `tool`/`surface-shell`/`webview-shell`/`loading`；不覆盖已有目录。
-3. `plugin_dev_test`：隔离跑 apply，检查 `tools/shells/loadings/unsupported/missingServices` 与错误；这是试运行，不是功能验收。
-4. `plugin_dev_install`（新装**默认停用**）→ `plugin_dev_enable` 启用；改包后用 `plugin_dev_reload`。停用会清掉指向它的角色选择并静默回退内置。用户要求 AI 代办授权时用 `plugin_dev_grant`（只授清单内可授予项，写审计并弹「已授予 · 撤销」横幅），撤销用 `plugin_dev_revoke`（AI 全控制无单独页面开关，默认开启）。
-5. 角色/配置：需要时用 `plugin_dev_role` 切角色、`plugin_dev_config` 写配置（按插件 Config schema，`reset:true` 恢复默认）。
-6. 真实调用：工具用 `plugin_dev_call` + 输入条/模型调用；页面点开插件窗口；整壳/加载页/回合/存储/提示词要用户在角色页选中后做冷启动或真实回合验证。
-7. `plugin_dev_test_shell` 只校验树/HTML 形状，不切当前壳，也不证明画面已验收。
-8. 卸载用 `plugin_dev_delete {id}`：正在使用/运行中会被拒绝（闸门 A），先 `plugin_dev_enable {enabled:false}` 停用再删；删除也会清角色选择并回退内置。
+**原生路线**：`plugin_dev_test` 无错 → 安装（默认停用）→ 启用 → 真实 execute / 页面 / 角色冷启动验证；停用/重载后角色撤下、cleanup 生效。
 
-没有工具时：zip 交付到「包管理 → 插件 → 导入 zip」，用插件详情的试运行/启用/重载/授权/页面入口。
+交付话术（Node）：
 
-真机观测（debug 包）：
+> 这个 DSH 插件按原包装进了鲸歌 Node 宿主：`package.json` + `index.js`，工具 `xxx`、命令 `yyy`。导入后启用即可；Node 宿主 v1 没有插件界面，页面/整壳类请走原生插件。装测结果：……，未验：……
 
-- `--es dsh_ui_probe <路径>`：全局 writer/草稿/队列/发送模式等只读快照；
-- `--es dsh_dump_plugins <路径>`：插件启用/停用清单；
-- `--es dsh_shell_list <路径>` / `--es dsh_loading_list <路径>`：壳与加载页候选、当前选中；
-- `--es dsh_plugin_zip <路径>` / `--es dsh_plugin_grant <id>` / `--es dsh_plugin_off <id>`：安装、授权、停用；
-- `--es dsh_dump_request <路径>`：看 request 里 system/tools 的实际注入（验提示词段）。
+交付话术（原生）：
 
-## 7. 交付前清单
+> 这个插件按鲸歌原生格式适配好了：工具 `xxx`、命令 `yyy`、权限 `…`。导入后启用即可；页面/整壳/加载页需要在「插件 → 角色」里选中才生效。与原包相比没搬的部分：……
 
-- [ ] 包能导入，`plugin_dev_test` 无错，工具/角色数量符合预期。
-- [ ] 工具的必填/可选/错误参数与真实 execute 各跑一次。
-- [ ] 中间件（如有）：关掉总开关后行为回到内置；「插件 → 扩展点」能看到注册项与命中；拒绝/改写场景各跑一次。
-- [ ] 权限：未授权确实拒绝、已授权按预期；日志/返回值无凭据。
-- [ ] AI 代授（如用到）：`plugin_dev_grant/revoke` 只授声明内权限、审计有记录、插件页横幅可撤销；关掉「AI 全控制插件」后四工具返回 `ai_plugin_control_disabled`；系统权限仍由系统弹窗授予。
-- [ ] 角色：需要用户选中的（页面/整壳/加载页/回合/存储/提示词）明确告诉用户去哪选，不宣称已生效。
-- [ ] 生命周期：停用/重载后角色撤下、cleanup 生效；重启与会话重放不重复外部副作用。
-- [ ] UI：窄屏/横屏/深浅色/长文本/键盘遮挡；整壳保留停止与恢复原生壳入口。
-- [ ] 加载页：真实冷启动看所选快照首帧，记录 loadingFirstDraw/coreReady/shellFirstDraw（renderer 证据，不是呈现时间）。
-- [ ] 无法搬的部分逐条列清原因（npm 依赖、DOM、原生 helper、Cordis 服务树、UNSUPPORTED 原语）。
+## 6. 参考
 
-## 8. 交付话术
-
-> 这个 DSH 插件按鲸歌当前插件链适配好了：`package.json` + `index.js`（+ `client.js`），工具 `xxx`、命令 `yyy`、权限 `…`。
-> 导入后启用即可用；页面/整壳/加载页这类角色需要你在「插件 → 角色」里选中才会生效。
-
-部分适配时写清：搬了哪些角色、没搬哪些、为什么、以及用户需要手动选中的步骤。
-
-## 9. 参考
-
-- 作者技能：`dsh-plugin-authoring`（角色 API、loading/v1 预算、整壳原语、验收步骤以它为准）。
-- 源码入口（仓库根）：`core/plugins/PluginModule.kt`（Host ctx/shim）、`PluginSandbox.kt`（fs/net/shell）、`PluginPermissions.kt`（权限表）、`PluginServices.kt`、`SurfaceSpec.kt`、`LoadingSpec.kt`、`PluginPackage.kt`、`PluginClientEntry.kt`、`BundlePatch.kt`、`PluginMiddlewareSwitch.kt`（总开关）、`core/session/SessionWriteHooks.kt`（写钩子契约）、`core/engine/ToolInputGuard.kt`（工具输入上限）；App 侧插件开发/AI 控制 `app/.../data/PluginDevTools.kt`、审计 `PluginAuditLog.kt`、内置组 `BuiltinPlugins.kt`。
-- 客户端宿主：`app/src/main/assets/client-host/host.js`；整壳桥：`app/.../ui/surface/WebViewShellScreen.kt`；加载快照与恢复：`app/.../data/LoadingSnapshotStore.kt`、`app/.../ui/boot/`。
+- Node 作者技能：`dsh-node-plugin-authoring`；原生作者技能：`dsh-plugin-authoring`。
+- Node 宿主：`app/.../node/{NodePluginHost,NodeHostProcess,NodeHostBridge,NodePluginInstaller,NodeRuntimeInstaller,NodeHostTools}.kt`、`app/src/main/assets/node/runtime.zip` 内 `dsh/host.mjs`；证据 `docs/190-evidence/b-node/`。
+- 原生源码：`core/plugins/PluginModule.kt`、`PluginSandbox.kt`、`PluginPermissions.kt`、`PluginServices.kt`、`SurfaceSpec.kt`、`LoadingSpec.kt`、`PluginPackage.kt`、`PluginClientEntry.kt`、`BundlePatch.kt`、`PluginMiddlewareSwitch.kt`、`core/session/SessionWriteHooks.kt`、`core/engine/ToolInputGuard.kt`；App 侧 `PluginDevTools.kt`、`PluginAuditLog.kt`、`BuiltinPlugins.kt`。
+- 客户端宿主：`app/src/main/assets/client-host/host.js`；整壳桥：`app/.../ui/surface/WebViewShellScreen.kt`；加载快照/恢复：`app/.../data/LoadingSnapshotStore.kt`、`app/.../ui/boot/`。

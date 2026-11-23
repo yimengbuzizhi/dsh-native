@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -63,9 +69,9 @@ fun SkillsScreen(
 ) {
     val c = DshTheme2.colors
     LaunchedEffect(Unit) { onRefresh() }
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {
@@ -86,11 +92,6 @@ fun SkillsScreen(
         }
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp)) {
-            SettingsInfoBanner(
-                "技能 = 一个文件夹里的 SKILL.md（YAML frontmatter 的 name/description + 正文说明）。" +
-                    "目录变化时会在下一个 step 起点自动同步给模型；模型用 skill 工具加载完整说明后再照做。",
-            )
-
             SettingsGroup(icon = Icons.Rounded.Star, title = "已发现的技能") {
                 if (skills.isEmpty()) {
                     SettingsInfoBanner("还没有技能。新建 files/skills/<名字>/SKILL.md，回到这里点右上角刷新。")
@@ -101,11 +102,6 @@ fun SkillsScreen(
 
             SettingsGroup(icon = Icons.Rounded.Star, title = "扫描目录") {
                 roots.forEach { root -> RootRow(root, homeDir, workspaceDir) }
-                SettingsInfoBanner(
-                    "同名技能先到先得：project-dsh(100) → project-agents(200) → user-dsh(400) → user-agents(500)。" +
-                        "子目录里的 SKILL.md 是目录型技能，根目录下的 *.md 是单文件技能。",
-                    tint = c.sub,
-                )
             }
 
             if (warnings.isNotEmpty()) {

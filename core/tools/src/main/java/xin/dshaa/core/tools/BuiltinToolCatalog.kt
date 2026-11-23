@@ -31,7 +31,8 @@ import xin.dshaa.core.tools.schedule.ScheduleUpdateTool
 import xin.dshaa.core.tools.shell.BashTool
 import xin.dshaa.core.tools.shell.WorkingDirectoryTool
 import xin.dshaa.core.tools.skill.SkillTool
-import xin.dshaa.core.tools.web.HttpRequestTool
+import xin.dshaa.core.tools.web.CurlTool
+import xin.dshaa.core.tools.web.HttpRequestAliasTool
 import xin.dshaa.core.tools.web.WebFetchTool
 import xin.dshaa.core.tools.web.WebSearchTool
 import xin.dshaa.core.tools.workspace.LoadWorkspaceDependenciesTool
@@ -50,6 +51,15 @@ object BuiltinToolCatalog {
     /** 一个内置插件组：id 与 `BuiltinPlugins` 的插件 id 一致。 */
     data class Group(val id: String, val tools: List<DshTool>)
 
+    /**
+     * `curl` 工具实例：`builtin.web` 组里注册给模型的是它；
+     * 旧名字 `http_request` 只做 [ToolRegistry.registerAlias] 的别名（模型看不见，见 docs/187 §6.5）。
+     */
+    val curl: DshTool = CurlTool()
+
+    /** 旧会话兼容别名（执行端可用、模型不可见）。 */
+    fun aliases(): List<DshTool> = listOf(HttpRequestAliasTool(curl))
+
     val groups: List<Group> = listOf(
         Group(
             "builtin.fs",
@@ -57,7 +67,7 @@ object BuiltinToolCatalog {
         ),
         Group("builtin.shell", listOf(BashTool(), WorkingDirectoryTool())),
         Group("builtin.jobs", listOf(JobOutputTool(), JobListTool(), JobKillTool())),
-        Group("builtin.web", listOf(WebFetchTool(), WebSearchTool(), HttpRequestTool())),
+        Group("builtin.web", listOf(WebFetchTool(), WebSearchTool(), curl)),
         Group(
             "builtin.agent",
             listOf(SubagentTool(), SubagentTool(fork = true), ListAgentsTool(), SendMessageTool(), InterruptAgentTool()),

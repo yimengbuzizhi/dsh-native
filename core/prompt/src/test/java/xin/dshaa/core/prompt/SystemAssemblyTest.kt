@@ -3,7 +3,9 @@ package xin.dshaa.core.prompt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * 契约 #1 的 system 段拼装对拍：
@@ -214,9 +216,55 @@ class SystemAssemblyTest {
         assertEquals(pack.desktopSystemSnapshot, assembled)
     }
 
+    /**
+     * docs/190-E：`includeBuiltinSections=false`（关掉「提示词：鲸歌内置规则」）时
+     * 打包 sections/plan:policy 一段不剩，但用户人设/系统提示词/插件段仍按 order 拼好。
+     */
     @Test
-    fun planPolicySectionOnlyRendersInPlanMode() {
-        val tools = setOf("read", "write", "exit_plan_mode")
+    fun builtinSectionsCanBeDisabledWithoutLosingUserContent() {
+        val plugin = PromptSection("plugin:extra", 7_000, text = "PLUGIN-EXTRA")
+        val off = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek-account",
+            tools = setOf("read", "write", "bash", "start_virtual_display", "create_goal"),
+            planMode = true,
+            personaPrefix = "USER-PERSONA",
+            personaSuffix = "USER-SYSTEM",
+            extraSections = listOf(plugin),
+            includeBuiltinSections = false,
+        )
+        // 内置段一个不剩（identity / file-reference / 各 tool 段 / plan:policy / Android 专属段）
+        assertTrue("You are an AI agent powered by DeepSeek Harness." !in off)
+        assertTrue("Tokens prefixed with @ are paths" !in off)
+        assertTrue("Use the read tool" !in off)
+        assertTrue("You are in plan mode." !in off)
+        assertTrue("create a virtual display first" !in off)
+        assertTrue("Before each batch of tool calls" !in off)
+        // 用户/插件内容仍在，顺序 persona(0) < 插件段(7000) < system suffix(10200)
+        assertTrue("USER-PERSONA" in off)
+        assertTrue("PLUGIN-EXTRA" in off)
+        assertTrue(off.endsWith("USER-SYSTEM"))
+        val persona = off.indexOf("USER-PERSONA")
+        val extra = off.indexOf("PLUGIN-EXTRA")
+        val suffix = off.indexOf("USER-SYSTEM")
+        assertTrue(persona >= 0 && extra > persona && suffix > extra)
+
+        // 默认（不传参数）= 打开，和桌面快照逐字节一致——默认行为不能被这个开关改掉。
+        val desktopTools = pack.toolDefinitions.map { it.name }.toSet()
+        assertEquals(
+            pack.desktopSystemSnapshot,
+            pack.systemFor(
+                model = "deepseek-flash",
+                provider = "deepseek",
+                tools = desktopTools,
+                platform = "desktop",
+                includeBuiltinSections = true,
+            ),
+        )
+    }
+
+    @Test
+    fun planPolicySectionOnlyRendersInPlanMode() {        val tools = setOf("read", "write", "exit_plan_mode")
         val normal = pack.systemFor(model = "deepseek-flash", provider = "deepseek-account", tools = tools)
         val plan = pack.systemFor(
             model = "deepseek-flash",
@@ -288,6 +336,100 @@ class SystemAssemblyTest {
         }
         // 上游 32 个 + 29 个 Android 设备/终端/记忆/能力/HTTP 工具
         // （18 设备终端 + 8 记忆，M56 追加；M88-C 追加 capability/notify 2 个；M88-D 追加 http_request）
-        assertEquals(32 + 29, tools.size)
+        // + P1/P3 的 20 个可用原语（PrimitiveCatalog 生成；P3-e 起 ui.openContainer 就绪）
+        assertEquals(32 + 29 + 20, tools.size)
+    }
+
+    /**
+     * bash 段的 Android 事实（2026-11-20，用户反馈「bash 工具箱不全」）：
+     * 文案不能再宣称 `bash -c` / 分级沙箱（设备上没有），`env` / `stdin` 要真的进 schema，
+     * 而 `required` 与上游保持同形（description + command），否则模型侧调用形态会变。
+     */
+    @Test
+    fun androidBashSchemaMatchesDeviceFacts() {
+        val bash = pack.androidApiTools().first { it.name == "bash" }
+        val props = bash.inputSchema["properties"]?.jsonObject ?: error("bash 没有 properties")
+        assertEquals("object", props["env"]?.jsonObject?.get("type")?.jsonPrimitive?.content)
+        assertEquals("string", props["stdin"]?.jsonObject?.get("type")?.jsonPrimitive?.content)
+        assertEquals(
+            listOf("description", "command"),
+            bash.inputSchema["required"]?.jsonArray?.map { it.jsonPrimitive.content },
+            "required 不能变（上游同形）",
+        )
+        val description = bash.description.orEmpty()
+        assertTrue(description.contains("`sh -c` on Android"), "应说明真机是 sh -c：$description")
+        assertTrue("bash -c" !in description, "不该再宣称 bash：$description")
+        assertTrue("no graded sandbox" in description, "应说明没有分级沙箱：$description")
+    }
+
+    /**
+     * 「虚拟屏优先」段（device:virtual-screen）：
+     * - requires=start_virtual_display，工具不在时整段不渲染（PromptPack 的既有机制）；
+     * - platform=android，桌面快照对拍不受影响；
+     * - 必须在 Android system 里出现，且明确「先开虚拟屏、再传 display」。
+     */
+    @Test
+    fun virtualScreenSectionRequiresTheStartToolAndOnlyRendersOnAndroid() {
+        val marker = "create a virtual display first"
+
+        val withTool = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek-account",
+            tools = setOf("start_virtual_display", "tap", "capture_screenshot"),
+        )
+        assertTrue(marker in withTool, "有 start_virtual_display 时必须渲染虚拟屏段")
+        assertTrue("pass the returned display id as `display`" in withTool)
+        assertTrue("close_all_virtual_displays" in withTool)
+
+        val withoutTool = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek-account",
+            tools = setOf("read", "write", "bash"),
+        )
+        assertTrue(marker !in withoutTool, "没有 start_virtual_display 时不能渲染虚拟屏段")
+
+        val desktop = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek",
+            tools = pack.toolDefinitions.map { it.name }.toSet() + "start_virtual_display",
+            platform = "desktop",
+        )
+        assertTrue(marker !in desktop, "桌面平台不渲染 Android 专属段")
+    }
+
+    /**
+     * docs/190-B：`device:node-admin` 段（order 10160，Android）。
+     * - requires=nodehost_doctor：工具不在时不渲染（桌面快照/默认拼装不受影响）；
+     * - 只在 Android 出现，且明确「先 doctor 再动手」+ 不允许改插件 JS；
+     * - 排在 persona-suffix(10200) 之前（用户系统提示词仍是最后一段）。
+     */
+    @Test
+    fun nodeAdminSectionRequiresTheDoctorToolAndOnlyRendersOnAndroid() {
+        val marker = "start with `nodehost_doctor`"
+        val withTools = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek-account",
+            tools = setOf("nodehost_doctor", "nodehost_control", "read"),
+            personaSuffix = "回答尽量简短。",
+        )
+        assertTrue(marker in withTools, "有 nodehost_doctor 时必须渲染 Node 管理段")
+        assertTrue("Never edit a plugin's JavaScript" in withTools)
+        assertTrue("nodehost_autofix" in withTools)
+        assertTrue(withTools.endsWith("回答尽量简短。"), "Node 管理段不能排在 persona-suffix 之后")
+
+        val withoutTools = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek-account",
+            tools = setOf("read", "write", "bash"),
+        )
+        assertTrue(marker !in withoutTools, "没有 nodehost_doctor 时不能渲染 Node 管理段")
+
+        val desktop = pack.systemFor(
+            model = "deepseek-flash",
+            provider = "deepseek",
+            tools = pack.toolDefinitions.map { it.name }.toSet() + "nodehost_doctor",
+            platform = "desktop",
+        )
+        assertTrue(marker !in desktop, "桌面平台不渲染 Android 专属段")
     }
 }

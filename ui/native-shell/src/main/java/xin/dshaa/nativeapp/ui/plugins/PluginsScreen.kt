@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.plugins
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import android.Manifest
 import android.net.Uri
 import android.os.Build
@@ -82,6 +87,7 @@ import xin.dshaa.core.plugins.PluginCapability
 import xin.dshaa.core.plugins.PluginPermission
 import xin.dshaa.core.plugins.PluginPermissionKind
 import xin.dshaa.core.plugins.PluginPermissions
+import xin.dshaa.core.plugins.PluginOwnership
 import xin.dshaa.core.plugins.PluginRecord
 import xin.dshaa.core.plugins.PluginSchema
 import xin.dshaa.nativeapp.device.DevicePermissions
@@ -90,7 +96,11 @@ import xin.dshaa.ui.design.component.MiniChip
 import xin.dshaa.ui.design.component.SectionHeader
 import xin.dshaa.ui.design.component.SettingsSwitchRow
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.shellapi.NodeHostManifestUi
+import xin.dshaa.ui.shellapi.NodeHostPluginUi
+import xin.dshaa.ui.shellapi.NodeHostStatusUi
 import xin.dshaa.ui.shellapi.PluginExtensionUi
+import xin.dshaa.ui.shellapi.PluginImportDraftUi
 import xin.dshaa.ui.shellapi.visibleInRoleList
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -104,6 +114,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** 切界面壳会让整棵宿主重组、丢掉 rememberSaveable 的页签；进程内记住最近一次页签。 */
+private object PluginsTabMemory { var index = 0 }
 
 /** 插件管理：导入、内置和角色分别浏览；搜索包含停用项。 */
 @Composable
@@ -168,7 +181,36 @@ fun PluginsScreen(
     pluginExtensions: List<PluginExtensionUi> = emptyList(),
     pluginMiddlewareEnabled: Boolean = true,
     onTogglePluginMiddleware: (Boolean) -> Unit = {},
+    /** docs/185 P2：Node 插件宿主（跑真 dsh Node 插件）的开关与状态文案。 */
+    nodeHostEnabled: Boolean = false,
+    nodeHostState: String = "",
+    /** docs/188 P4：结构化状态（OFF/IDLE/EXTRACTING/STARTING/READY/FAILED/STOPPED）。 */
+    nodeHostStatus: NodeHostStatusUi = NodeHostStatusUi(
+        code = "off",
+        title = "已关闭（OFF）",
+        detail = "Node 宿主没开：Node 插件不会加载；原生插件、聊天和工具不受影响。",
+    ),
+    onToggleNodeHost: (Boolean) -> Unit = {},
+    nodeHostPlugins: List<NodeHostPluginUi> = emptyList(),
+    nodeHostManifest: List<NodeHostManifestUi> = emptyList(),
+    nodeHostLogs: List<String> = emptyList(),
+    onReloadNodeHost: () -> Unit = {},
+    onImportNodePlugin: (Uri) -> Unit = {},
     onRefreshExtensions: () -> Unit = {},
+    /** docs/188 P4：统一导入（识别归属 + 可改 + 迁移）。 */
+    pluginImportDraft: PluginImportDraftUi? = null,
+    pluginImportLimits: String = "",
+    onBeginPluginImport: (Uri) -> Unit = onImport,
+    onConfirmPluginImport: (String) -> Unit = {},
+    onCancelPluginImport: () -> Unit = {},
+    /** docs/187 P3-d：预设（纯数据：模型 + 提示词段 + 工具 + 权限）。 */
+    presetTargets: List<xin.dshaa.core.plugins.PluginPreset> = emptyList(),
+    activePresetId: String? = null,
+    presetNotice: String? = null,
+    onApplyPreset: (String) -> Unit = {},
+    onClearPreset: () -> Unit = {},
+    onSavePreset: (String) -> Unit = {},
+    onDeletePreset: (String) -> Unit = {},
     /** M88-E：AI 授予后的横幅「撤销」与详情审计/AI 授予标记。 */
     onUndoAiGrant: () -> Unit = {},
     pluginAuditLines: (String) -> List<String> = { emptyList() },
@@ -179,12 +221,19 @@ fun PluginsScreen(
     var detailId by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<PluginRecord?>(null) }
     var showCapabilities by remember { mutableStateOf(false) }
-    var tab by rememberSaveable { mutableStateOf(0) }
+    var tab by rememberSaveable { mutableStateOf(PluginsTabMemory.index) }
     var query by rememberSaveable { mutableStateOf("") }
     var builtinDetailId by remember { mutableStateOf<String?>(null) }
     fun matches(vararg fields: String): Boolean = query.isBlank() || fields.any { it.contains(query.trim(), true) }
-    val builtinRecords = plugins.filter { it.id == "builtin.shell.whale" }
-    val imported = plugins.filterNot { it.id == "builtin.shell.whale" }
+    // docs/187 §5.1：随包内置的壳插件（`builtin.shell.whale`）已删除，所以「内置」分区恒空；
+    // 保留这个变量是为了以后真有内置插件时不用改下面的分区渲染（旧记录由 App 启动时清理）。
+    val builtinRecords = plugins.filter { it.id in OBSOLETE_PLUGIN_IDS }
+    val imported = plugins.filterNot { it.id in OBSOLETE_PLUGIN_IDS }
+    // docs/188 P4：两分区。归属为 Node 但装在原生目录里的记录（迁移/备份恢复可能出现）
+    // 不混进「原生插件」，放在 Node 分区里标明「原生安装」。
+    val nativeRecords = imported.filter { it.ownership != PluginOwnership.NODE }
+    val nodeOwnedNative = imported.filter { it.ownership == PluginOwnership.NODE }
+    val nodeCount = maxOf(nodeHostManifest.size, nodeHostPlugins.size) + nodeOwnedNative.size
     val usedPlugins = buildSet {
         shellTargets.filter { it.active }.forEach { add(it.pluginId ?: it.implementationId) }
         agentTargets.filter { it.active }.forEach { add(it.pluginId ?: it.agentId) }
@@ -207,18 +256,20 @@ fun PluginsScreen(
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) onImport(uri)
+        if (uri != null) onBeginPluginImport(uri)
     }
+
+    var nodeLogsOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { onRefresh() }
     // M87-F：切到「扩展点」页签时重算一次快照（命中/耗时只在本进程内存里）。
-    LaunchedEffect(tab) { if (tab == 3) onRefreshExtensions() }
+    LaunchedEffect(tab) { PluginsTabMemory.index = tab; if (tab == 3) onRefreshExtensions() }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(c.surface)
+                .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                 .statusBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -237,7 +288,7 @@ fun PluginsScreen(
             Column(Modifier.weight(1f)) {
                 Text("插件", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = c.text)
                 Text(
-                    "已安装 ${builtins.size + plugins.size} · 已启用 ${builtins.count { it.enabled } + plugins.count { it.enabled }}",
+                    "原生 ${builtins.size + nativeRecords.size} · Node $nodeCount · 宿主 ${nodeHostStatus.title}",
                     style = MaterialTheme.typography.labelMedium,
                     color = c.faint,
                 )
@@ -245,7 +296,7 @@ fun PluginsScreen(
             TextButton(onClick = { showCapabilities = true }) { Text("帮助", color = c.sub) }
         }
 
-        TabRow(selectedTabIndex = tab, containerColor = c.surface, contentColor = c.brand) {
+        TabRow(selectedTabIndex = tab, containerColor = c.panel, contentColor = c.brand) {
             listOf("导入", "内置", "角色", "扩展点").forEachIndexed { index, label ->
                 Tab(selected = tab == index, onClick = { tab = index }, text = { Text(label) })
             }
@@ -276,12 +327,24 @@ fun PluginsScreen(
             }
             when (tab) {
                 0 -> {
-                    item { ImportCard(busy = busy, onPick = { picker.launch(arrayOf("*/*")) }) }
-                    val visible = imported.filter { recordMatches(it) }
-                    if (visible.isEmpty()) item {
-                        if (imported.isEmpty()) EmptyCard() else Text("没有匹配的插件", color = c.faint)
+                    item {
+                        ImportCard(
+                            busy = busy,
+                            limits = pluginImportLimits,
+                            onPick = { picker.launch(arrayOf("*/*")) },
+                        )
                     }
-                    items(visible, key = { it.id }) { record ->
+                    // 分区 1：原生插件（鲸歌 JS 插件 / 声明式包 / 内置）。
+                    val nativeVisible = nativeRecords.filter { recordMatches(it) }
+                    item { SectionHeader("原生插件（${nativeVisible.size}）") }
+                    if (nativeVisible.isEmpty()) item {
+                        Text(
+                            if (nativeRecords.isEmpty()) "还没有原生插件" else "没有匹配的原生插件",
+                            color = c.faint,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    items(nativeVisible, key = { it.id }) { record ->
                         PluginCard(record, injected[record.id].orEmpty(),
                             onOpen = { detailId = record.id }, onToggle = { onToggle(record.id, it) },
                             active = record.id in usedPlugins)
@@ -290,6 +353,42 @@ fun PluginsScreen(
                         plugins.any { "fs:workspace" in it.permissions }) item {
                         Text("当前工作区是共享存储根（$workspacePath）：fs:workspace 可访问整块共享存储。", color = c.warn,
                             style = MaterialTheme.typography.labelSmall)
+                    }
+                    // 分区 2：Node 插件（宿主模块 + 清单 + 状态 + 日志入口）。
+                    item {
+                        NodeHostSection(
+                            enabled = nodeHostEnabled,
+                            status = nodeHostStatus,
+                            plugins = nodeHostPlugins.filter {
+                                query.isBlank() || matches(it.module, it.name, it.id, it.tools.joinToString(" "))
+                            },
+                            manifest = nodeHostManifest.filter {
+                                query.isBlank() || matches(it.module, it.name, it.id)
+                            },
+                            logs = nodeHostLogs,
+                            limits = pluginImportLimits,
+                            busy = busy,
+                            onToggle = onToggleNodeHost,
+                            onReload = onReloadNodeHost,
+                            onImport = {
+                                picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                            },
+                            logsOpen = nodeLogsOpen,
+                            onToggleLogs = { nodeLogsOpen = !nodeLogsOpen },
+                        )
+                    }
+                    if (nodeOwnedNative.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Node 归属、装在原生侧（可开容器，Node 宿主不会重复加载）",
+                                color = c.faint,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                        items(nodeOwnedNative.filter { recordMatches(it) }, key = { it.id }) { record ->
+                            PluginCard(record, injected[record.id].orEmpty(), onOpen = { detailId = record.id },
+                                onToggle = { onToggle(record.id, it) }, active = record.id in usedPlugins)
+                        }
                     }
                 }
                 1 -> {
@@ -354,6 +453,19 @@ fun PluginsScreen(
                             )
                         }
                     }
+                    // docs/187 P3-d：预设（模型 + 提示词段 + 工具 + 权限的组合，纯数据）。
+                    // 只有「套用 / 清除 / 存为预设 / 删除」四个动作，不写死任何插件。
+                    item {
+                        PresetSection(
+                            presets = presetTargets,
+                            activeId = activePresetId,
+                            notice = presetNotice,
+                            onApply = onApplyPreset,
+                            onClear = onClearPreset,
+                            onSave = onSavePreset,
+                            onDelete = onDeletePreset,
+                        )
+                    }
                     val caps = capabilityTargets.filter { matches("能力 capability", it.id, it.label, it.provider) }
                     if (caps.isNotEmpty() || query.isBlank()) item { SectionHeader("能力（${caps.size}）") }
                     if (capabilityNotice != null) item { Text(capabilityNotice, color = c.sub, style = MaterialTheme.typography.labelSmall) }
@@ -362,6 +474,7 @@ fun PluginsScreen(
                     }
                 }
                 3 -> {
+                    // M87-F：总开关 + 逐链快照（注册者/顺序/命中/耗时/异常/改写哈希）。
                     // M87-F：总开关 + 逐链快照（注册者/顺序/命中/耗时/异常/改写哈希）。
                     item {
                         DshCard(Modifier.fillMaxWidth()) {
@@ -415,7 +528,7 @@ fun PluginsScreen(
                 DetailField("说明", item.plugin.description)
                 if (item.plugin.tools.isNotEmpty()) DetailField("工具", item.plugin.tools.joinToString("、"))
                 if (item.plugin.screens.isNotEmpty()) DetailField("页面", item.plugin.screens.joinToString("、"))
-            } }, confirmButton = { TextButton(onClick = { builtinDetailId = null }) { Text("关闭") } }, containerColor = c.surface)
+            } }, confirmButton = { TextButton(onClick = { builtinDetailId = null }) { Text("关闭") } }, containerColor = c.panel)
     }
 
     val detailRecord = plugins.firstOrNull { it.id == detailId }
@@ -462,7 +575,16 @@ fun PluginsScreen(
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text("取消", color = c.sub) }
             },
-            containerColor = c.surface,
+            containerColor = c.panel,
+        )
+    }
+
+    pluginImportDraft?.let { draft ->
+        PluginImportDialog(
+            draft = draft,
+            busy = busy,
+            onConfirm = onConfirmPluginImport,
+            onCancel = onCancelPluginImport,
         )
     }
 
@@ -541,7 +663,7 @@ private fun CapabilityDialog(onDismiss: () -> Unit) {
     val done = PluginCapabilities.all.count { it.implemented }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("插件 API 参考", color = c.text) },
         text = {
             Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
@@ -589,12 +711,12 @@ private fun CapabilityRow(cap: PluginCapability) {
 }
 
 @Composable
-private fun ImportCard(busy: Boolean, onPick: () -> Unit) {
+private fun ImportCard(busy: Boolean, limits: String, onPick: () -> Unit) {
     val c = DshTheme2.colors
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) { onPick() },
         shape = RoundedCornerShape(18.dp),
-        color = c.surface,
+        color = c.panel,
         border = BorderStroke(1.dp, if (busy) c.brand else c.line),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -607,17 +729,27 @@ private fun ImportCard(busy: Boolean, onPick: () -> Unit) {
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    if (busy) "正在解压并试运行…" else "从本地文件导入",
+                    if (busy) "正在识别插件包…" else "从本地文件导入",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = c.text,
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    if (busy) "正在检查插件内容" else "选择 .zip 插件包",
+                    if (busy) "读取清单、识别归属、检查是否已装" else "选择 .zip：先识别「原生 / Node」，确认后再装",
                     style = MaterialTheme.typography.bodySmall,
                     color = c.sub,
                 )
+                if (limits.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "上限：$limits",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = c.faint,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Spacer(Modifier.width(10.dp))
             if (busy) {
@@ -628,6 +760,396 @@ private fun ImportCard(busy: Boolean, onPick: () -> Unit) {
                 )
             } else {
                 Icon(Icons.Rounded.KeyboardArrowRight, null, tint = c.faint, modifier = Modifier.size(22.dp))
+            }
+        }
+    }
+}
+
+/**
+ * docs/188 P4：Node 分区。宿主关着也显示 OFF 状态与已登记模块（不能一片空白）；
+ * 失败时原始原因 + 可操作提示 + 日志尾巴 + 重试入口都在同一块里。
+ */
+@Composable
+private fun NodeHostSection(
+    enabled: Boolean,
+    status: NodeHostStatusUi,
+    plugins: List<NodeHostPluginUi>,
+    manifest: List<NodeHostManifestUi>,
+    logs: List<String>,
+    limits: String,
+    busy: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onReload: () -> Unit,
+    onImport: () -> Unit,
+    logsOpen: Boolean,
+    onToggleLogs: () -> Unit,
+) {
+    val c = DshTheme2.colors
+    val statusColor = when (status.code) {
+        "ready" -> c.success
+        "failed" -> c.danger
+        "extracting", "starting" -> c.brand
+        "stopped" -> c.warn
+        else -> c.faint
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Node 插件（${maxOf(plugins.size, manifest.size)}）",
+                color = c.text,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "导入 .zip",
+                color = c.brand,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.clickable(enabled = !busy) { onImport() },
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                if (status.code == "failed") "重试启动" else "重新加载",
+                color = c.brand,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.clickable(enabled = enabled && !busy) { onReload() },
+            )
+        }
+        DshCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(9.dp).clip(CircleShape).background(statusColor))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        status.title,
+                        color = if (status.failed) c.danger else c.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = enabled,
+                        onCheckedChange = onToggle,
+                        colors = SwitchDefaults.colors(checkedTrackColor = c.brand, uncheckedTrackColor = c.line2),
+                    )
+                }
+                if (status.detail.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        status.detail,
+                        color = if (status.failed) c.danger else c.sub,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+                if (status.hint.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(status.hint, color = c.warn, style = MaterialTheme.typography.labelSmall)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    (if (enabled) "Node 导入上限：" else "Node 关闭中；导入上限：") +
+                        limits.substringAfter("｜Node：").ifBlank { limits },
+                    color = c.faint,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                if (!enabled) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "宿主 OFF：Node 插件不会加载、不出现在模型工具表；原生插件和聊天照常。",
+                        color = c.faint,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+                if (status.failed) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("先看日志尾巴再重试；错误不会被吞。", color = c.faint, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+        val loadedByModule = plugins.associateBy { it.module }
+        val unloaded = manifest.filter { it.module !in loadedByModule }
+        if (plugins.isEmpty() && manifest.isEmpty()) {
+            DshCard(Modifier.fillMaxWidth()) {
+                Text(
+                    if (!enabled) "还没有 Node 插件。打开开关或点「导入 .zip」（会把归属识别为 Node）。"
+                    else "清单里还没有模块；就绪前状态行会显示「正在解压 / 正在启动」。",
+                    color = c.faint,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(14.dp),
+                )
+            }
+        }
+        plugins.forEach { plugin ->
+            NodePluginCard(plugin, loaded = true)
+        }
+        unloaded.forEach { entry ->
+            NodeManifestCard(entry, status.code)
+        }
+        DshCard(Modifier.fillMaxWidth()) {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "宿主日志（${logs.size} 行）",
+                        color = c.sub,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        if (logsOpen) "收起" else "展开",
+                        color = c.brand,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.clickable { onToggleLogs() },
+                    )
+                }
+                if (logsOpen) {
+                    Text(
+                        logs.joinToString("\n").ifBlank { "（还没有日志；宿主启动后这里会有 stdout / host.log）" },
+                        color = c.faint,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NodePluginCard(plugin: NodeHostPluginUi, loaded: Boolean) {
+    val c = DshTheme2.colors
+    DshCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(8.dp).clip(CircleShape)
+                        .background(if (plugin.ok) c.success else c.danger),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    plugin.name.ifBlank {
+                        when {
+                            plugin.module.startsWith("./plugins/") ->
+                                plugin.module.removePrefix("./plugins/").substringBeforeLast('/')
+                            else -> plugin.module.substringAfterLast('/').ifBlank { plugin.module }
+                        }
+                    },
+                    color = c.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    when {
+                        !loaded -> "未加载"
+                        plugin.ok -> "已加载"
+                        else -> "加载失败"
+                    },
+                    color = if (plugin.ok) c.sub else c.danger,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+            if (plugin.id.isNotBlank() || plugin.version.isNotBlank()) {
+                Text(
+                    listOf(plugin.id, plugin.version).filter { it.isNotBlank() }.joinToString(" · "),
+                    color = c.faint,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                "模块：${plugin.module}",
+                color = c.faint,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            when {
+                plugin.tools.isNotEmpty() -> Text(
+                    "工具：" + plugin.tools.joinToString("、") { "node_$it" },
+                    color = c.sub,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                plugin.ok -> Text(
+                    if (plugin.hasClient) "没有宿主工具（界面类插件：可在原生插件里用容器打开）"
+                    else "没有注册工具（可能只注册提示词段/供应商/命令）",
+                    color = c.faint,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+            plugin.error?.let { message ->
+                Text(
+                    message,
+                    color = c.danger,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NodeManifestCard(entry: NodeHostManifestUi, statusCode: String) {
+    val c = DshTheme2.colors
+    DshCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(c.warn))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    entry.name.ifBlank { entry.id },
+                    color = c.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    when (statusCode) {
+                        "off" -> "未加载（OFF）"
+                        "failed" -> "未加载（FAILED）"
+                        "extracting", "starting" -> "等待启动"
+                        else -> "未报上来"
+                    },
+                    color = c.warn,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+            Text(
+                listOf(entry.id, entry.version).filter { it.isNotBlank() }.joinToString(" · "),
+                color = c.faint,
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Text(
+                "模块：${entry.module}",
+                color = c.faint,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * docs/188 P4：导入确认对话框。默认归属来自清单判据；可以改选另一侧。
+ * 同 id 已装在另一侧 = 迁移（会删旧侧，配置重置）；同侧 = 覆盖（也会重置配置）。
+ */
+@Composable
+private fun PluginImportDialog(
+    draft: PluginImportDraftUi,
+    busy: Boolean,
+    onConfirm: (String) -> Unit,
+    onCancel: () -> Unit,
+) {
+    val c = DshTheme2.colors
+    var chosen by remember(draft.id, draft.ownership) { mutableStateOf(draft.ownership) }
+    val migrating = (chosen == PluginOwnership.NATIVE && draft.nodeInstalled) ||
+        (chosen == PluginOwnership.NODE && draft.nativeInstalled)
+    val sameSide = (chosen == PluginOwnership.NATIVE && draft.nativeInstalled) ||
+        (chosen == PluginOwnership.NODE && draft.nodeInstalled)
+    AlertDialog(
+        onDismissRequest = { if (!busy) onCancel() },
+        containerColor = c.panel,
+        title = { Text("导入插件", color = c.text) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(draft.name, color = c.text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    listOf(draft.id, draft.version).filter { it.isNotBlank() }.joinToString(" · "),
+                    color = c.faint,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                if (draft.description.isNotBlank()) {
+                    Text(draft.description, color = c.sub, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("归属（可改）", color = c.sub, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
+                DialogOwnershipRow(
+                    label = "原生",
+                    detail = "鲸歌原生插件：QuickJS 里 apply(ctx)，工具直接进原生工具表。",
+                    selected = chosen == PluginOwnership.NATIVE,
+                    onClick = { if (!busy) chosen = PluginOwnership.NATIVE },
+                )
+                DialogOwnershipRow(
+                    label = "Node",
+                    detail = "DSH/Node 插件：交给 Node 宿主加载（node_ 工具）；带 web client 的界面由容器跑。",
+                    selected = chosen == PluginOwnership.NODE,
+                    onClick = { if (!busy) chosen = PluginOwnership.NODE },
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "识别判据：" + (draft.signals.takeIf { it.isNotEmpty() }?.joinToString("；")
+                        ?: "没有 @deepseek-ai 依赖、也没有 exports[\"./client\"] → 原生"),
+                    color = c.faint,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                if (draft.hasClient) {
+                    Text("含 web client：装到原生侧后可用容器打开。", color = c.faint, style = MaterialTheme.typography.labelSmall)
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (chosen == PluginOwnership.NATIVE) "上限：${draft.limitsNative}" else "上限：${draft.limitsNode}",
+                    color = c.faint,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                when {
+                    migrating -> {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "迁移：同 id 已装在" + (if (draft.nodeInstalled) " Node " else "原生 ") + "侧。" +
+                                "确认后会先装到所选侧，再删掉旧侧；旧侧的配置/开关会重置，同一个 id 不会双装。",
+                            color = c.warn,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    sameSide -> {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "同 id 已装在同一侧：覆盖导入会重置这个插件的配置。",
+                            color = c.warn,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy, onClick = { onConfirm(chosen) }) {
+                Text(
+                    if (busy) "正在安装…" else "导入为" + PluginOwnership.label(chosen),
+                    color = if (busy) c.faint else c.brand,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(enabled = !busy, onClick = onCancel) { Text("取消", color = c.sub) }
+        },
+    )
+}
+
+@Composable
+private fun DialogOwnershipRow(label: String, detail: String, selected: Boolean, onClick: () -> Unit) {
+    val c = DshTheme2.colors
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) c.brandSoft else c.panel,
+        border = BorderStroke(1.dp, if (selected) c.brand else c.line2),
+    ) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = selected, onClick = onClick)
+            Spacer(Modifier.width(6.dp))
+            Column(Modifier.weight(1f)) {
+                Text(label, color = c.text, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                Text(detail, color = c.faint, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -707,7 +1229,7 @@ private fun PluginCard(
     val c = DshTheme2.colors
     Surface(
         modifier = Modifier.fillMaxWidth().clickable { onOpen() },
-        shape = RoundedCornerShape(16.dp), color = c.surface,
+        shape = RoundedCornerShape(16.dp), color = c.panel,
         border = BorderStroke(1.dp, if (record.error != null) c.danger.copy(alpha = 0.45f) else c.line2),
     ) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -718,7 +1240,7 @@ private fun PluginCard(
             Column(Modifier.weight(1f)) {
                 Text(record.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium,
                     color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${if (record.id == "builtin.shell.whale") "内置" else "导入"} · ${if (record.enabled) "已启用" else "已停用"}${if (active) " · 使用中" else ""}" +
+                Text("${PluginOwnership.label(record.ownership)} · ${if (record.id in OBSOLETE_PLUGIN_IDS) "内置" else "导入"} · ${if (record.enabled) "已启用" else "已停用"}${if (active) " · 使用中" else ""}" +
                     if (injectedTools.isNotEmpty()) " · ${injectedTools.size} 个工具已接入" else "",
                     style = MaterialTheme.typography.labelSmall, color = if (active) c.brand else c.faint)
                 if (record.description.isNotBlank()) Text(record.description,
@@ -785,7 +1307,8 @@ fun PluginDetailDialog(
                             color = c.text,
                         )
                         Text(
-                            "${record.version} · ${record.format} · ${if (record.enabled) "已启用" else "已停用"}",
+                            "${record.version} · ${record.format} · 归属 ${PluginOwnership.label(record.ownership)} · " +
+                                (if (record.enabled) "已启用" else "已停用"),
                             style = MaterialTheme.typography.labelSmall,
                             color = c.faint,
                         )
@@ -794,6 +1317,7 @@ fun PluginDetailDialog(
 
                 Spacer(Modifier.height(14.dp))
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+                    DetailField("归属", PluginOwnership.label(record.ownership))
                     DetailField("插件目录", record.path)
                     DetailField("入口", record.main.ifBlank { "—（声明式包，无 JS 入口）" })
                     DetailField("工具数", "${record.tools.size} 个 · 已接入对话 ${injectedTools.size} 个")
@@ -1288,7 +1812,7 @@ private fun ConfigEditDialog(
                 },
                 confirmButton = { TextButton(onClick = { onSave(selected) }) { Text("保存", color = c.brand) } },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1305,7 +1829,7 @@ private fun ConfigEditDialog(
                 },
                 confirmButton = { TextButton(onClick = { onSave(JsonPrimitive(checked)) }) { Text("保存", color = c.brand) } },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1364,7 +1888,7 @@ private fun ConfigEditDialog(
                     }) { Text("保存", color = c.brand) }
                 },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1396,7 +1920,7 @@ private fun ConfigEditDialog(
                     }) { Text("保存", color = c.brand) }
                 },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
 
@@ -1454,7 +1978,7 @@ private fun ConfigEditDialog(
                     }) { Text("保存", color = c.brand) }
                 },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消", color = c.sub) } },
-                containerColor = c.surface,
+                containerColor = c.panel,
             )
         }
     }
@@ -1527,7 +2051,7 @@ private fun PermissionConfirmDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消", color = c.sub) }
         },
-        containerColor = c.surface,
+        containerColor = c.panel,
     )
 }
 
@@ -1873,6 +2397,95 @@ private fun CapabilityRow(
                 style = MaterialTheme.typography.labelMedium,
                 color = c.faint,
             )
+        }
+    }
+}
+
+/** docs/187 §5：随包内置、现已删除的插件 id（旧记录由 App 启动时清理；这里只用于分区/标签兜底）。 */
+private val OBSOLETE_PLUGIN_IDS = setOf("builtin.shell.whale", "builtin.floating.demo")
+
+/**
+ * docs/187 P3-d：角色页的「预设」区（只有这一段是 P3-d 加的，其余布局不动）。
+ *
+ * 预设 = 模型 + 提示词段 + 工具 + 权限的组合，纯数据（`files/node/data/presets.json`）。
+ * 这里只提供「套用 / 清除 / 存为预设 / 删除」四个动作，**不写死任何插件**。
+ */
+@Composable
+private fun PresetSection(
+    presets: List<xin.dshaa.core.plugins.PluginPreset>,
+    activeId: String?,
+    notice: String?,
+    onApply: (String) -> Unit,
+    onClear: () -> Unit,
+    onSave: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    val c = DshTheme2.colors
+    var draft by remember { mutableStateOf("") }
+    SectionHeader("预设（${presets.size}）")
+    if (notice != null) {
+        Text(
+            notice,
+            color = c.sub,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 2.dp, vertical = 2.dp),
+        )
+    }
+    DshCard(Modifier.fillMaxWidth()) {
+        Column {
+            if (presets.isEmpty()) {
+                Text(
+                    "还没有预设。把当前的模型 / 提示词段 / 工具 / 权限存一份，换场景时一键套用。",
+                    color = c.faint,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(14.dp),
+                )
+            }
+            presets.forEach { preset ->
+                val active = preset.id == activeId
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (active) "${preset.name} · 使用中" else preset.name,
+                            color = if (active) c.brand else c.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(preset.summary(), color = c.faint, style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (!active) {
+                        TextButton(onClick = { onApply(preset.id) }) { Text("套用", color = c.brand) }
+                    }
+                    TextButton(onClick = { onDelete(preset.id) }) { Text("删除", color = c.danger) }
+                }
+                RowDivider()
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    singleLine = true,
+                    label = { Text("预设名") },
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = {
+                        val name = draft.trim()
+                        if (name.isNotEmpty()) {
+                            onSave(name)
+                            draft = ""
+                        }
+                    },
+                ) { Text("存为预设", color = c.brand) }
+            }
+            if (activeId != null) {
+                TextButton(onClick = onClear) { Text("清除套用（恢复工具/提示词段不限制）") }
+            }
         }
     }
 }

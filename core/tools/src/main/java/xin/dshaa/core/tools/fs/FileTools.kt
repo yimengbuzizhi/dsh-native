@@ -10,6 +10,16 @@ import xin.dshaa.core.tools.ToolContext
 import xin.dshaa.core.tools.ToolResult
 import xin.dshaa.core.tools.resolvePath
 import java.io.File
+import java.io.FileOutputStream
+
+/**
+ * `edit` 单侧文本（`old_string` / `new_string`）超过 2MB 时不再传两份大文本：
+ * 改用 `write` 的 `append` 分块重写文件（docs/187 §8.4.3）。`write` / `edit` 的硬上限
+ * （16MB）在 `core:engine` 的 `ToolInputGuard`，这里只管 edit 的「换个工具更省」阈值。
+ */
+private const val EDIT_LARGE_STRING_LIMIT_BYTES = 2 * 1024 * 1024
+
+private fun utf8Size(text: String): Int = text.toByteArray(Charsets.UTF_8).size
 
 private fun JsonObject.str(key: String): String? = runCatching { this[key]?.jsonPrimitive?.contentOrNull }.getOrNull()
 private fun JsonObject.int(key: String): Int? = runCatching { this[key]?.jsonPrimitive?.intOrNull }.getOrNull()
@@ -98,14 +108,26 @@ class WriteTool : DshTool {
     override suspend fun execute(args: JsonObject, ctx: ToolContext): ToolResult {
         val path = args.str("file_path") ?: return ToolResult.err("missing file_path")
         val content = args.str("content") ?: return ToolResult.err("missing content")
+        // docs/187 §8.4：append 默认 false（覆盖写），true 时追加；追加到不存在的文件要创建它。
+        val append = args.bool("append") ?: false
         val file = resolvePath(path, ctx)
         val existed = file.exists()
+        val bytes = content.toByteArray(Charsets.UTF_8)
         runCatching {
             file.parentFile?.mkdirs()
-            file.writeText(content, Charsets.UTF_8)
+            FileOutputStream(file, append).use { out -> out.write(bytes) }
         }.getOrElse { return ToolResult.err("write failed: ${it.message}") }
+        // 写后校验：内容非空但文件仍是 0 字节 = 写入没落地（磁盘满/路径被替换等），不能报成功。
+        if (bytes.isNotEmpty() && file.length() == 0L) {
+            return ToolResult.err("write failed: wrote ${bytes.size} bytes but \"$path\" is 0 bytes")
+        }
+        val verb = when {
+            append && existed -> "Appended to file"
+            existed -> "Updated file"
+            else -> "Created file"
+        }
         return ToolResult.ok(
-            "<path>$path</path>\n<type>file</type>\n<content>\n${if (existed) "Updated" else "Created"} file\n</content>",
+            "<path>$path</path>\n<type>file</type>\n<content>\n$verb\n</content>",
         )
     }
 }
@@ -118,6 +140,18 @@ class EditTool : DshTool {
         val old = args.str("old_string") ?: return ToolResult.err("missing old_string")
         val new = args.str("new_string") ?: return ToolResult.err("missing new_string")
         val replaceAll = args.bool("replace_all") ?: false
+        // docs/187 §8.4.3：edit 一次要传输 old+new 两份文本；单侧 >2MB 时引导改用 write append
+        // 分块重写文件（16MB 的守卫上限仍然生效，这里只是更省传输量的建议/拒绝）。
+        val oldBytes = utf8Size(old)
+        val newBytes = utf8Size(new)
+        if (oldBytes > EDIT_LARGE_STRING_LIMIT_BYTES || newBytes > EDIT_LARGE_STRING_LIMIT_BYTES) {
+            return ToolResult.err(
+                "old_string / new_string too large ($oldBytes / $newBytes bytes; per-side limit " +
+                    "$EDIT_LARGE_STRING_LIMIT_BYTES bytes): edit transfers two large texts in one call. " +
+                    "Use write with append to rewrite the file in chunks: first call append=false to create " +
+                    "the file, then append=true for subsequent chunks.",
+            )
+        }
         val file = resolvePath(path, ctx)
         if (!file.isFile) return ToolResult.err("File not found: $path")
         val text = runCatching { file.readText(Charsets.UTF_8) }

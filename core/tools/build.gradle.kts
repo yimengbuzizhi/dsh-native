@@ -19,6 +19,7 @@ dependencies {
     api(project(":core:protocol"))
     api(project(":core:jobs"))
     api(project(":core:skill"))
+    api(project(":core:primitives"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     // web_fetch 用；Android 侧 OkHttp 也会带进来（:app 已有）

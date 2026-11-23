@@ -26,6 +26,7 @@ import xin.dshaa.core.plugins.PluginContribution
 import xin.dshaa.core.plugins.PluginDryRun
 import xin.dshaa.core.plugins.PluginManifest
 import xin.dshaa.core.plugins.PluginModule
+import xin.dshaa.core.plugins.PluginOwnership
 import xin.dshaa.core.plugins.PluginPackage
 import xin.dshaa.core.plugins.PluginPermissions
 import xin.dshaa.core.plugins.PluginRecord
@@ -332,12 +333,12 @@ class PluginStore(private val context: Context) {
     }
 
     /** 导入一个 zip。复制/解压/试运行都在 IO 线程。 */
-    suspend fun install(uri: Uri): Result = withContext(Dispatchers.IO) {
+    suspend fun install(uri: Uri, ownership: String? = null): Result = withContext(Dispatchers.IO) {
         val temp = File(context.cacheDir, "plugin-import-${System.currentTimeMillis()}.zip")
         try {
             val copyError = copyTo(uri, temp, MAX_IMPORT_BYTES)
             if (copyError != null) return@withContext Result(false, copyError)
-            installFrom(temp)
+            installFrom(temp, ownership = ownership)
         } catch (t: Throwable) {
             Result(false, "导入失败：${t.message ?: t.javaClass.simpleName}")
         } finally {
@@ -351,12 +352,12 @@ class PluginStore(private val context: Context) {
      * [enabled] 为 null = 新装默认停用、覆盖安装保留原开关（0.3.4 导入语义）；
      * 随包内置插件需要保持「装好即启用」时显式传 true。
      */
-    suspend fun installFile(file: File, enabled: Boolean? = null): Result = withContext(Dispatchers.IO) {
+    suspend fun installFile(file: File, enabled: Boolean? = null, ownership: String? = null): Result = withContext(Dispatchers.IO) {
         if (!file.isFile) return@withContext Result(false, "文件不存在：${file.absolutePath}")
         if (file.length() > MAX_IMPORT_BYTES) {
             return@withContext Result(false, "插件包太大（>${MAX_IMPORT_BYTES / 1024 / 1024}MB）")
         }
-        installFrom(file, enabled)
+        installFrom(file, enabled, ownership)
     }
 
     data class TestResult(
@@ -405,11 +406,11 @@ class PluginStore(private val context: Context) {
     }
 
     /** Directory installation still uses installFile, preserving schema/config/grant rules. */
-    suspend fun installDirectory(directory: File, enabled: Boolean? = null): Result = withContext(Dispatchers.IO) {
+    suspend fun installDirectory(directory: File, enabled: Boolean? = null, ownership: String? = null): Result = withContext(Dispatchers.IO) {
         val archive = File(context.cacheDir, "plugin-directory-${java.util.UUID.randomUUID()}.zip")
         try {
             PluginDevPackage.pack(directory, archive)
-            installFile(archive, enabled)
+            installFile(archive, enabled, ownership)
         } catch (e: Exception) {
             Result(false, "目录安装失败：${e.message}")
         } finally {
@@ -420,13 +421,13 @@ class PluginStore(private val context: Context) {
 
     /** Parse and trial in staging before replacing the installed package. */
     @Synchronized
-    private fun installFrom(archive: File, enabled: Boolean? = null): Result = try {
-        installValidated(archive, enabled)
+    private fun installFrom(archive: File, enabled: Boolean? = null, ownership: String? = null): Result = try {
+        installValidated(archive, enabled, ownership)
     } catch (e: Exception) {
         Result(false, "安装失败：${e.message ?: e.javaClass.simpleName}")
     }
 
-    private fun installValidated(archive: File, enabled: Boolean?): Result {
+    private fun installValidated(archive: File, enabled: Boolean?, ownership: String?): Result {
         // M87-G：多格式导入统一走 PackageImporter（zip / .dshpkg / 单 .md / 单 .json /
         // DSH package.json / 鲸歌 dsh.package.json）。旧脚本包仍带回 manifest，走 0.3.4 的
         // 试运行/配置/授权链路；声明式包不走 QuickJS。
@@ -434,7 +435,7 @@ class PluginStore(private val context: Context) {
         if (imported is PackageImport.Failed) return Result(false, imported.error)
         imported as PackageImport.Ok
         val manifest = imported.manifest
-        if (manifest == null) return installDeclarative(imported, enabled)
+        if (manifest == null) return installDeclarative(imported, enabled, ownership)
 
         val files = imported.files
         val target = File(root, dirName(manifest.id))
@@ -496,6 +497,8 @@ class PluginStore(private val context: Context) {
             // 覆盖安装/升级保留用户原来的开关（正在用的插件不会因为重装被悄悄关掉）；
             // 随包内置插件（BundledPlugins）显式传 enabled = true，保持原有安装语义。
             enabled = enabled ?: previous?.enabled ?: false,
+            // docs/188 P4：用户在导入确认里选的归属；没传 = 原生（调试通道/旧调用保持原行为）。
+            ownership = ownership ?: PluginOwnership.NATIVE,
             tools = run.tools.map { it.name },
             toolDescriptions = run.tools.associate { it.name to it.description },
             toolSchemas = run.tools.mapNotNull { tool -> tool.parameters?.let { tool.name to it } }.toMap(),
@@ -579,7 +582,7 @@ class PluginStore(private val context: Context) {
      * 贡献物的运行时效果按批次推进（主题/页面等依赖 M87-C 槽位），本版先保证「装得进、看得见、
      * 往返 IR 相等」。
      */
-    private fun installDeclarative(imported: PackageImport.Ok, enabled: Boolean?): Result {
+    private fun installDeclarative(imported: PackageImport.Ok, enabled: Boolean?, ownership: String?): Result {
         val ir = imported.ir
         // 鲸歌轻格式里也能声明 script/client，但本版没有「无 package.json 的 JS 安装」链路；
         // 与其半装（记录里有脚本、实际不执行 apply），不如如实拒绝并指向旧格式。
@@ -617,6 +620,7 @@ class PluginStore(private val context: Context) {
                 irFormat = ir.format.id,
                 contributions = ir.contributions,
                 enabled = enabled ?: previous?.enabled ?: false,
+                ownership = ownership ?: PluginOwnership.NATIVE,
                 tools = emptyList(),
                 imports = emptyList(),
                 error = null,
@@ -890,5 +894,10 @@ class PluginStore(private val context: Context) {
         private const val MAX_IMPORT_BYTES = 64L * 1024 * 1024
         /** 试运行上限：async apply 挂住/死循环时中断，别让导入页一直转圈。 */
         private const val DRY_RUN_TIMEOUT_MS = 12_000L
+
+        /** 用户可见的导入上限事实（导入页原样展示；不写成解释性文案）。 */
+        fun limitsText(): String =
+            "zip ≤${MAX_IMPORT_BYTES / 1024 / 1024}MB · 单文件 ≤${PluginPackage.MAX_ENTRY_BYTES / 1024 / 1024}MB" +
+                " · 解压后 ≤${PluginPackage.MAX_TOTAL_BYTES / 1024 / 1024}MB"
     }
 }

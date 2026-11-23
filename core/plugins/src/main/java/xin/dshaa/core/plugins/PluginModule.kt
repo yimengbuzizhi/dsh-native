@@ -2836,6 +2836,20 @@ object PluginModule {
       }
       return __noop;
     },
+    // P1（docs/185 §四）：原语层。三面共用同一份 PrimitiveCatalog 定义；插件侧只走这两个入口，
+    // 返回 {ok,summary,data,code}（失败带 code），P1 只开只读原语（写原语等 P4 权限模型）。
+    primitive: __permissive({
+      invoke: function(id, args) {
+        return __dshHostJson('primitive.invoke', {
+          id: String(id === undefined || id === null ? '' : id),
+          arguments: (args === undefined || args === null) ? {} : args
+        });
+      },
+      list: function() {
+        const reply = __dshHostJson('primitive.list', {});
+        return (reply && reply.ok === true && Array.isArray(reply.primitives)) ? reply.primitives.slice(0) : [];
+      }
+    }),
     logger: { info: __noop, warn: __noop, error: __noop, debug: __noop },
     config: {}
   });

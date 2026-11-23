@@ -1,6 +1,8 @@
 package xin.dshaa.nativeapp.device
 
+import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.ai.assistance.showerclient.ShellCommandResult
@@ -23,6 +25,13 @@ import java.util.concurrent.TimeUnit
  * - `DEFAULT` → 先 root 再 Shizuku 再 App 自己的 `sh`（pkill 自己的子进程够用）。
  *
  * 没有 Shizuku/root 时所有身份退化成 App `sh`（命令会因权限失败，但不会崩）。
+ *
+ * root-only 时的 `SHELL`：`su -c` 是 uid 0 / magisk 域，而 shower-server 的 FakeContext
+ * 自称 `com.android.shell`（uid 2000），DisplayManagerService 会拒绝建虚拟屏。因此先把
+ * Operit 的 shell 身份 launcher（aarch64 ELF，随 jniLibs/arm64-v8a 打包）复制到
+ * `filesDir/bin`，再以 `su -c "<launcher> <原命令>"` 执行，由 launcher 降权到 uid 2000 +
+ * `u:r:shell:s0`。launcher 不可用（架构不符/未打包）时退回旧的 uid 0 路径，并在日志与
+ * 命令 stderr 里写明真实原因，不静默。
  */
 object DeviceShell : ShellRunner {
 
@@ -35,25 +44,46 @@ object DeviceShell : ShellRunner {
     var shizukuReady: Boolean = false
         private set
 
+    /** 缓存里同时记时间：root 不可用/等待授权时要能按间隔重探（不再永久缓存 false）。 */
+    private data class CachedRootProbe(val result: RootProbeResult, val atMs: Long)
+
     @Volatile
-    private var rootProbeCache: RootProbeResult? = null
+    private var rootProbeCache: CachedRootProbe? = null
 
     private val rootProbeLock = Any()
 
+    /** App context：安装 launcher 需要（[initIdentityLauncher] 注入）。 */
+    @Volatile
+    private var appContext: Context? = null
+
+    private val launcherLock = Any()
+
+    @Volatile
+    private var launcherState: LauncherStatus? = null
+
     /** 探测 root（首次会阻塞；UI 用 [shellStatus]/[primeRootProbe] 别在主线程序列化等）。 */
     fun probeRoot(force: Boolean = false): RootProbeResult {
-        if (!force) rootProbeCache?.let { return it }
+        val cached = rootProbeCache
+        if (!force && cached != null && !RootProbe.shouldReprobe(cached.result, ageMs(cached))) {
+            return cached.result
+        }
         synchronized(rootProbeLock) {
-            if (!force) rootProbeCache?.let { return it }
+            val again = rootProbeCache
+            if (!force && again != null && !RootProbe.shouldReprobe(again.result, ageMs(again))) {
+                return again.result
+            }
             val result = RootProbe.probe(::runSuProbe)
-            rootProbeCache = result
+            rootProbeCache = CachedRootProbe(result, System.currentTimeMillis())
             Log.i(TAG, "root probe available=${result.available} command=${result.command} waiting=${result.waiting}")
             return result
         }
     }
 
+    private fun ageMs(cached: CachedRootProbe): Long =
+        (System.currentTimeMillis() - cached.atMs).coerceAtLeast(0L)
+
     /** 非阻塞读缓存：null = 还没探测过。 */
-    fun rootAvailableCached(): Boolean? = rootProbeCache?.available
+    fun rootAvailableCached(): Boolean? = rootProbeCache?.result?.available
 
     fun hasRoot(): Boolean = probeRoot().available
 
@@ -77,6 +107,115 @@ object DeviceShell : ShellRunner {
             shizuku = binderReady,
             shizukuPermission = permission,
             rootReason = probe.reason,
+        )
+    }
+
+    /**
+     * 记录 App context 并预装 shell 身份 launcher（`DshApplication.onCreate` 调一次）。
+     *
+     * 复制只有几十 KB，但仍在后台线程做，避免和启动关键路径抢磁盘；真正取用时
+     * [launcherStatus] 会同步补装一次（幂等）。
+     */
+    fun initIdentityLauncher(context: Context) {
+        appContext = context.applicationContext
+        Thread({ runCatching { launcherStatus() } }, "shell-launcher").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    /**
+     * 安装/复用 shell 身份 launcher（aarch64 ELF → `filesDir/bin/operit_shell_exec`）。
+     *
+     * 不可用时 [LauncherStatus.reason] 说明真实原因（ABI 不符 / APK 未带 / ELF 架构不对 /
+     * 复制失败），供日志和虚拟屏错误文案使用；SHELL 身份会退回 uid 0。
+     */
+    fun launcherStatus(): LauncherStatus {
+        launcherState?.let { return it }
+        synchronized(launcherLock) {
+            launcherState?.let { return it }
+            val status = installLauncher()
+            launcherState = status
+            if (status.available) {
+                Log.i(TAG, "shell identity launcher ready: ${status.path}")
+            } else {
+                Log.w(TAG, "shell identity launcher unavailable: ${status.reason}")
+            }
+            return status
+        }
+    }
+
+    private fun installLauncher(): LauncherStatus {
+        val context = appContext
+            ?: return LauncherStatus.missing("应用上下文未初始化：DeviceShell.initIdentityLauncher 未调用")
+        val abis = Build.SUPPORTED_ABIS.toList()
+        if (!ShellIdentityLauncher.isSupportedAbi(abis)) {
+            return LauncherStatus.missing(
+                "当前 ABI=${abis.firstOrNull() ?: "unknown"}，launcher 只有 ${ShellIdentityLauncher.ARM64_ABI} 版本",
+            )
+        }
+        val source = ShellIdentityLauncher.sourceFile(File(context.applicationInfo.nativeLibraryDir))
+        if (!source.isFile) {
+            return LauncherStatus.missing(
+                "APK 未携带 launcher（${ShellIdentityLauncher.ARM64_ABI} 包内缺少 ${ShellIdentityLauncher.LIB_NAME}）",
+            )
+        }
+        val header = runCatching {
+            val buffer = ByteArray(20)
+            source.inputStream().use { input ->
+                var read = 0
+                while (read < buffer.size) {
+                    val n = input.read(buffer, read, buffer.size - read)
+                    if (n <= 0) break
+                    read += n
+                }
+            }
+            buffer
+        }.getOrElse {
+            return LauncherStatus.missing("读取 launcher 失败：${it.message ?: it.javaClass.simpleName}")
+        }
+        if (!ShellIdentityLauncher.isAarch64Executable(header)) {
+            return LauncherStatus.missing("launcher ELF 不是 AArch64：${source.absolutePath}")
+        }
+        val dir = ShellIdentityLauncher.installedFile(context.filesDir).parentFile
+            ?: return LauncherStatus.missing("无法解析 launcher 安装目录：${context.filesDir}")
+        if (!dir.isDirectory && !dir.mkdirs()) {
+            return LauncherStatus.missing("创建 launcher 目录失败：${dir.absolutePath}")
+        }
+        val target = ShellIdentityLauncher.installedFile(context.filesDir)
+        if (!target.isFile || target.length() != source.length()) {
+            runCatching {
+                source.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
+            }.onFailure {
+                return LauncherStatus.missing("复制 launcher 失败：${it.message ?: it.javaClass.simpleName}")
+            }
+        }
+        if (target.length() != source.length()) {
+            return LauncherStatus.missing(
+                "launcher 复制后长度不一致（源 ${source.length()}B / 目标 ${target.length()}B）：${target.absolutePath}",
+            )
+        }
+        if (!target.setExecutable(true, false)) {
+            return LauncherStatus.missing("launcher chmod 失败：${target.absolutePath}")
+        }
+        return LauncherStatus.ready(target.absolutePath)
+    }
+
+    /**
+     * 「为什么没有 shell 身份 / 为什么 root 也可能失败」的完整文案：
+     * root 探测结果、Shizuku 状态、root 下 launcher 是否可用（架构/安装原因）都写出来。
+     */
+    fun shellChannelReason(): String {
+        val probe = probeRoot()
+        val launcher = launcherStatus()
+        return ShellDiagnosis.channelReason(
+            root = probe.available,
+            rootCommand = probe.command,
+            rootReason = probe.reason,
+            shizuku = shizukuReady,
+            shizukuPermission = hasShizukuPermission(),
+            launcherAvailable = launcher.available,
+            launcherReason = launcher.reason,
         )
     }
 
@@ -140,7 +279,7 @@ object DeviceShell : ShellRunner {
                 ShellIdentity.ROOT -> if (hasRoot()) runRoot(command) else runApp(command)
                 ShellIdentity.SHELL -> when {
                     hasShizuku() -> runShizuku(command)
-                    hasRoot() -> runRoot(command)
+                    hasRoot() -> runRoot(command, shellIdentity = true)
                     else -> runApp(command)
                 }
                 ShellIdentity.DEFAULT -> when {
@@ -163,7 +302,7 @@ object DeviceShell : ShellRunner {
                 ShellIdentity.ROOT -> if (hasRoot()) runRootBytes(command) else runAppBytes(command)
                 ShellIdentity.SHELL -> when {
                     hasShizuku() -> runShizukuBytes(command)
-                    hasRoot() -> runRootBytes(command)
+                    hasRoot() -> runRootBytes(command, shellIdentity = true)
                     else -> runAppBytes(command)
                 }
                 ShellIdentity.DEFAULT -> when {
@@ -185,8 +324,11 @@ object DeviceShell : ShellRunner {
         if (exit == 0 && out.isNotEmpty()) out else null
     }.getOrNull()
 
-    private fun runRootBytes(command: String): ByteArray? =
-        runProcessBytes(listOf("su", "-c", command))
+    private fun runRootBytes(command: String, shellIdentity: Boolean = false): ByteArray? {
+        val launcher = if (shellIdentity) launcherStatus() else null
+        val argv = RootProbe.execArgv(probeRoot(), command, launcher?.takeIf { it.available }?.path)
+        return runProcessBytes(argv)
+    }
 
     private fun runAppBytes(command: String): ByteArray? =
         runProcessBytes(listOf("sh", "-c", command))
@@ -200,7 +342,28 @@ object DeviceShell : ShellRunner {
         if (finished && process.exitValue() == 0 && out.isNotEmpty()) out else null
     }.getOrNull()
 
-    private fun runRoot(command: String): ShellCommandResult = runProcess(listOf("su", "-c", command))
+    /**
+     * root 执行：argv 用 [RootProbe.execArgv] 依据探测成功的 su 写法拼（候选 D），
+     * [shellIdentity] = true 时在最前面加 launcher（root-only 的虚拟屏就靠它拿到 uid 2000）。
+     *
+     * launcher 不可用时只退回旧的 uid 0 路径（不是每次命令都重试），并在失败结果的 stderr
+     * 里写明原因，避免再把「架构不符/未打包」误报成 Shizuku 授权问题。
+     */
+    private fun runRoot(command: String, shellIdentity: Boolean = false): ShellCommandResult {
+        val launcher = if (shellIdentity) launcherStatus() else null
+        val argv = RootProbe.execArgv(probeRoot(), command, launcher?.takeIf { it.available }?.path)
+        val result = runProcess(argv)
+        if (shellIdentity && launcher != null && !launcher.available) {
+            Log.w(TAG, "shell identity launcher unavailable (${launcher.reason}); running as uid 0: $command")
+            if (!result.success) {
+                return result.copy(
+                    stderr = "[DeviceShell] shell 身份 launcher 不可用：${launcher.reason}；" +
+                        "已退回 uid 0（su -c），虚拟屏的 DisplayManager 校验可能失败。\n" + result.stderr,
+                )
+            }
+        }
+        return result
+    }
 
     /**
      * Shizuku 执行：Shizuku 13 的 `api` artifact **没有** `newProcess`（旧版反射写法在这里一直失败，

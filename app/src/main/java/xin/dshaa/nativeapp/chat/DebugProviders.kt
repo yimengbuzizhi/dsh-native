@@ -125,6 +125,7 @@ class DebugPromptProvider(private val marker: String) : PromptProvider {
             personaSuffix = request.personaSuffix,
             extraSections = request.extraSections,
             variables = request.variables,
+            includeBuiltinSections = request.includeBuiltinSections,
         ) + "\n\n" + marker
 
     companion object {

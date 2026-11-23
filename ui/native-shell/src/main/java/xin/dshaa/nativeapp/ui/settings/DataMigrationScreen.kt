@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -32,8 +37,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.FolderZip
-import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -70,6 +73,7 @@ import xin.dshaa.ui.design.component.MiniChip
 import xin.dshaa.ui.design.component.SettingsCard
 import xin.dshaa.ui.design.component.SettingsInfoBanner
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
@@ -216,10 +220,10 @@ fun DataMigrationScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         // 顶栏
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {
@@ -237,7 +241,6 @@ fun DataMigrationScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { IntroCard() }
             item { SourceCard(sourceName, onPick = { pickZip.launch(BACKUP_MIME_TYPES) }) }
 
             if (state is MigrationState.Scanning) {
@@ -271,8 +274,7 @@ fun DataMigrationScreen(
                             )
                         }
                         Text(
-                            "跳过 ${doneEarly.skipped} · 失败 ${doneEarly.failed}" +
-                                if (doneEarly.skipped > 0) "（跳过 = 之前已经导入过）" else "",
+                            "跳过 ${doneEarly.skipped} · 失败 ${doneEarly.failed}",
                             style = MaterialTheme.typography.bodySmall,
                             color = c.sub,
                         )
@@ -364,35 +366,6 @@ fun DataMigrationScreen(
 }
 
 @Composable
-private fun IntroCard() {
-    val c = DshTheme2.colors
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = c.brandSoft,
-    ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(c.brand),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Rounded.FolderZip, null, tint = c.onHero, modifier = Modifier.size(24.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("从旧版备份恢复对话", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = c.text)
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    "选择 DSH备份-*.zip，把旧会话转成只读副本放进当前 App；备份包原样保留。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = c.sub,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun SourceCard(sourceName: String, onPick: () -> Unit) {
     val c = DshTheme2.colors
     SettingsCard {
@@ -418,11 +391,6 @@ private fun SourceCard(sourceName: String, onPick: () -> Unit) {
                 Text(if (sourceName.isBlank()) "选择备份包" else "重新选择", style = MaterialTheme.typography.labelLarge)
             }
         }
-        Text(
-            "备份包一般在这个位置：内部存储 / Download / DSH备份-yyyyMMdd-HHmmss.zip",
-            style = MaterialTheme.typography.bodySmall,
-            color = c.faint,
-        )
     }
 }
 
@@ -441,7 +409,7 @@ private fun LegacyEntryRow(
             .clip(RoundedCornerShape(14.dp))
             .clickable(enabled = enabled) { onClick() },
         shape = RoundedCornerShape(14.dp),
-        color = c.surface,
+        color = c.panel,
         border = BorderStroke(1.dp, if (checked) c.brand.copy(alpha = 0.45f) else c.line2),
     ) {
         Row(Modifier.padding(start = 4.dp, end = 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -508,7 +476,7 @@ private fun BottomBar(
     val importing = state as? MigrationState.Importing
     val done = state as? MigrationState.Done
     if (ready == null && importing == null && done == null && state !is MigrationState.Scanning) return
-    Surface(color = c.surface, shadowElevation = 8.dp) {
+    Surface(color = c.panel, shadowElevation = 8.dp) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
             when {
                 importing != null -> {
@@ -577,7 +545,7 @@ private fun LegacyPreviewDialog(
     val c = DshTheme2.colors
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = {
             Column {
                 Text(entry.title.ifBlank { "未命名会话" }, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -599,7 +567,7 @@ private fun LegacyPreviewDialog(
                     color = c.sub,
                 )
                 entry.preview.forEach { line ->
-                    Surface(shape = RoundedCornerShape(10.dp), color = c.surfaceAlt.copy(alpha = 0.7f)) {
+                    Surface(shape = RoundedCornerShape(10.dp), color = c.surfaceAlt.wash(0.7f)) {
                         Column(Modifier.padding(10.dp)) {
                             Text(
                                 if (line.role == "user") "用户" else "助手",

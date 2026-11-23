@@ -10,7 +10,7 @@ import androidx.compose.runtime.Composable
  *
  * 后端二选一：
  * - [NativeShell]（本文件）：Kotlin/Compose 实现，`builtin.shell.native` 是默认；
- * - `PluginShellHost` / Surface：JS 壳返回 UI 树，`builtin.shell.whale` 是可选的第二套。
+ * - `PluginShellHost` / Surface：JS 壳返回 UI 树（第三方插件壳；随包示例壳已删除）。
  *
  * native 后端也在内置插件清单里（`builtin.shell.native`，`kind = Shell`；目录仍是宿主的
  * `BuiltinPlugins`）：可停用（→ 宿主安全模式）、可重新打开、和工具/页面插件同一套开关与持久化。

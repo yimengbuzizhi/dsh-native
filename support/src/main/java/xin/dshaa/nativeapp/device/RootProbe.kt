@@ -49,6 +49,60 @@ object RootProbe {
         listOf("su", "-0", "-c", "id"),
     )
 
+    /** 探测到「root 不可用」后隔多久允许重探（授权可能刚刚才被点允许）。 */
+    const val REPROBE_UNAVAILABLE_MS: Long = 60_000L
+
+    /** 探测超时（= 正在等授权框）后的重探间隔：用户随时可能点允许，但别每 5s 弹一次。 */
+    const val REPROBE_WAITING_MS: Long = 60_000L
+
+    /** 没探测到可用写法时的标准执行前缀（`su -c <命令>`）。 */
+    val DEFAULT_SU_PREFIX: List<String> = listOf("su", "-c")
+
+    private val WHITESPACE = Regex("""\s+""")
+
+    /**
+     * 缓存是否该重探：root 可用就一直用缓存；不可用/等待授权则按间隔重试，
+     * 修掉「12s 超时后永久缓存 false，工具路径再也不重探」的问题。
+     */
+    fun shouldReprobe(cached: RootProbeResult?, ageMs: Long): Boolean {
+        if (cached == null) return true
+        if (cached.available) return false
+        val interval = if (cached.waiting) REPROBE_WAITING_MS else REPROBE_UNAVAILABLE_MS
+        return ageMs >= interval
+    }
+
+    /**
+     * 把探测成功的写法还原成能执行任意命令的 argv 前缀。
+     *
+     * 探测命令固定以 `id` 结尾，去掉最后一个 token 就是前缀；`su 0 id` 这种「用户参数」
+     * 写法没有 `-c`，执行任意命令时要显式补 `sh -c`（否则整条命令会被当成程序名）。
+     */
+    fun execPrefix(probeCommand: String?): List<String> {
+        val tokens = probeCommand?.trim()?.split(WHITESPACE)?.filter { it.isNotBlank() }.orEmpty()
+        if (tokens.size < 2) return DEFAULT_SU_PREFIX
+        val prefix = tokens.dropLast(1)
+        if (prefix.isEmpty()) return DEFAULT_SU_PREFIX
+        return if (prefix.contains("-c")) prefix else prefix + listOf("sh", "-c")
+    }
+
+    /**
+     * root 执行 argv：用探测成功的 su 写法（候选 D），需要 shell 身份时把 launcher 拼在命令前。
+     *
+     * [launcherPath] 为 null/空白 = launcher 不可用，保持旧的 `su -c <命令>`（uid 0）。
+     */
+    fun execArgv(
+        probe: RootProbeResult,
+        command: String,
+        launcherPath: String?,
+    ): List<String> {
+        val effective = if (launcherPath.isNullOrBlank()) {
+            command
+        } else {
+            ShellIdentityLauncher.wrapCommand(launcherPath, command)
+        }
+        return execPrefix(probe.command) + effective
+    }
+
     const val WAITING_REASON = "正在等待 root 授权：若系统弹了授权框，请允许后点「重新检测」"
     const val UNAVAILABLE_REASON = "root 不可用：设备没有 root，或 su 授权被拒绝"
 

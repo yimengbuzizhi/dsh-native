@@ -1,6 +1,7 @@
 package xin.dshaa.core.plugins
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
@@ -41,6 +42,11 @@ class PluginSandbox(
     private val grantedPermissions: List<String> = emptyList(),
     /** M67：设备/无障碍/记忆库等 app 侧能力；null = 当前宿主不提供（单测/试运行）。 */
     private val bridge: PluginHostBridge? = null,
+    /**
+     * P1（`docs/185` §四）：原语桥面。null = 本宿主没有原语层（单测/试运行）；
+     * 实现在 App 层，和 AI 工具面/原生面共用同一个 `PrimitiveHost`。
+     */
+    private val primitiveBridge: PluginPrimitiveBridge? = null,
 ) {
 
     /** 宿主调用结果。[payloadJson] 是给 JS 的完整 JSON（`{ok:true,…}` / `{ok:false,error,code}`）。 */
@@ -92,6 +98,9 @@ class PluginSandbox(
                 // M83 阶段 3：把 APK 里已有的库开成原语
                 "zip.zstd" -> zstd(args)
                 "ocr.recognize" -> ocr(args)
+                // P1：原语层（AI 工具面/插件桥面/原生面共用同一个 PrimitiveHost）
+                "primitive.invoke" -> primitiveInvoke(args)
+                "primitive.list" -> primitiveList()
                 "shell.exec" -> shellExec(args)
                 "timer.wait" -> timerWait(args)
                 else -> fail("未知的宿主能力：$method", "UNKNOWN_METHOD")
@@ -857,6 +866,41 @@ class PluginSandbox(
     }
 
     // ---- JSON / 读取工具 ----
+
+    // ---- P1 原语桥（docs/185 §四） ----
+
+    /**
+     * `primitive.invoke(id, args)`：只做参数转发和错误兜底。
+     *
+     * 哪个原语对插件开放由 `PrimitiveCatalog.bridgeVisible` 决定（P1 只读），这里不重复判断；
+     * 返回值是原语面自带 `{ok,...}` 的 JSON，插件 `ctx.primitive.invoke()` 直接拿到。
+     */
+    private fun primitiveInvoke(args: JsonObject): Reply {
+        val bridge = primitiveBridge
+            ?: return fail("原语层不可用：宿主没有挂原语桥", "UNAVAILABLE")
+        val id = args.text("id")?.trim().orEmpty()
+        if (id.isEmpty()) return fail("primitive.invoke 缺少 id", "INVALID_ARGUMENT")
+        val arguments = when (val value = args["arguments"]) {
+            null, is JsonNull -> "{}"
+            is JsonObject -> value.toString()
+            else -> return fail("primitive.invoke 的 arguments 必须是 JSON 对象", "INVALID_ARGUMENT")
+        }
+        val reply = runCatching { bridge.invoke(id, arguments) }.getOrElse {
+            return fail("原语调用失败：${it.message ?: it.javaClass.simpleName}", "PLUGIN_HOST_ERROR")
+        }
+        if (reply.isBlank()) return fail("原语桥没有返回结果：$id", "PLUGIN_HOST_ERROR")
+        // 外层 Reply.ok 只表示「宿主这次调用完成」，不代表原语成功（原语结果里还有 ok）。
+        return Reply(true, reply)
+    }
+
+    private fun primitiveList(): Reply {
+        val bridge = primitiveBridge
+            ?: return fail("原语层不可用：宿主没有挂原语桥", "UNAVAILABLE")
+        val reply = runCatching { bridge.list() }.getOrElse {
+            return fail("原语清单读取失败：${it.message ?: it.javaClass.simpleName}", "PLUGIN_HOST_ERROR")
+        }
+        return Reply(true, reply.ifBlank { """{"ok":true,"primitives":[]}""" })
+    }
 
     private fun parseArgs(payloadJson: String): JsonObject? = runCatching {
         if (payloadJson.isBlank()) JsonObject(emptyMap()) else Json.parseToJsonElement(payloadJson) as JsonObject

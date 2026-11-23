@@ -25,19 +25,34 @@ object ShowerServerManager {
     var additionalTargetPackages: Set<String> = emptySet()
 
     /**
+     * Why the last [ensureServerStarted] attempt failed, in user-readable Chinese.
+     *
+     * The method returns only a Boolean, so the host (VirtualScreenManager / AI tool result)
+     * reads this to surface the real cause instead of the old generic "Shizuku 是否已授权？".
+     * Cleared on success.
+     */
+    @Volatile
+    var lastFailureReason: String? = null
+        private set
+
+    /**
      * Ensure the Shower server is started in the background.
      * Returns true if the start command was issued successfully and a Binder
      * was received within the timeout window.
      */
     suspend fun ensureServerStarted(context: Context): Boolean {
+        // 每次尝试都先复位：否则调用方在异常路径会读到上一次的失败原因（review P2-8）。
+        lastFailureReason = null
         // 0) If we already have an alive Binder from the handoff broadcast, just reuse it.
         if (ShowerBinderRegistry.hasAliveService()) {
             ShowerLog.d(TAG, "Shower Binder already cached and alive, skipping start")
+            lastFailureReason = null
             return true
         }
 
         val runner = ShowerEnvironment.shellRunner
         if (runner == null) {
+            lastFailureReason = "没有可用的 shell 通道：ShowerEnvironment.shellRunner 未注入"
             ShowerLog.e(TAG, "No ShellRunner configured in ShowerEnvironment; cannot start server")
             return false
         }
@@ -46,6 +61,7 @@ object ShowerServerManager {
         val jarFile = try {
             copyJarToExternalDir(appContext)
         } catch (e: Exception) {
+            lastFailureReason = "jar 暂存失败（${e.message ?: e.javaClass.simpleName}）：${stagingDir(appContext).absolutePath}"
             ShowerLog.e(TAG, "Failed to copy shower-server.jar from assets", e)
             return false
         }
@@ -68,12 +84,15 @@ object ShowerServerManager {
             )
         }
 
-        // 3) Copy the jar from /sdcard/Download/Operit to /data/local/tmp using shell identity,
-        // so that the resulting file is owned by the shell user.
+        // 3) Copy the jar from the app-specific staging directory to /data/local/tmp using shell
+        // identity, so that the resulting file is owned by the shell user.
         val copyCmd = "cp ${jarFile.absolutePath} $remoteJarPath"
         ShowerLog.d(TAG, "Copying Shower jar with shell identity using command: $copyCmd")
         val copyResult = runner.run(copyCmd, ShellIdentity.SHELL)
         if (!copyResult.success) {
+            lastFailureReason =
+                "shell 身份拷贝 jar 失败（exit=${copyResult.exitCode}）：" +
+                    copyResult.stderr.trim().ifBlank { copyResult.stdout.trim() }.take(200)
             ShowerLog.e(
                 TAG,
                 "Failed to copy Shower jar to $remoteJarPath (exitCode=${copyResult.exitCode}). stdout='${copyResult.stdout}', stderr='${copyResult.stderr}'"
@@ -82,22 +101,32 @@ object ShowerServerManager {
         }
 
         // 4) Start app_process with CLASSPATH pointing to /data/local/tmp/shower-server.jar, in background.
+        // stderr 一并重定向到 shower.log：launcher 的 setuid/setcon/execvp 失败也落这里，
+        // 而不是只回一句「10s 没收到 Binder」（review P1-2）。
         val targetPackagesArg = appContext.packageName
-        val startCmd = "CLASSPATH=$remoteJarPath app_process / com.ai.assistance.shower.Main $targetPackagesArg &"
+        val startCmd = "CLASSPATH=$remoteJarPath app_process / com.ai.assistance.shower.Main $targetPackagesArg > $remoteLogPath 2>&1 &"
         ShowerLog.d(TAG, "Starting Shower server with command: $startCmd")
         val startResult = runner.run(startCmd, ShellIdentity.SHELL)
         if (!startResult.success) {
+            lastFailureReason =
+                "app_process 启动命令失败（exit=${startResult.exitCode}）：" +
+                    startResult.stderr.trim().ifBlank { startResult.stdout.trim() }.take(200)
             ShowerLog.e(
                 TAG,
                 "Failed to start Shower server (exitCode=${startResult.exitCode}). stdout='${startResult.stdout}', stderr='${startResult.stderr}'"
             )
             return false
         }
+        val startDiag = startResult.stderr.trim().ifBlank { startResult.stdout.trim() }
+        if (startDiag.isNotBlank()) {
+            ShowerLog.w(TAG, "Shower start stderr/stdout (${startDiag.length} chars): ${startDiag.take(400)}")
+        }
 
         // 5) Poll for up to 10 seconds for the Binder handoff broadcast to be received and cached.
         for (attempt in 0 until 50) { // 50 * 200ms = 10s
             delay(200)
             if (ShowerBinderRegistry.hasAliveService()) {
+                lastFailureReason = null
                 ShowerLog.d(
                     TAG,
                     "Shower Binder cached and alive after ~${(attempt + 1) * 200}ms"
@@ -106,6 +135,10 @@ object ShowerServerManager {
             }
         }
 
+        lastFailureReason =
+            "server 已启动但 10s 内没收到 Binder 广播" +
+                (if (startDiag.isBlank()) "" else "；start stderr：${startDiag.take(200)}") +
+                "（见 /data/local/tmp/shower.log）"
         ShowerLog.e(TAG, "Shower Binder was not received within the expected time")
         return false
     }
@@ -128,13 +161,16 @@ object ShowerServerManager {
     }
 
     /**
-     * Copy shower-server.jar from assets to an external directory.
-     * Host apps can override this behaviour by providing a different wrapper
-     * around [ShellRunner] if needed.
+     * Copy shower-server.jar from assets to the host-provided staging directory.
+     *
+     * The old Operit client hardcoded `/sdcard/Download/Operit`, which needs
+     * MANAGE_EXTERNAL_STORAGE on Android 11+ and made the failure look like a
+     * missing Shizuku authorization. The app-specific external directory needs no
+     * permission from the app and is readable by the shell user that copies it to
+     * `/data/local/tmp`.
      */
     private suspend fun copyJarToExternalDir(context: Context): File = withContext(Dispatchers.IO) {
-        // Reuse the same base directory as screenshots: /sdcard/Download/Operit
-        val baseDir = File("/sdcard/Download/Operit")
+        val baseDir = stagingDir(context)
         if (!baseDir.exists()) {
             baseDir.mkdirs()
         }
@@ -153,4 +189,9 @@ object ShowerServerManager {
         ShowerLog.d(TAG, "Copied $ASSET_JAR_NAME to ${outFile.absolutePath}")
         outFile
     }
+
+    /** Staging directory: host override first, otherwise the app-specific external dir. */
+    private fun stagingDir(context: Context): File =
+        ShowerEnvironment.stagingDir
+            ?: File(context.getExternalFilesDir(null) ?: context.filesDir, "shower")
 }

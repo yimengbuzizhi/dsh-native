@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -40,6 +46,7 @@ import xin.dshaa.ui.design.component.SettingsInfoBanner
 import xin.dshaa.ui.design.component.SettingsOption
 import xin.dshaa.ui.design.component.SettingsSwitchRow
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 
 /**
  * 显示与行为：思考过程展开偏好（Operit `expand_thinking_process_default`）+ 时间上下文 + 工具审批 + 主题。
@@ -54,9 +61,9 @@ fun BehaviorScreen(
     onBack: () -> Unit,
 ) {
     val c = DshTheme2.colors
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {
@@ -70,13 +77,11 @@ fun BehaviorScreen(
             SettingsGroup(icon = Icons.Rounded.Visibility, title = "对话显示") {
                 SettingsSwitchRow(
                     title = "默认展开思考过程",
-                    subtitle = "对应 Operit 的 expand_thinking_process_default；关闭时思考结束自动折叠",
                     checked = settings.expandThinking,
                     onCheckedChange = { settings.setExpandThinking(it) },
                 )
                 SettingsSwitchRow(
                     title = "时间上下文",
-                    subtitle = "每个请求带上当前时间与距上次消息的间隔（上游 dsh-time-context，10 分钟节流）",
                     checked = settings.timeContext,
                     onCheckedChange = { settings.setTimeContext(it) },
                 )
@@ -87,7 +92,6 @@ fun BehaviorScreen(
             SettingsGroup(icon = Icons.Rounded.Visibility, title = "发送方式") {
                 SettingsExpandablePickerRow(
                     title = "生成中发送",
-                    subtitle = "当前任务还没结束时，新消息怎么交付",
                     value = settings.sendWhileRunningMode,
                     options = listOf(
                         SettingsOption("queue", "排队发送", "当前任务完成后，按顺序处理新消息"),
@@ -102,7 +106,6 @@ fun BehaviorScreen(
             SettingsGroup(icon = Icons.Rounded.Memory, title = "上下文与压缩") {
                 SettingsSwitchRow(
                     title = "自动压缩上下文",
-                    subtitle = "窗口用到下面的比例时，把较早的历史换成一份摘要，腾出上下文继续聊",
                     checked = settings.autoCompact,
                     onCheckedChange = { settings.setAutoCompact(it) },
                 )
@@ -119,7 +122,7 @@ fun BehaviorScreen(
                             Modifier
                                 .weight(1f)
                                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                                .background(if (selected) c.brand else c.surfaceAlt.copy(alpha = 0.7f))
+                                .background(if (selected) c.brand else c.surfaceAlt.wash(0.7f))
                                 .clickable { settings.setAutoCompactRatio(percent / 100f) }
                                 .padding(vertical = 8.dp),
                             contentAlignment = Alignment.Center,
@@ -133,19 +136,18 @@ fun BehaviorScreen(
                     }
                 }
                 SettingsInfoBanner(
-                    buildString {
-                        append("当前模型窗口：")
-                        append(if (settings.contextWindow > 0) "${settings.contextWindow} tokens" else "未设置（自动压缩不生效）")
-                        append("；Max 模式开着时不自动压缩。模型窗口在「模型与参数配置」里按模型改。")
-                        append("聊天页输入栏 → 设置 →「上下文」里也能调，并支持「立即压缩」。")
-                    },
+                    "当前模型窗口：" +
+                        (if (settings.contextWindow > 0) {
+                            "${settings.contextWindow} tokens"
+                        } else {
+                            "未设置（自动压缩不生效）"
+                        }),
                 )
             }
 
             SettingsGroup(icon = Icons.Rounded.Security, title = "工具权限") {
                 SettingsExpandablePickerRow(
                     title = "审批方式",
-                    subtitle = "写类工具与命令执行",
                     value = settings.approvalMode,
                     options = listOf(
                         SettingsOption("ask", "每次询问", "write/edit/bash 首次调用会弹审批，可选「总是允许」"),
@@ -165,18 +167,16 @@ fun BehaviorScreen(
             SettingsGroup(icon = Icons.Rounded.Palette, title = "主题") {
                 SettingsExpandablePickerRow(
                     title = "外观",
-                    subtitle = "跟随系统 / 浅色 / 深色",
                     value = settings.themeMode,
                     options = listOf(
-                        SettingsOption("system", "跟随系统", "跟随手机的深色模式"),
-                        SettingsOption("light", "浅色", "始终使用浅色界面"),
-                        SettingsOption("dark", "深色", "始终使用深色界面"),
+                        SettingsOption("system", "跟随系统"),
+                        SettingsOption("light", "浅色"),
+                        SettingsOption("dark", "深色"),
                     ),
                     onSelect = { settings.setThemeMode(it) },
                 )
                 SettingsExpandablePickerRow(
                     title = "强调色",
-                    subtitle = "6 套预设（Operit 蓝 / 靛 / 青 / 紫 / 琥珀 / 玫瑰）",
                     value = settings.accentId,
                     options = xin.dshaa.ui.design.theme.DshAccents.map {
                         SettingsOption(it.id, it.name)

@@ -26,7 +26,11 @@ class DshApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         ShowerEnvironment.shellRunner = DeviceShell
+        // jar 暂存到 App 专属外部目录（shell 用户可读），不再写 /sdcard/Download（需要 MANAGE_EXTERNAL_STORAGE）
+        ShowerEnvironment.stagingDir = DeviceShell.showerJarDir(this)
         DeviceShell.initShizuku(this)
+        // root-only 虚拟屏：把 aarch64 shell 身份 launcher 装到 filesDir/bin（不可用会记原因）
+        DeviceShell.initIdentityLauncher(this)
         // H7：root 探测放后台（su 授权弹窗可能等十几秒），能力页/终端读缓存。
         DeviceShell.primeRootProbe()
         A11y.isReady()

@@ -17,6 +17,7 @@ java {
 dependencies {
     api(project(":core:model"))
     api(project(":core:protocol"))
+    implementation(project(":core:primitives"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     testImplementation(kotlin("test"))
 }

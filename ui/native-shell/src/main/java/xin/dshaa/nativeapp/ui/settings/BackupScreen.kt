@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -31,7 +36,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.FolderZip
-import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -176,9 +180,9 @@ fun BackupScreen(
         if (uri != null) startInspect(uri)
     }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {
@@ -402,20 +406,6 @@ fun BackupScreen(
                 is BackupUi.ReadyRestore -> Unit
                 BackupUi.Idle -> Unit
             }
-
-            item {
-                SettingsCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Lock, null, tint = c.faint, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "备份包是本机 zip；恢复会话可以直接继续聊，旧版只读会话仍只读。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = c.faint,
-                        )
-                    }
-                }
-            }
         }
     }
 
@@ -432,7 +422,7 @@ fun BackupScreen(
         val missingCwd = selectedSessions.count { !it.legacy && it.cwd.isNotBlank() && !isWritableDir(it.cwd) }
         AlertDialog(
             onDismissRequest = { ui = BackupUi.Idle },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("恢复这份备份？", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

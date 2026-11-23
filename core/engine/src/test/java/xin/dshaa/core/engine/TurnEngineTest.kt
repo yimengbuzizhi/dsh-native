@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
@@ -188,9 +190,9 @@ class TurnEngineTest {
             assertEquals(1, session.events.count { it.type == "tool/result" })
             assertFalse(session.events.toString().contains("TOOL_OUTPUT"), "原始输出不能落盘")
             val result = SessionCodec.messagesOf(session.events).last { it.role == MessageRole.TOOL }
-            assertTrue(result.content.first().text.contains("原始输出未落盘"), "宿主补写失败文案：${result.content}")
+            assertTrue(result.content.first().text.contains("original output was not persisted"), "宿主补写失败文案：${result.content}")
             assertTrue(result.isError)
-            assertTrue(requests[1].allText().contains("原始输出未落盘"), "模型看到的是宿主 fallback")
+            assertTrue(requests[1].allText().contains("original output was not persisted"), "模型看到的是宿主 fallback")
             assertEquals("done", ui.messages.last().content.first().text)
             assertEquals("completed", turnEndKind(session), "工具结果被拒不应打断回合")
             assertNull(ui.lastError)
@@ -279,7 +281,7 @@ class TurnEngineTest {
         val results = SessionCodec.messagesOf(session.events).filter { it.role == MessageRole.TOOL }
         assertEquals(2, results.size)
         assertTrue(results[0].isError)
-        assertTrue(results[0].content.first().text.contains("不是合法 JSON"), results[0].content.toString())
+        assertTrue(results[0].content.first().text.contains("not valid JSON"), results[0].content.toString())
         assertEquals("TOOL_OUTPUT", results[1].content.first().text)
         assertEquals("completed", turnEndKind(session))
         assertTrue(logs.any { it.contains("tool-input: call=call-1") })
@@ -301,8 +303,8 @@ class TurnEngineTest {
         val session = assertNotNull(repo.load(gateway.session!!.header.id))
         val first = SessionCodec.messagesOf(session.events).first { it.role == MessageRole.TOOL }
         assertTrue(first.isError)
-        assertTrue(first.content.first().text.contains("工具输入过长"), first.content.toString())
-        assertTrue(first.content.first().text.contains("字节 > 上限 65536 字节"), first.content.toString())
+        assertTrue(first.content.first().text.contains("Tool input too long"), first.content.toString())
+        assertTrue(first.content.first().text.contains("bytes > limit 65536 bytes"), first.content.toString())
         assertEquals("completed", turnEndKind(session))
     }
 
@@ -1516,7 +1518,8 @@ class TurnEngineTest {
     @Test
     fun usageSnapshotsReplaceCumulativeOutputAndKeepMissingStopUsage() = runBlocking {
         responses += listOf(
-            LlmEvent.MessageStart("m", "model", 100, TokenUsage(100, 0, 80, 8)),
+            // DSH 口径：input=未缓存输入 12，cache 读 80 / 写 8 单独记。
+            LlmEvent.MessageStart("m", "model", 100, TokenUsage(12, 0, 80, 8)),
             LlmEvent.MessageDelta(null, 3),
             LlmEvent.MessageDelta(null, 7),
             LlmEvent.MessageDelta(null, 7),
@@ -1528,9 +1531,9 @@ class TurnEngineTest {
         ui.onUsage = { order += it.status.name }
         engine(onRequest = { number, _ -> order += "REQUEST:$number" }).startTurn(ui, TurnInput("hi"))
         assertEquals(listOf("STARTED", "REQUEST:1"), order.take(2))
-        assertEquals(RequestUsage(1, TokenUsage(100, 10, 80, 8), RequestUsageStatus.COMPLETED), ui.requestUsages.last())
-        assertEquals(listOf(100 to 10), ui.tokenUsages)
-        assertEquals("100 in / 10 out", ui.lastUsage)
+        assertEquals(RequestUsage(1, TokenUsage(12, 10, 80, 8), RequestUsageStatus.COMPLETED), ui.requestUsages.last())
+        assertEquals(listOf(12 to 10), ui.tokenUsages)
+        assertEquals("12 in / 10 out", ui.lastUsage)
     }
 
     @Test
@@ -1597,7 +1600,7 @@ class TurnEngineTest {
     @Test
     fun summaryUsageUsesSameSnapshotsAndOmitsUnknownFields() = runBlocking {
         responses += listOf(
-            LlmEvent.MessageStart("m", "model", 100, TokenUsage(100, cacheReadInputTokens = 80)),
+            LlmEvent.MessageStart("m", "model", 100, TokenUsage(20, cacheReadInputTokens = 80)),
             LlmEvent.TextDelta(0, "summary"),
             LlmEvent.MessageDelta(null, 3),
             LlmEvent.MessageDelta(null, 7),
@@ -1605,14 +1608,45 @@ class TurnEngineTest {
         )
         val e = engine()
         val summary = e.summarizeCompaction(emptyList(), LlmConfig("fixture"))
-        assertEquals(100, summary.usage!!["inputTokens"]!!.jsonPrimitive.intOrNull)
+        assertEquals(20, summary.usage!!["inputTokens"]!!.jsonPrimitive.intOrNull)
         assertEquals(7, summary.usage!!["outputTokens"]!!.jsonPrimitive.intOrNull)
+        // total = 未缓存 20 + 缓存读 80 + 输出 7（与 OpenAI 通道同口径）。
         assertEquals(107, summary.usage!!["totalTokens"]!!.jsonPrimitive.intOrNull)
         assertEquals(80, summary.usage!!["cacheReadTokens"]!!.jsonPrimitive.intOrNull)
         assertNull(summary.usage!!["cacheWriteTokens"])
         responses += listOf(LlmEvent.TextDelta(0, "unknown"))
         assertEquals(buildJsonObject {}, e.summarizeCompaction(emptyList(), LlmConfig("fixture")).usage)
         assertTrue(ui.requestUsages.isEmpty(), "Summary accounting does not overwrite the main request display")
+    }
+
+    @Test
+    fun cacheDebugWritesOneLinePerStepWithStablePrefixHashes() = runBlocking {
+        val lines = mutableListOf<String>()
+        // 两步（工具调用后收口）：system/tools 不变 → 哈希一致；messages 变长 → 哈希必须变。
+        responses += toolCallResponse("call-1", "fake_tool", "{}")
+        responses += textResponse("done")
+        engine(cacheDebug = { CacheDebugSink { lines += it } }).startTurn(ui, TurnInput("hi"))
+
+        assertEquals(2, lines.size, "每个 step 一次请求一行")
+        val records = lines.map { Json.parseToJsonElement(it).jsonObject }
+        assertEquals(listOf("deepseek-anthropic", "deepseek-anthropic"), records.map { it["provider"]!!.jsonPrimitive.content })
+        assertEquals(listOf("deepseek-flash", "deepseek-flash"), records.map { it["model"]!!.jsonPrimitive.content })
+        assertEquals(listOf(1, 2), records.map { it["requestNo"]!!.jsonPrimitive.intOrNull })
+        val systemHashes = records.map { it["systemSha256"]!!.jsonPrimitive.content }
+        val toolsHashes = records.map { it["toolsSha256"]!!.jsonPrimitive.content }
+        val messageHashes = records.map { it["messagesPrefixSha256"]!!.jsonPrimitive.content }
+        assertEquals(1, systemHashes.toSet().size, "system 没变，哈希不能变")
+        assertEquals(1, toolsHashes.toSet().size, "工具表没变，哈希不能变")
+        assertEquals(2, messageHashes.toSet().size, "第二步多了 tool_result，messages 前缀必须变")
+        (systemHashes + toolsHashes + messageHashes).forEach { assertEquals(64, it.length, "完整 sha256 hex") }
+        // scripted 用量：MessageStart input=10、MessageDelta output=5；无缓存字段 → JSON null。
+        records.forEach { record ->
+            assertEquals(10, record["inputTokens"]!!.jsonPrimitive.intOrNull)
+            assertEquals(5, record["outputTokens"]!!.jsonPrimitive.intOrNull)
+            assertEquals(JsonNull, record["cacheRead"])
+            assertEquals(JsonNull, record["cacheCreation"])
+            assertTrue(record["at"]!!.jsonPrimitive.longOrNull!! > 0)
+        }
     }
 
     @Test
@@ -2132,6 +2166,7 @@ class TurnEngineTest {
         nextSchedulePrompt: () -> String? = { null },
         toolMiddleware: () -> ToolMiddlewareChain = { ToolMiddlewareChain.EMPTY },
         requestMiddleware: () -> RequestMiddlewareChain = { RequestMiddlewareChain.EMPTY },
+        cacheDebug: () -> CacheDebugSink? = { null },
     ): TurnEngine = TurnEngine(
         EngineDeps(
             workspacePath = root.absolutePath,
@@ -2179,6 +2214,7 @@ class TurnEngineTest {
             onInputDelivered = onInputDelivered,
             toolMiddleware = toolMiddleware,
             requestMiddleware = requestMiddleware,
+            cacheDebug = cacheDebug,
         ),
     )
 

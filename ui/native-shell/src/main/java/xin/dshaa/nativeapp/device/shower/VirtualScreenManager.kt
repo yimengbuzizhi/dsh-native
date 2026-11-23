@@ -47,18 +47,30 @@ object VirtualScreenManager {
         }
         if (!DeviceShell.canUseShellIdentity()) {
             return@withLock Result.failure(
-                IllegalStateException("需要 Shizuku 或 root：虚拟屏必须由 shell 身份创建"),
+                IllegalStateException("虚拟屏需要 shell 身份（Shizuku 或 root）：${DeviceShell.shellChannelReason()}"),
             )
         }
         val server = runCatching { ShowerServerManager.ensureServerStarted(context) }.getOrDefault(false)
         if (!server) {
-            return@withLock Result.failure(IllegalStateException("Shower 服务启动失败（Shizuku 是否已授权？）"))
+            val reason = ShowerServerManager.lastFailureReason ?: "未知原因"
+            return@withLock Result.failure(
+                IllegalStateException(
+                    "Shower 服务启动失败：$reason（身份：${DeviceShell.shellChannelReason()}；" +
+                        "logcat tag ShowerServerManager）",
+                ),
+            )
         }
         val controller = VirtualScreenSession.controller
         val created = runCatching { controller.ensureDisplay(context, spec.width, spec.height, spec.dpi) }
             .getOrDefault(false)
         if (!created) {
-            return@withLock Result.failure(IllegalStateException("虚拟显示创建失败（看 logcat: ShowerServerManager）"))
+            return@withLock Result.failure(
+                IllegalStateException(
+                    "虚拟显示创建失败：server 已启动但 createVirtualDisplay 返回失败" +
+                        "（身份：${DeviceShell.shellChannelReason()}；logcat tag ShowerServerManager，" +
+                        "server 日志 /data/local/tmp/shower.log）",
+                ),
+            )
         }
         val displayId = controller.getDisplayId()
             ?: return@withLock Result.failure(IllegalStateException("虚拟显示没有返回 display id"))
@@ -69,7 +81,12 @@ object VirtualScreenManager {
         if (app != null) {
             val launched = runCatching { controller.launchApp(app.first) }.getOrDefault(false)
             if (!launched) {
-                return@withLock Result.failure(IllegalStateException("启动 ${app.second} 失败"))
+                return@withLock Result.failure(
+                    IllegalStateException(
+                        "启动 ${app.second} 失败（身份：${DeviceShell.shellChannelReason()}；" +
+                            "logcat tag ShowerServerManager）",
+                    ),
+                )
             }
             VirtualScreenSession.markStarted(size, app.second, spec, app.first)
             VirtualScreenOverlay.updateCurrentAppPackageName(app.first)

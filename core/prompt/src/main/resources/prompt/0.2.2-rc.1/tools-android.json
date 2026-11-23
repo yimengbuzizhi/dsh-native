@@ -137,7 +137,7 @@
   },
   {
     "name": "start_virtual_display",
-    "description": "Start (or reuse) a Shower virtual display for UI automation. This runs apps in the background without touching the physical screen. Returns a display id; pass that id as `display` to tap, long_press, swipe, press_key, input_text, launch_app and capture_screenshot. Requires Shizuku or root. If no app is given, the virtual desktop opens.",
+    "description": "Start (or reuse) a Shower virtual display for UI automation. Call this FIRST for any phone-automation task that opens or operates an app: it runs apps in the background without touching the physical screen. Returns a display id; pass that id as `display` to tap, long_press, swipe, press_key, input_text, launch_app and capture_screenshot. Requires Shizuku, or root on arm64 with the bundled shell-identity launcher. If no app is given, the virtual desktop opens.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -278,7 +278,7 @@
         "content": { "type": "string", "description": "Full memory content." },
         "content_type": { "type": "string", "description": "Optional MIME type (default text/plain)." },
         "source": { "type": "string", "description": "Optional source label (default ai_created)." },
-        "folder_path": { "type": "string", "description": "Optional folder path such as 工作/项目A." },
+        "folder_path": { "type": "string", "description": "Optional folder path such as Work/ProjectA." },
         "tags": { "type": "string", "description": "Optional comma-separated tags (e.g. Person,Concept)." }
       },
       "required": ["title", "content"],
@@ -388,8 +388,8 @@
     }
   },
   {
-    "name": "http_request",
-    "description": "Send an HTTP request (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS) to an http(s) URL and return a structured result: status, final url, response headers (set-cookie removed), body, byte count, truncation flag, content type and elapsed milliseconds. Non-text responses are returned as base64. Use it for APIs and curl-like calls; web_fetch is for readable page text.",
+    "name": "curl",
+    "description": "Send one HTTP request (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS) to an http(s) URL and return a structured result: status, final url, method, redirect count, response headers (set-cookie removed), body, byte count, truncation flag, content type and elapsed milliseconds. Non-text responses are returned as base64. This is the curl of this app: parameters are structured, not a command line. Use the `bash` tool when you need the real curl command. web_fetch is for readable page text.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -400,10 +400,12 @@
           "additionalProperties": { "type": "string" },
           "description": "Request headers; they are not echoed back in the result."
         },
-        "body": { "type": "string", "description": "Request body for POST/PUT/PATCH/DELETE/OPTIONS." },
+        "data": { "type": "string", "description": "Request body for POST/PUT/PATCH/DELETE/OPTIONS (curl's --data). `body` is accepted as an alias." },
+        "body": { "type": "string", "description": "Alias of data (kept for older sessions)." },
         "timeout_ms": { "type": "integer", "description": "Timeout in milliseconds (default 15000, max 60000)." },
-        "max_bytes": { "type": "integer", "description": "Max response bytes to read (default 262144, max 1048576); truncated=true when exceeded." },
-        "follow_redirects": { "type": "boolean", "description": "Follow up to 5 http(s) redirects (default true)." }
+        "max_bytes": { "type": "integer", "description": "Max response bytes to read (default 262144, hard ceiling 16777216); 0 = do not truncate. truncated=true when the ceiling cut it." },
+        "follow_redirects": { "type": "boolean", "description": "Follow http(s) redirects (default true)." },
+        "max_redirects": { "type": "integer", "description": "Max redirect hops when following (default 10, max 50)." }
       },
       "required": ["url"],
       "additionalProperties": false

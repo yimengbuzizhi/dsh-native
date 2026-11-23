@@ -82,6 +82,106 @@ class RootProbeTest {
         assertEquals("app", RootProbe.identity(root = false, shizuku = false, shizukuPermission = false))
     }
 
+    // ---- 候选 D：探测成功的 su 写法要真的用于执行 ----
+
+    @Test
+    fun execArgvUsesTheProbedSuVariant() {
+        val standard = RootProbeResult(available = true, command = "su -c id")
+        assertEquals(listOf("su", "-c", "cp a b"), RootProbe.execArgv(standard, "cp a b", null))
+
+        val dashZero = RootProbeResult(available = true, command = "su -0 -c id")
+        assertEquals(listOf("su", "-0", "-c", "cp a b"), RootProbe.execArgv(dashZero, "cp a b", null))
+
+        // `su 0 id` 的探测写法没有 -c：执行任意命令必须补 sh -c，否则整条命令会被当成程序名
+        val userId = RootProbeResult(available = true, command = "su 0 id")
+        assertEquals(listOf("su", "0", "sh", "-c", "cp a b"), RootProbe.execArgv(userId, "cp a b", null))
+    }
+
+    @Test
+    fun execArgvWithoutProbeFallsBackToStandardSuC() {
+        val unavailable = RootProbeResult(available = false, reason = "no root")
+        assertEquals(listOf("su", "-c", "id"), RootProbe.execArgv(unavailable, "id", null))
+    }
+
+    // ---- launcher：root 下的 uid 2000 身份 ----
+
+    @Test
+    fun execArgvPrefixesTheLauncherWithTheProbedVariant() {
+        val launcher = "/data/user/0/xin.dshaa.nativeapp/files/bin/operit_shell_exec"
+        val command = "CLASSPATH=/data/local/tmp/shower-server.jar app_process / com.ai.assistance.shower.Main xin.dshaa.nativeapp"
+
+        val standard = RootProbeResult(available = true, command = "su -c id")
+        val argv = RootProbe.execArgv(standard, command, launcher)
+        val wrapped = ShellIdentityLauncher.wrapCommand(launcher, command)
+        assertEquals(listOf("su", "-c", wrapped), argv)
+        // 整条命令必须交给降权后的 sh -c，而不是 `launcher <命令>` 裸拼接。
+        assertTrue(argv.last().contains("/system/bin/sh -c"))
+        assertTrue(argv.last().contains("'CLASSPATH=/data/local/tmp/shower-server.jar"))
+
+        val userId = RootProbeResult(available = true, command = "su 0 id")
+        assertEquals(
+            listOf("su", "0", "sh", "-c", wrapped),
+            RootProbe.execArgv(userId, command, launcher),
+        )
+    }
+
+    @Test
+    fun execArgvWithoutLauncherKeepsPlainUidZeroCommand() {
+        val standard = RootProbeResult(available = true, command = "su -c id")
+        assertFalse(RootProbe.execArgv(standard, "cp a b", null).last().contains("operit_shell_exec"))
+        assertFalse(RootProbe.execArgv(standard, "cp a b", "  ").last().contains("operit_shell_exec"))
+    }
+
+    // ---- 候选 C：root 探测缓存要能重探 ----
+
+    @Test
+    fun rootProbeCacheIsRetriedOnlyWhenItWasNotAvailable() {
+        val root = RootProbeResult(available = true, command = "su -c id")
+        assertFalse(RootProbe.shouldReprobe(root, Long.MAX_VALUE / 2))
+        assertTrue(RootProbe.shouldReprobe(null, 0))
+
+        val unavailable = RootProbeResult(available = false, reason = "no root")
+        assertFalse(RootProbe.shouldReprobe(unavailable, RootProbe.REPROBE_UNAVAILABLE_MS - 1))
+        assertTrue(RootProbe.shouldReprobe(unavailable, RootProbe.REPROBE_UNAVAILABLE_MS))
+
+        val waiting = RootProbeResult(available = false, reason = "waiting", waiting = true)
+        assertFalse(RootProbe.shouldReprobe(waiting, RootProbe.REPROBE_WAITING_MS - 1))
+        assertTrue(RootProbe.shouldReprobe(waiting, RootProbe.REPROBE_WAITING_MS))
+    }
+
+    // ---- 候选 A/E 文案：错误必须说清 root / Shizuku / launcher 三件事 ----
+
+    @Test
+    fun channelReasonExplainsRootAndLauncherNotJustShizuku() {
+        val text = ShellDiagnosis.channelReason(
+            root = true,
+            rootCommand = "su -c id",
+            rootReason = "root 可用（su -c id）",
+            shizuku = false,
+            shizukuPermission = false,
+            launcherAvailable = false,
+            launcherReason = "当前 ABI=x86_64，launcher 只有 arm64-v8a 版本",
+        )
+        assertTrue(text, text.contains("root 可用"))
+        assertTrue(text, text.contains("x86_64"))
+        assertTrue(text, text.contains("uid 0"))
+        assertTrue(text, text.contains("Shizuku"))
+
+        val noRoot = ShellDiagnosis.channelReason(
+            root = false,
+            rootCommand = null,
+            rootReason = "root 不可用：设备没有 root，或 su 授权被拒绝",
+            shizuku = true,
+            shizukuPermission = false,
+            launcherAvailable = false,
+            launcherReason = "当前 ABI=x86_64",
+        )
+        assertTrue(noRoot, noRoot.contains("root 不可用"))
+        assertTrue(noRoot, noRoot.contains("已连接但未授权"))
+        // launcher 只在 root 可用时才相关，别混进无 root 的文案
+        assertFalse(noRoot, noRoot.contains("x86_64"))
+    }
+
     @Test
     fun statusExplainsIdentityAndPermissions() {
         val root = RootProbe.status(true, "su -c id", shizuku = false, shizukuPermission = false, rootReason = "root 可用（su -c id）")

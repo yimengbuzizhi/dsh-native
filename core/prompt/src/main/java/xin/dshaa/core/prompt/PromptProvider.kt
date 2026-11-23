@@ -28,6 +28,8 @@ data class PromptRequest(
     val personaSuffix: String = "",
     val extraSections: List<PromptSection> = emptyList(),
     val variables: Map<String, String> = emptyMap(),
+    /** docs/190-E：false = 不拼打包的内置 `sections.json` 段（含 plan:policy），角色卡/插件段仍保留。 */
+    val includeBuiltinSections: Boolean = true,
 )
 
 object PromptProviders {
@@ -56,6 +58,7 @@ object PromptProviders {
             personaSuffix = request.personaSuffix,
             extraSections = request.extraSections,
             variables = request.variables,
+            includeBuiltinSections = request.includeBuiltinSections,
         )
     }
 

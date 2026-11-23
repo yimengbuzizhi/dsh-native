@@ -15,9 +15,13 @@ class BuiltinToolCatalogTest {
 
     @Test
     fun catalogCoversThirtyThreeToolsWithoutDuplicates() {
-        // M88-D：builtin.web 增加 http_request（32 → 33）。
+        // M88-D 加 http_request（32 → 33）；docs/187 §6.5 把它改名 `curl`（数量不变）。
         assertEquals(33, BuiltinToolCatalog.allTools().size)
         assertEquals(emptyList(), BuiltinToolCatalog.duplicateTools())
+        assertTrue(BuiltinToolCatalog.allTools().any { it.name == "curl" })
+        assertTrue(BuiltinToolCatalog.allTools().none { it.name == "http_request" })
+        // 旧名字只做别名，不进工具表
+        assertEquals(listOf("http_request"), BuiltinToolCatalog.aliases().map { it.name })
     }
 
     @Test

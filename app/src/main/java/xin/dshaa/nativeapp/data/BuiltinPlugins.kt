@@ -41,9 +41,26 @@ object BuiltinPlugins {
     /** M85-E：内置提示词插件（`prompt/v1` native 后端）的稳定 id——现有 `PromptPack` 原样登记。 */
     const val NATIVE_PROMPT = "builtin.prompt.dsh"
 
+    /**
+     * docs/190-E：**鲸歌自带提示词内容**开关（默认开）。
+     *
+     * 和 [NATIVE_PROMPT]（prompt/v1 实现本身，关掉 = 完全没有系统提示词）不同：
+     * 这个只控制「打包的 `sections.json` 30+ 段 + 计划策略」要不要拼进去；
+     * 关掉后仍保留用户人设/系统提示词/插件注册段/运行时上下文。
+     */
+    const val PROMPT_CORE = "builtin.prompt.core"
+
     /** M85-E：内置模型插件（`model/v1` native 后端）的稳定 id——现有两条 LlmClient 通道。 */
     const val NATIVE_MODEL_DEEPSEEK = "builtin.model.deepseek"
     const val NATIVE_MODEL_OPENAI = "builtin.model.openai"
+
+    /**
+     * docs/190-B：Node 宿主自治工具组（默认开）。
+     *
+     * 9 个 `nodehost_*` 工具**静态注册**：宿主关着/失败时也能看状态、看日志、诊断和修复，
+     * 不依赖宿主 Ready 才存在的 `node_*` 动态工具表。
+     */
+    const val NODE_HOST = "builtin.node.host"
 
     /**
      * M84-A：32 个内置工具分成 **12 个内置工具插件组**（每个工具恰好归属一组）。
@@ -80,6 +97,13 @@ object BuiltinPlugins {
             kind = BuiltinPluginKind.Prompt,
         ),
         BuiltinPlugin(
+            id = PROMPT_CORE,
+            name = "提示词：鲸歌内置规则",
+            description = "鲸歌自带的内置规则段（打包的 sections.json 30+ 段 + 计划模式策略）；" +
+                "关掉 = 不拼这些内置段，仍保留用户人设/系统提示词/用户插件段/运行时上下文",
+            kind = BuiltinPluginKind.Prompt,
+        ),
+        BuiltinPlugin(
             id = NATIVE_MODEL_DEEPSEEK,
             name = "模型：DeepSeek",
             description = "DeepSeek · Anthropic Messages 通道（model/v1 native 实现）；关掉 = 选中它时如实报错，不悄悄换通道",
@@ -104,6 +128,17 @@ object BuiltinPlugins {
                 "plugin_dev_grant", "plugin_dev_revoke", "plugin_dev_config", "plugin_dev_role",
                 // M88-I：中间件总开关与状态查询同组。
                 "plugin_dev_middleware", "plugin_dev_middleware_state",
+            ),
+        ),
+        BuiltinPlugin(
+            id = NODE_HOST,
+            name = "Node 宿主",
+            description = "AI 管理 Node 宿主：状态 / 插件 / 日志 / 诊断 / 启停 / 修复（重载、重装运行时、隔离坏插件、清缓存）/ 自动修复 / 安装与卸载 Node 插件；" +
+                "宿主关着或失败时也能用，写类走工具审批与审计",
+            tools = setOf(
+                "nodehost_status", "nodehost_plugins", "nodehost_logs", "nodehost_doctor",
+                "nodehost_control", "nodehost_repair", "nodehost_autofix",
+                "nodehost_install", "nodehost_uninstall",
             ),
         ),
         BuiltinPlugin(
@@ -134,8 +169,8 @@ object BuiltinPlugins {
         BuiltinPlugin(
             id = "builtin.web",
             name = "联网",
-            description = "web_search / web_fetch / http_request：搜索、抓网页、发 HTTP 请求（只允许 http/https）",
-            tools = setOf("web_search", "web_fetch", "http_request"),
+            description = "web_search / web_fetch / curl：搜索、抓网页、发 HTTP 请求（只允许 http/https；`http_request` 是 curl 的旧别名）",
+            tools = setOf("web_search", "web_fetch", "curl"),
         ),
         BuiltinPlugin(
             id = "builtin.agent",
@@ -283,14 +318,8 @@ object BuiltinPlugins {
             kind = BuiltinPluginKind.Page,
         ),
 
-        // ---- M84-D：悬浮窗四分口示例插件（默认关；开 = 注册到 FloatingSlots） ----
-        BuiltinPlugin(
-            id = "builtin.floating.demo",
-            name = "悬浮窗插口（示例）",
-            description = "球红点「1」+ 粉底气泡 + 面板/全屏页横幅；关掉四个插口立即恢复默认",
-            kind = BuiltinPluginKind.Floating,
-            defaultEnabled = false,
-        ),
+        // docs/187 §5.2：内置悬浮窗插口示例（`builtin.floating.demo`）已删除。
+        // `FloatingSlots` 注册表保留：以后插件仍可注册插口，只是不再随包带示例。
     )
 
     fun byId(id: String): BuiltinPlugin? = all.firstOrNull { it.id == id }

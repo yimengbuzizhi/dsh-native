@@ -66,9 +66,9 @@ class CapabilityToolsTest {
     fun unknownCapabilityListsAvailableIds() {
         val result = exec(tools(), "capability", """{"id":"nfc"}""")
         assertTrue(result.isError)
-        assertTrue(result.text.contains("未知能力 id：nfc"), result.text)
+        assertTrue(result.text.contains("Unknown capability id: nfc"), result.text)
         assertTrue(result.text.contains("clipboard.read"), result.text)
-        assertTrue(result.text.contains("capability 授权"), result.text)
+        assertTrue(result.text.contains("capability permission"), result.text)
         assertTrue(calls.isEmpty(), "未知 id 不能下发到宿主")
     }
 
@@ -76,11 +76,11 @@ class CapabilityToolsTest {
     fun missingIdAndNonObjectArgsAreExplicit() {
         val missing = exec(tools(), "capability", "{}")
         assertTrue(missing.isError)
-        assertTrue(missing.text.contains("capability 需要 id"), missing.text)
+        assertTrue(missing.text.contains("capability requires id"), missing.text)
 
         val badArgs = exec(tools(), "capability", """{"id":"clipboard.read","args":"x"}""")
         assertTrue(badArgs.isError)
-        assertTrue(badArgs.text.contains("args 必须是 JSON 对象"), badArgs.text)
+        assertTrue(badArgs.text.contains("capability args must be a JSON object"), badArgs.text)
         assertTrue(calls.isEmpty())
     }
 
@@ -109,8 +109,8 @@ class CapabilityToolsTest {
         notifyAllowed = false
         val result = exec(tools(), "notify", """{"title":"hi","body":"there"}""")
         assertTrue(result.isError)
-        assertTrue(result.text.contains("系统通知权限未开"), result.text)
-        assertTrue(result.text.contains("设置 → 权限与能力 → 通知"), result.text)
+        assertTrue(result.text.contains("System notification permission is not granted"), result.text)
+        assertTrue(result.text.contains("Settings → Permissions & Capabilities → Notifications"), result.text)
         assertTrue(result.text.contains("notify.toast"), result.text)
         assertTrue(calls.isEmpty(), "没权限时不能假装发过")
     }
@@ -121,11 +121,11 @@ class CapabilityToolsTest {
         assertFalse(result.isError)
         assertEquals("notify", calls.single().first)
         assertTrue(calls.single().second!!.contains("\"body\":\"验收\""))
-        assertTrue(result.text.contains("通知已发送"), result.text)
+        assertTrue(result.text.contains("Notification sent"), result.text)
 
         val empty = exec(tools(), "notify", "{}")
         assertTrue(empty.isError)
-        assertTrue(empty.text.contains("title 或 body"), empty.text)
+        assertTrue(empty.text.contains("at least one of title or body"), empty.text)
     }
 
     @Test

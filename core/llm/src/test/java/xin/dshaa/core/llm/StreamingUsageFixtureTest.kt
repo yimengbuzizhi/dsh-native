@@ -55,8 +55,9 @@ class StreamingUsageFixtureTest {
         )) { body = it }).stream(request, config).toList()
         val options = ProtocolJson.json.parseToJsonElement(body).jsonObject["stream_options"]!!.jsonObject
         assertEquals("true", options["include_usage"]!!.jsonPrimitive.content)
-        assertEquals(TokenUsage(100, 7, 80), events.usage())
-        assertEquals(107, events.usage().totalTokens, "cached 80 is already part of prompt 100")
+        assertEquals(TokenUsage(20, 7, 80), events.usage())
+        // DSH 口径：prompt_tokens 100 = 未缓存 20 + 缓存读 80；total 仍然是 107。
+        assertEquals(107, events.usage().totalTokens, "total = uncached 20 + cached 80 + output 7")
         assertEquals(1, events.count { it is LlmEvent.MessageStop })
         assertEquals("end_turn", events.filterIsInstance<LlmEvent.MessageDelta>().last().stopReason)
         assertEquals("hi", events.filterIsInstance<LlmEvent.TextDelta>().joinToString("") { it.text })
@@ -86,7 +87,8 @@ class StreamingUsageFixtureTest {
             """{"choices":[],"usage":{"completion_tokens":7}}""",
             "[DONE]",
         ))).stream(request, config).toList()
-        assertEquals(TokenUsage(100, 7, 75), events.usage())
+        assertEquals(TokenUsage(25, 7, 75), events.usage())
+        assertEquals(107, events.usage().totalTokens)
         assertEquals("tool_use", events.filterIsInstance<LlmEvent.MessageDelta>().last().stopReason)
     }
 
@@ -99,7 +101,8 @@ class StreamingUsageFixtureTest {
             """{"type":"message_delta","delta":{"stop_reason":"end_turn"}}""",
             """{"type":"message_stop"}""",
         ))).stream(request, config).toList()
-        assertEquals(TokenUsage(100, 7, 80, 8), events.usage())
+        assertEquals(TokenUsage(12, 7, 80, 8), events.usage())
+        assertEquals(107, events.usage().totalTokens)
         assertTrue(events.any { it is LlmEvent.MessageStop })
     }
 }

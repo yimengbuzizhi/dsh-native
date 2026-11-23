@@ -56,6 +56,16 @@ object ShowerEnvironment {
     var logSink: ShowerLogSink? = null
 
     /**
+     * Host-provided directory where `shower-server.jar` is staged before the shell copies it to
+     * `/data/local/tmp`. It must be readable by the shell user, so the app-specific external
+     * directory is the intended value (Android 11+ cannot write `/sdcard/Download` without
+     * MANAGE_EXTERNAL_STORAGE). Hosts set it from `DeviceShell.showerJarDir(context)`; when it is
+     * null the client falls back to `<externalFilesDir>/shower` (never the public Download dir).
+     */
+    @Volatile
+    var stagingDir: java.io.File? = null
+
+    /**
      * Keep writing logs to Android system logcat.
      *
      * Default is true to preserve existing behavior when no host integration is configured.

@@ -6,6 +6,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import xin.dshaa.nativeapp.chat.AppViewModel
 import xin.dshaa.nativeapp.ui.boot.BootHost
 import xin.dshaa.ui.design.theme.DshTheme
@@ -124,6 +127,15 @@ class MainActivity : ComponentActivity() {
             intent?.getStringExtra("dsh_client_plugin")?.takeIf { it.isNotBlank() }?.let { id ->
                 getSharedPreferences("dsh", 0).edit().putString("debug_client_plugin", id.trim()).apply()
             }
+            // P3-e（docs/187 §9.2）：容器种类 `--es dsh_container_kind fullscreen|floating|sheet`
+            // （不给 = 悬浮窗，保持 M70 行为）；同一 id 可以换容器反复验。
+            intent?.getStringExtra("dsh_container_kind")?.takeIf { it.isNotBlank() }?.let { kind ->
+                getSharedPreferences("dsh", 0).edit().putString("debug_container_kind", kind.trim()).apply()
+            }
+            // P3-e：`--ez dsh_container_close true` 把当前插件容器关掉（截图/证据收尾）。
+            if (intent?.getBooleanExtra("dsh_container_close", false) == true) {
+                getSharedPreferences("dsh", 0).edit().putBoolean("debug_container_close", true).apply()
+            }
             // 「拉取模型」验收：`--es dsh_fetch_models <结果文件路径>` 拉一次供应商模型列表
             intent?.getStringExtra("dsh_fetch_models")?.takeIf { it.isNotBlank() }?.let { path ->
                 getSharedPreferences("dsh", 0).edit().putString("debug_fetch_models", path.trim()).apply()
@@ -157,6 +169,30 @@ class MainActivity : ComponentActivity() {
                     if (json.has("system")) store.setAssistantSystem(json.optString("system"))
                 }.onFailure { android.util.Log.w("DshPersona", "bad dsh_persona: ${it.message}") }
             }
+            // 提示词串段取证（docs/190-D）：`--es dsh_dump_assistant <绝对路径>` 把当前助手配置的
+            // id/name/persona/system 落盘。只读当前这一份，**不写** API key / base_url / 其它 prefs。
+            intent?.getStringExtra("dsh_dump_assistant")?.takeIf { it.isNotBlank() }?.let { path ->
+                runCatching {
+                    val store = xin.dshaa.ui.shellapi.data.SettingsStore(getSharedPreferences("dsh", 0))
+                    val profiles = org.json.JSONArray()
+                    store.assistantProfiles.forEach { p ->
+                        profiles.put(
+                            org.json.JSONObject()
+                                .put("id", p.id)
+                                .put("name", p.name)
+                                .put("persona", p.persona)
+                                .put("system", p.system),
+                        )
+                    }
+                    val payload = org.json.JSONObject()
+                        .put("activeId", store.activeAssistantId)
+                        .put("profiles", profiles)
+                    val file = java.io.File(path)
+                    file.parentFile?.mkdirs()
+                    file.writeText(payload.toString(), Charsets.UTF_8)
+                    android.util.Log.i("DshPersona", "dump assistant profiles -> $path")
+                }.onFailure { android.util.Log.w("DshPersona", "dump assistant failed: ${it.message}") }
+            }
             // AI 终端工具验收：`--ez dsh_terminal_selftest true` 不经过模型跑建会话 → echo →
             // 读写屏幕 → 超时/Ctrl+C → 隐藏执行 → 关会话，结果落 filesDir/terminal-selftest.log
             if (intent?.getBooleanExtra("dsh_terminal_selftest", false) == true) {
@@ -170,6 +206,38 @@ class MainActivity : ComponentActivity() {
             intent?.getStringExtra("dsh_plugin_grant")?.takeIf { it.isNotBlank() }?.let { id ->
                 getSharedPreferences("dsh", 0).edit().putString("debug_plugin_grant", id.trim()).apply()
             }
+            // 命令行工具箱验收（docs/187 §6.1/§6.4）：`--ez dsh_toolchain_probe true` 解压 bash/curl/CA、
+            // 建 bin 软链，跑 exec/PATH/HTTPS/HTTP/重定向/CA 失败六条，结果落 filesDir/toolchain-probe.json
+            // （`--es dsh_toolchain_probe_out <绝对路径>` 可改位置）。
+            if (intent?.getBooleanExtra("dsh_toolchain_probe", false) == true) {
+                val out = intent.getStringExtra("dsh_toolchain_probe_out")
+                lifecycleScope.launch(Dispatchers.IO) {
+                    xin.dshaa.nativeapp.toolchain.ToolchainProbe.run(this@MainActivity, out)
+                }
+            }
+            // Node 插件宿主验收（P2）：`--ez dsh_node_selftest true` 起真 node 宿主跑
+            // hello_probe / todo_write / hello_fail / 超时 / 超时后仍可用 / 停进程回收，
+            // 结果落 filesDir/node-selftest.json（`--es dsh_node_selftest_out <绝对路径>` 可改位置）置）
+            if (intent?.getBooleanExtra("dsh_node_selftest", false) == true) {
+                val out = intent.getStringExtra("dsh_node_selftest_out")
+                lifecycleScope.launch(Dispatchers.IO) {
+                    xin.dshaa.nativeapp.node.NodeHostSelfTest.run(this@MainActivity, out)
+                }
+            }
+            // docs/185 P2 接线验收：`--ez dsh_node_host_on true` 打开 Node 宿主开关，等工具并表后落 filesDir/node-host-integration.json
+            if (intent?.getBooleanExtra("dsh_node_host_on", false) == true) {
+                getSharedPreferences("dsh", 0).edit().putBoolean("debug_node_host_on", true).apply()
+            }
+            // docs/187 §九 第 11 项：`--ez dsh_node_host_off true` 关 Node 宿主，等工具摘除后落
+            // filesDir/node-host-off.json（断言提示词段消失、node_* 工具摘除、无残留 pid）。
+            if (intent?.getBooleanExtra("dsh_node_host_off", false) == true) {
+                getSharedPreferences("dsh", 0).edit().putBoolean("debug_node_host_off", true).apply()
+            }
+            // A 验收（插件页可见）：`--es dsh_node_plugin_zip <zip 绝对路径>` 直接走 NodePluginInstaller
+            // （和插件页「导入 .zip」同一条路径，绕开 SAF 选择器，锁屏也能验），成功后自动 reload 宿主。
+            intent?.getStringExtra("dsh_node_plugin_zip")?.takeIf { it.isNotBlank() }?.let { path ->
+                getSharedPreferences("dsh", 0).edit().putString("debug_node_plugin_zip", path.trim()).apply()
+            }
             // 插件重载验收：`--es dsh_plugin_reload <插件id>` 锁屏时重跑试运行（Config 变更/升级场景）
             intent?.getStringExtra("dsh_plugin_reload")?.takeIf { it.isNotBlank() }?.let { id ->
                 getSharedPreferences("dsh", 0).edit().putString("debug_plugin_reload", id.trim()).apply()
@@ -177,6 +245,10 @@ class MainActivity : ComponentActivity() {
             // 插件详情验收/截图：`--es dsh_plugin_detail <插件id>` 启动即落到插件页并打开详情
             intent?.getStringExtra("dsh_plugin_detail")?.takeIf { it.isNotBlank() }?.let { id ->
                 getSharedPreferences("dsh", 0).edit().putString("debug_plugin_detail", id.trim()).apply()
+            }
+            // docs/188 P4：`--es dsh_plugin_draft <zip绝对路径>` → 打开统一导入确认框（截图/迁移验收）。
+            intent?.getStringExtra("dsh_plugin_draft")?.takeIf { it.isNotBlank() }?.let { path ->
+                getSharedPreferences("dsh", 0).edit().putString("debug_plugin_draft", path.trim()).apply()
             }
             // 插件配置验收：`--es dsh_plugin_config <插件id|all> --es dsh_plugin_config_b64 <base64 JSON>`
             // 锁屏/无 UI 时也能验「Config 落盘 + apply 收到的配置」；不给 b64 = 恢复默认。
@@ -193,6 +265,10 @@ class MainActivity : ComponentActivity() {
             }
             intent?.getStringExtra("dsh_plugin_args")?.let { args ->
                 getSharedPreferences("dsh", 0).edit().putString("debug_plugin_args", args).apply()
+            }
+            // docs/190-B：Node 宿主 Ready 后才有动态工具；调试调用可延后到 READY（例如 8000ms）。
+            intent?.getStringExtra("dsh_plugin_call_delay_ms")?.takeIf { it.isNotBlank() }?.let { delay ->
+                getSharedPreferences("dsh", 0).edit().putString("debug_plugin_call_delay_ms", delay.trim()).apply()
             }
             // 参数带引号/空格时 adb shell 会吃掉引号：`--es dsh_plugin_args_b64 <base64>` 更稳
             intent?.getStringExtra("dsh_plugin_args_b64")?.takeIf { it.isNotBlank() }?.let { encoded ->
@@ -339,10 +415,28 @@ class MainActivity : ComponentActivity() {
         if (!bootReady) return
         while (pendingBootIntents.isNotEmpty()) {
             val (captured, hot) = pendingBootIntents.removeFirst()
+            // P0（docs/185）：Node 探针，页面可用之后再跑（D4「继续」）
+            if (BuildConfig.DEBUG) {
+                captured.getStringExtra("dsh_node_probe")?.let { path ->
+                    xin.dshaa.nativeapp.node.NodeProbe.run(
+                        applicationContext,
+                        path.ifBlank { "/sdcard/Android/data/xin.dshaa.nativeapp/files/node-probe.txt" },
+                    )
+                }
+                captured.getStringExtra("dsh_node_host")?.let { script ->
+                    xin.dshaa.nativeapp.node.NodeProbe.runHost(
+                        applicationContext,
+                        captured.getStringExtra("dsh_node_host_out")
+                            ?: "/sdcard/Android/data/xin.dshaa.nativeapp/files/node-host.json",
+                        script,
+                    )
+                }
+            }
             handleUserPluginDebugIntent(captured)
             handleBuiltinDebugIntent(captured)
             handlePageDebugIntent(captured)
             handleProviderDebugIntent(captured)
+            handleCacheDebugIntent(captured)
             handleSessionStoreDebugIntent(captured)
             handleProjectionDebugIntent(captured)
             handleShellDebugIntent(captured, applySelection = hot)
@@ -394,6 +488,15 @@ class MainActivity : ComponentActivity() {
         val dump = intent.getStringExtra("dsh_dump_sessions") ?: return
         if (dump.isBlank()) return
         appVm.dumpSessionStore(dump)
+    }
+
+    /** 工作流 D（docs/187 §7.2）：`--ez dsh_cache_debug true` 打开缓存诊断落盘（仅 debug 包）。 */
+    private fun handleCacheDebugIntent(intent: Intent) {
+        if (!intent.hasExtra("dsh_cache_debug")) return
+        xin.dshaa.nativeapp.chat.CacheDebug.apply(
+            applicationContext,
+            intent.getBooleanExtra("dsh_cache_debug", false),
+        )
     }
 
     /** 内置插件验收通道（仅 debug）：同进程反复 `am start` 即可改开关并落盘 tools[]。 */
@@ -613,10 +716,16 @@ class MainActivity : ComponentActivity() {
             "dsh_plugin_grant",
             "dsh_plugin_reload",
             "dsh_plugin_detail",
+            "dsh_plugin_draft",
             "dsh_plugin_config",
             "dsh_plugin_config_b64",
             "dsh_plugin_args",
             "dsh_plugin_args_b64",
+            "dsh_plugin_call_delay_ms",
+            // P3-e：插件容器（三种）验收；热启动也走 recreate 让 ViewModel 重新读 prefs。
+            "dsh_client_plugin",
+            "dsh_container_kind",
+            "dsh_container_close",
             "dsh_reset_onboarding",
             "dsh_attach_image",
             "dsh_workspace",

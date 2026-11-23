@@ -111,6 +111,11 @@ class PluginResidentRuntime(
     private val notifier: (String, String) -> Unit = { _, _ -> },
     /** 设备/无障碍/截图等 app 侧能力；null = 单测/无宿主。 */
     private val hostBridge: PluginHostBridge? = null,
+    /**
+     * P1（`docs/185` §四）：原语桥面（`ctx.primitive.invoke/list`）。null = 本宿主没有原语层；
+     * 和 AI 工具面/原生面共用同一个 `PrimitiveHost`。
+     */
+    private val primitiveBridge: xin.dshaa.core.plugins.PluginPrimitiveBridge? = null,
     /** M84-N：投影 checkpoint（App 重启只重投 `seq > lastSeq`）；null = 不持久化。 */
     private val checkpoints: ProjectionCheckpoints? = null,
     /** M85-D：回合插件调用 `ctx.status(text)` 时刷新界面状态条（null 文本 = 清空）。 */
@@ -719,6 +724,7 @@ class PluginResidentRuntime(
                 permissions = PluginPermissions.parseAll(record.permissions),
                 grantedPermissions = record.grantedPermissions,
                 bridge = hostBridge,
+                primitiveBridge = primitiveBridge,
             )
             val serviceHost = PluginServiceHost(initial = services)
             val hostExecutor = Executors.newCachedThreadPool { runnable ->

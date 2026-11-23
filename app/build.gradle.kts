@@ -15,8 +15,8 @@ android {
         // showerclient / OperitTerminalCore 都是 minSdk 26（虚拟屏与 PTY 的最低要求）
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "0.3.5"
+        versionCode = 9
+        versionName = "0.3.6"
     }
 
     buildFeatures {
@@ -35,6 +35,12 @@ android {
         release {
             isMinifyEnabled = false
         }
+    }
+
+    testOptions {
+        // Node 插件的 JVM 用例会走到 NodePluginInstaller 里的 android.util.Log；
+        // 单测没有真 Android 运行时，让 Log 走默认值返回而不是抛 "not mocked"。
+        unitTests.isReturnDefaultValues = true
     }
 
     /**
@@ -71,6 +77,9 @@ android {
         )
         // PTY（OperitTerminalCore）要从 APK 里直接执行 .so：必须解压 native libs
         jniLibs.useLegacyPackaging = true
+        // shell 身份 launcher（thirdparty/shower jniLibs）是可执行 ELF，不是共享库；
+        // 不参与 strip，保持与仓库内预编译产物的字节一致（DeviceShell 会复制后 exec）。
+        jniLibs.keepDebugSymbols += "**/libshower_shell_exec.so"
     }
 }
 
@@ -117,6 +126,7 @@ dependencies {
     implementation(project(":core:protocol"))
     implementation(project(":core:llm"))
     implementation(project(":core:prompt"))
+    implementation(project(":core:primitives"))
     implementation(project(":core:tools"))
     implementation(project(":core:skill"))
     implementation(project(":core:input"))

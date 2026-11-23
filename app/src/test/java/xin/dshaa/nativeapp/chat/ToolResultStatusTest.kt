@@ -24,6 +24,8 @@ class ToolResultStatusTest {
     fun `plugin guard and restrict rejections are failures`() {
         assertTrue(toolResultLooksFailed("[插件「m87a-guard」拒绝] M87A-GUARD：bash 被 fixture 拒绝"))
         assertTrue(toolResultLooksFailed("工具 bash 已被插件的 restrict 规则禁用，本次调用未执行。"))
+        // docs/190-G：模型可见文案英文化后的同义失败（旧会话的中文仍要识别）。
+        assertTrue(toolResultLooksFailed("Tool bash is disabled by a plugin restrict rule; this call was not executed."))
     }
 
     @Test
@@ -32,6 +34,13 @@ class ToolResultStatusTest {
         val fallback = "工具结果被插件拒绝写入（插件 m87e-storage拒绝写入 tool/result：" +
             "插件「m87e-storage」拒绝写入 tool/result：M87E 工具结果拒绝）。宿主已保留失败状态，原始输出未落盘。"
         assertTrue(toolResultLooksFailed(fallback))
+        // docs/190-G：英文版 fallback（TurnEngine.appendToolResultGuarded）。
+        assertTrue(
+            toolResultLooksFailed(
+                "The plugin rejected writing this tool result (denied). The host kept the failure state; " +
+                    "the original output was not persisted.",
+            ),
+        )
     }
 
     @Test
@@ -44,6 +53,14 @@ class ToolResultStatusTest {
         )
         assertTrue(toolResultLooksFailed("工具参数不是合法 JSON（可能被截断），本次调用未执行。请拆成多次调用。"))
         assertTrue(toolResultLooksFailed("参数被截断"))
+        // docs/190-G：英文版 ToolInputGuard 文案。
+        assertTrue(
+            toolResultLooksFailed(
+                "Tool input too long: 65544 bytes > limit 65536 bytes (fake_tool); this call was not executed.",
+            ),
+        )
+        assertTrue(toolResultLooksFailed("Tool arguments are not valid JSON (truncated or malformed), so this call was not executed."))
+        assertTrue(toolResultLooksFailed("The arguments were truncated; split the content into chunks."))
     }
 
     @Test

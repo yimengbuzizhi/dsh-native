@@ -125,12 +125,12 @@ data class StreamUsage(
     @SerialName("cache_read_input_tokens") val cacheReadInputTokens: Int? = null,
     @SerialName("cache_creation_input_tokens") val cacheCreationInputTokens: Int? = null,
 ) {
-    /** Anthropic input_tokens excludes the two cache categories; absent cache fields mean no split. */
+    /**
+     * Anthropic `input_tokens` **不含**缓存读/写，正好等于 DSH 的「未缓存输入」口径，所以直接透传；
+     * 缓存分类分开记，总 token 由 [TokenUsage.totalTokens] 相加（不要在这里合并进 input）。
+     */
     fun normalized(): TokenUsage = TokenUsage(
-        inputTokens = inputTokens?.let { input ->
-            (input.toLong() + (cacheReadInputTokens ?: 0) + (cacheCreationInputTokens ?: 0))
-                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        },
+        inputTokens = inputTokens,
         outputTokens = outputTokens,
         cacheReadInputTokens = cacheReadInputTokens,
         cacheCreationInputTokens = cacheCreationInputTokens,

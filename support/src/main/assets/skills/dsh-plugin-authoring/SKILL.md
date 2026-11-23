@@ -1,12 +1,14 @@
 ---
 name: dsh-plugin-authoring
-description: 为鲸歌 Android 原生版编写、适配、试运行、安装、启停和排查 JS 插件；覆盖工具、工具/请求/存储中间件与事件钩子、UI 插槽、静态启动加载页、页面、Surface/WebView 整壳、回合、只读存储、提示词、模型供应商、能力提供方及事件投影。
-whenToUse: 用户要求「写插件」「AI 做插件并装测」「让 AI 授予/撤销插件权限、改配置、选角色」「修改鲸歌界面/壳」「适配社区插件」「插件开发、安装或加载报错」时加载。
+description: 为鲸歌 Android 原生版编写、适配、试运行、安装、启停和排查 QuickJS JS 插件；覆盖工具、工具/请求/存储中间件与事件钩子、UI 插槽、静态启动加载页、页面、Surface/WebView 整壳、回合、只读存储、提示词、模型供应商、能力提供方及事件投影。真 DSH/cordis/Node 插件见 dsh-node-plugin-authoring，不要用本技能改写成原生。
+whenToUse: 用户要求「写鲸歌原生插件」「AI 做插件并装测」「让 AI 授予/撤销插件权限、改配置、选角色」「修改鲸歌界面/壳」「适配社区插件到原生格式」「插件开发、安装或加载报错」时加载；真 DSH/npm/cordis 插件先看 dsh-node-plugin-authoring。
 ---
 
 # 鲸歌原生插件开发与装测
 
-本技能针对鲸歌 Android 原生运行时。以当前工具 schema 和宿主返回值为准；桌面 DSH 的 npm 安装、Cordis 全量服务、Electron、DEX/APK 动态加载不适用于这条 JS 插件链。把已有 DSH/社区插件迁到这些角色，见 `dsh-plugin-adapter`；与本技能冲突的旧能力说明（例如「只支持工具半侧」「root slot 一律拒绝」）不要照搬。
+本技能针对鲸歌 Android 原生运行时（冷启动内的 QuickJS 宿主）。以当前工具 schema 和宿主返回值为准；桌面 DSH 的 npm 安装、Cordis 全量服务、Electron、DEX/APK 动态加载不适用于这条 JS 插件链。
+
+**先分清宿主**：真 DSH / cordis 插件（`@deepseek-ai/dsh-tools`、npm 依赖、`export function apply(ctx)`）优先装进 **Node 宿主**，用 `nodehost_*` 工具，见 `dsh-node-plugin-authoring`；本技能只处理鲸歌原生格式，或用户明确要求把某个插件改写成原生格式的分叉。把已有 DSH/社区插件迁到原生角色，见 `dsh-plugin-adapter`；与本技能冲突的旧能力说明（例如「只支持工具半侧」「root slot 一律拒绝」）不要照搬。
 
 ## 先做出能检查的包，再安装验证
 
@@ -31,7 +33,7 @@ whenToUse: 用户要求「写插件」「AI 做插件并装测」「让 AI 授�
 | `plugin_dev_call` | `{id:'whale-hello',tool:'whale_hello',args:{name:'鲸歌'}}` | 真实执行已启用且接入的插件工具，沿用参数校验、权限、超时与当前审批，可能产生副作用。 |
 | `plugin_dev_test_shell` | `{id:'whale-hello',shell:'hello-shell',action:'restore',value:{}}` | 临时运行真实 apply/mount/state/action，校验 Surface 树或非空 HTML；合成空会话，宿主命令只记录不执行，不切当前壳，也不证明实际画面已验收。单壳时可省 shell，action/value 可省。 |
 | `plugin_dev_test_capability` | `{capability:'hello.echo',args:{text:'你好'}}` | 真正调用已授权能力；不绕过提供方权限或超时，可能产生实际效果。 |
-| `plugin_dev_grant` | `{id:'whale-hello',permissions:['storage:hooks']}` 或 `{id,all:true}` | 授予清单里声明过、需要确认的权限（清单外/未实现的会被丢弃）；写审计并弹插件页「撤销」横幅；受「AI 全控制插件」开关约束。 |
+| `plugin_dev_grant` | `{id:'whale-hello',permissions:['storage:hooks']}` 或 `{id,all:true}` | 授予清单里声明过、需要确认的权限（清单外/未实现的会被丢弃）；写审计并弹插件页「撤销」横幅；没有额外的「AI 全控制」总开关。 |
 | `plugin_dev_revoke` | `{id,permissions:['storage:hooks']}` 或 `{id,all:true}` | 对称撤销；`all:true` 记 `revoke_all`（清空全部已授予项）。 |
 | `plugin_dev_config` | `{id:'whale-hello',config:{greeting:'嗨'}}` 或 `{id,reset:true}` | 按插件 Config schema 写入，不认识的键报错；`reset:true` 恢复默认；写审计。 |
 | `plugin_dev_role` | `{role:'shell',value:'native'}` / `{role:'model',value:'deepseek'}` | 切 `shell/loading/agent/storage/prompt/model` 六个角色之一；`value` 用角色候选的选择值：壳/回合/存储/提示词的内置实现写 `native`，加载页写 `builtin.loading.native`，模型写 `deepseek`/`openai`，第三方写插件 id 或 `插件id#实现id`；目标不可用时报「角色选择失败」。 |
@@ -40,7 +42,7 @@ whenToUse: 用户要求「写插件」「AI 做插件并装测」「让 AI 授�
 
 同 id 的 `install` 沿用重装语义：保留新 schema 兼容的用户配置，**保留原来的启用开关**（新装默认停用，不会因为重装被悄悄启用/停用），收回旧危险授权后须重新确认；`reload` 会保留新清单仍声明的已有授权。安装失败的回滚覆盖进程内异常，不代表断电或被系统杀进程时具备完整事务恢复。
 
-list/test 在现有只读审批名单；其余沿用现有写工具审批策略，ask 模式询问、auto 模式允许，不另加「每次都必须问」的规则。危险权限默认走插件页逐项授权；需要 AI 代授时用 `plugin_dev_grant`（受「AI 全控制插件」开关、清单 sanitize、工具审批与审计约束，见下节），不要手改授权文件、不要绕审批。若因此无法完成实际功能验证，如实记录所缺授权。
+list/test 在现有只读审批名单；其余沿用现有写工具审批策略，ask 模式询问、auto 模式允许，不另加「每次都必须问」的规则。危险权限默认走插件页逐项授权；需要 AI 代授时用 `plugin_dev_grant`（清单 sanitize + 工具审批 + 审计，见下节），不要手改授权文件、不要绕审批。若因此无法完成实际功能验证，如实记录所缺授权。
 
 工具未暴露时用当前可用文件工具制作 zip，交付到鲸歌「包管理 → 插件 → 导入 zip」，使用插件详情里的试运行、启用、重载、授权和页面入口。不用桌面 `plugin_manager` / npm 命令替代原生安装。`plugin_dev_*` 返回的状态和限制优先于示例步骤。
 
@@ -48,11 +50,10 @@ list/test 在现有只读审批名单；其余沿用现有写工具审批策略�
 
 模型侧每次工具调用的参数先过 `core:engine/ToolInputGuard`（按 UTF-8 字节）：普通工具 **64KB**（含插件工具，以及 `plugin_dev_call` 里嵌套的 `args`），`write`/`edit` **512KB**。超限、JSON 半截或非法时本次调用**不执行**，返回显式 error tool_result（「工具输入过长：N 字节 > 上限 M 字节」/「工具参数不是合法 JSON（可能被截断）」），回合继续，模型会拆小重试。插件工具别设计成必须一次塞超大 JSON：优先传文件路径、分页/分段参数；恰好 64KB 放行，中文按真实 UTF-8 字节算。
 
-## AI 全控制插件（M88-E，0.3.5）
+## AI 改插件授权 / 配置 / 角色（M88-E，docs/190-F 收口）
 
-`plugin_dev_grant/revoke/config/role` 让 AI 直接改插件授权、配置和选中角色（用户明确要求，默认开）；`plugin_dev_middleware` 另管全局旁路开关。五层约束：
+`plugin_dev_grant/revoke/config/role` 让 AI 直接改插件授权、配置和选中角色；`plugin_dev_middleware` 另管全局旁路开关。**「AI 全控制」总开关已在 docs/190-F 永久删除**：这四个工具永远可调，不再有 `ai_plugin_control_disabled` 错误；约束只剩下面几层。
 
-- **总开关**：没有页面开关（默认开启）；若被关闭，所有插件控制工具都返回 `AI 插件控制已关闭：ai_plugin_control_disabled`，不改任何状态；遇到就如实告诉用户，不要重试或绕过。
 - **清单与审批**：`grant` 只授清单里声明过、且需要用户确认的权限（`all:true` = 全部声明项）；清单外/未实现的会被 `sanitizeGrants` 丢弃。系统权限（通知、Shizuku、无障碍、悬浮窗）仍只由系统弹窗授予——`grant notify` 只算插件声明通过，不等于拿到 Android `POST_NOTIFICATIONS`。调用仍走 `approval_mode`：ask 弹审批卡，auto 放行。
 - **审计与撤销**：每次操作追加到 `files/plugin-audit.jsonl`（`actor` 为 `ai`/`user`，`action` 为 `grant`/`revoke`/`revoke_all`/`config`/`role`/`middleware`，`target`/`detail`）；超过 512KB 轮转为 `.1`（保留一份，读回先旧后新）。插件页横幅「AI 已授予 <id>：<权限> · 撤销」，用户点撤销写入一条 `actor:"user"` 的 revoke；插件详情「最近操作（审计）」列最近 5 条，权限行标「已允许 · AI 授予」由审计回放得出（AI grant 加、任何来源的 revoke 减、revoke_all 清空）。
 - **中间件总开关（M88-I）**：**扩展点插件「没效果」时先想到这个**——关着时工具/请求/存储/事件钩子全部旁路（插槽照常），插件本身没坏。用 `plugin_dev_middleware_state` 查当前状态（只读），需要时用 `plugin_dev_middleware {enabled:true}` 打开（写工具，走审批并记审计）；这是全局开关，默认开，关它只用于排障，不要用改 prefs 等旁路。
@@ -364,7 +365,7 @@ ctx.on('session/event', (e) => {
 - `fs:workspace`：按当前工作区解析，canonical 校验阻止越界；不是插件目录，也不是只读。`fs:any`：仍受 Android App 可访问范围限制。
 - `net:<域名>` 或 `net:any`：需宿主授权，仅 HTTPS，本机/链路本地等地址受限制，重定向逐跳检查。不要为通过测试擅自扩大到 net:any。
 - `shell`：需宿主危险权限确认；执行时**自动选择身份：root 优先，其次 Shizuku，最后 App**（0.3.5 起 `root.exec` 已并入 `shell.exec`），返回的 `identity` 说明实际身份，不假装 root；已授权后不会保证每条 shell 都再问一次。`device`/`memory` 同样沿用宿主权限与设备条件，声明不等于授权。
-- **内置插件组可开关**：插件页「内置」页签每个内置插件都有开关，关掉即从工具表/页面入口注销。与插件相关：`builtin.plugin.dev`（「插件开发」，全部 `plugin_dev_*`，含 AI 控制四工具）、`builtin.capability`（「能力与通知」，`capability`/`notify`）、`builtin.web`（「联网」，`web_search`/`web_fetch`/`http_request`）、`builtin.fs`（`read`/`read_image`/`write`/`edit`/`glob`/`grep`）、`builtin.shell`（`bash`/终端）。模型侧 HTTP 用内置 `http_request`（只允许 http/https，不回显请求头与 `set-cookie`）；插件自己的网络仍走 `ctx.http` + `net:` 授权。若 `plugin_dev_*` 没出现在工具表，先确认「插件开发」组没被关。
+- **内置插件组可开关**：插件页「内置」页签每个内置插件都有开关，关掉即从工具表/页面入口注销。与插件相关：`builtin.plugin.dev`（「插件开发」，全部 `plugin_dev_*`，含 AI 控制四工具）、`builtin.node.host`（「Node 宿主」，9 个 `nodehost_*`）、`builtin.capability`（「能力与通知」，`capability`/`notify`）、`builtin.web`（「联网」，`web_search`/`web_fetch`/`curl`）、`builtin.fs`（`read`/`read_image`/`write`/`edit`/`glob`/`grep`）、`builtin.shell`（`bash`/终端）。模型侧 HTTP 用内置 `curl`（只允许 http/https，不回显请求头与 `set-cookie`；`http_request` 只是旧会话别名，模型看不到）；插件自己的网络仍走 `ctx.http` + `net:` 授权。若 `plugin_dev_*` 没出现在工具表，先确认「插件开发」组没被关。
 - `ui`/`agent`/`storage`/`prompt`/`capability` 按当前宿主导入默认规则登记与授予，角色选择/调用还有各自条件。0.3.5 新增的 `ui:slot`（插槽）、`tools:intercept`（改描述/参数/结果）、`llm:request`（改请求/流/提示词）、`storage:hooks`（写钩子/事件 veto）都是危险权限、默认需逐项确认、不自动授权；`restrict`/`guard` 只收紧，不需要 `tools:intercept`。AI 可经 `plugin_dev_grant/revoke` 改已声明授权（总开关 + 工具审批 + 审计，见 M88-E 节），但仍不能改系统权限或授权文件、不能绕过工具审批。
 - 通知桥依宿主场景与 Android 通知条件工作；`notify` 权限已实现（默认仍需确认），Android 13+ 还要系统 `POST_NOTIFICATIONS`。不能用 `Notification.permission='granted'` 占位值证明系统通知权限已取得。
 - UNSUPPORTED/NOT_SUPPORTED、未知能力、缺依赖、PERMISSION_DENIED 均应检查并如实报告。别用空结果当成功、换别的窗口冒充目标 UI，或用 stub 冒充设备原生能力。
@@ -374,7 +375,7 @@ ctx.on('session/event', (e) => {
 
 - 工具：正确参数、缺参数/错误参数、真实 execute；注册不等于执行通过，工具数为零的页面/角色包也可能正常。
 - 权限：未授权时确实拒绝；已授权能力按预期；错误和超时可读，日志无凭据。试运行也会跑 apply，确认 apply 无安装/发网/删文件副作用。
-- AI 代授（用到时）：`plugin_dev_grant/revoke` 只授清单内权限、审计有记录、插件页横幅能撤销；关掉「AI 全控制插件」后四个工具返回 `ai_plugin_control_disabled`；系统权限仍由系统弹窗授予。
+- AI 代授（用到时）：`plugin_dev_grant/revoke` 只授清单内权限、审计有记录、插件页横幅能撤销；没有额外总开关（docs/190-F 已删除）；系统权限仍由系统弹窗授予。
 - 生命周期：停用/重载后工具与角色撤下，cleanup 可用，重启/历史重放不重复产生外部副作用；升级保留可回退包。
 - UI：窄屏/宽屏、横竖屏、深浅色、中文长文本、键盘遮挡、可滚动/可点击、状态和错误可见；主界面保留停止与恢复原生壳入口，未授权审批和提问按真实用户操作处理。
 - 加载页：真实 registerLoading → list/test 元数据 → 安装选择 → 进程冷启动所选快照首 draw → 必需角色就绪 → 主界面；另验停用/坏声明/坏快照与失败恢复，记录每段耗时，不以静态登记通过宣称冷启动已验。

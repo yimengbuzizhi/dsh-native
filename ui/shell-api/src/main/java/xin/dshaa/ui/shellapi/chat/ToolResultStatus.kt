@@ -12,15 +12,20 @@ fun toolResultLooksFailed(text: String): Boolean =
         text.contains("not found", ignoreCase = true) ||
         text.startsWith("<error>") ||
         text.contains("error:", ignoreCase = true) ||
-        // M87-A：插件 guard / restrict 的拒绝。
+        // M87-A：插件 guard / restrict 的拒绝（docs/190-G：模型可见文案已英文化，旧会话仍可能是中文）。
         text.contains("拒绝]") ||
         text.contains("restrict 规则禁用") ||
+        text.contains("disabled by a plugin restrict rule", ignoreCase = true) ||
         // H1：max_tokens 把 tool_use 截断，引擎补的 error tool_result（正文见 TurnEngine）。
         text.contains("hit the max_tokens limit", ignoreCase = true) ||
         // M87-E：storage:hooks 拒绝原始工具结果后，宿主补写的 trusted 失败结果
         // （正文见 TurnEngine.appendToolResultGuarded；原始输出不落盘）。
         text.contains("工具结果被插件拒绝写入") ||
-        // M88-G：工具输入超限 / 参数半截（正文见 core:engine ToolInputGuard）。
+        text.contains("rejected writing this tool result", ignoreCase = true) ||
+        // M88-G：工具输入超限 / 参数半截（正文见 core:engine ToolInputGuard；docs/190-G 英文化）。
         text.contains("工具输入过长") ||
         text.contains("不是合法 JSON") ||
-        text.contains("参数被截断")
+        text.contains("参数被截断") ||
+        text.contains("tool input too long", ignoreCase = true) ||
+        text.contains("not valid JSON", ignoreCase = true) ||
+        text.contains("arguments were truncated", ignoreCase = true)

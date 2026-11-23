@@ -1,0 +1,10 @@
+--------- beginning of main
+11-14 13:23:36.333 16149 16149 I DshBoot : activityStart elapsedRealtimeMs=316917464
+11-14 13:23:36.985 16149 16149 I DshBoot : loadingSnapshot owner=builtin.loading.native selection=builtin.loading.native revision=ea2341debc7e
+11-14 13:23:37.019 16149 16149 I DshBoot : loading:ea2341debc7eb5e5cd7b747f3e0c64e979513e36fc327ed94d85e97f883883f9:0 drawCallback=frameCommit elapsedMs=688 presentationConfirmed=false
+11-14 13:23:37.019 16149 16149 I DshBoot : loadingFirstDraw elapsedMs=688
+11-14 13:23:37.383 16149 16149 I DshBoot : coreReady elapsedMs=1052
+11-14 13:23:37.581 16149 16149 I DshBoot : shell drawCallback=frameCommit elapsedMs=1250 presentationConfirmed=false
+11-14 13:23:37.582 16149 16149 I DshBoot : shellFirstDraw elapsedMs=1251
+11-14 13:23:37.582 16149 16149 I DshBoot : firstInteractive mode=shell elapsedMs=1251 presentationConfirmed=false
+11-14 13:23:37.582 16149 16149 I DshBoot : reportFullyDrawn elapsedMs=1252

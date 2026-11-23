@@ -1,0 +1,10 @@
+--------- beginning of main
+11-14 13:23:14.282 15478 15478 I DshBoot : activityStart elapsedRealtimeMs=316895414
+11-14 13:23:14.960 15478 15478 I DshBoot : loadingSnapshot owner=m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2 selection=m86.selftest.loading.10b3941d-069f-487c-9355-85ead0504eb2#startup revision=0e38dff4c147
+11-14 13:23:14.984 15478 15478 I DshBoot : loading:0e38dff4c14720a7576bb91922ac94e6479b89869332f1160082b313d469dc0a:0 drawCallback=frameCommit elapsedMs=703 presentationConfirmed=false
+11-14 13:23:14.985 15478 15478 I DshBoot : loadingFirstDraw elapsedMs=704
+11-14 13:23:15.294 15478 15478 I DshBoot : coreReady elapsedMs=1013
+11-14 13:23:15.892 15478 15478 I DshBoot : shell drawCallback=frameCommit elapsedMs=1611 presentationConfirmed=false
+11-14 13:23:15.892 15478 15478 I DshBoot : shellFirstDraw elapsedMs=1611
+11-14 13:23:15.892 15478 15478 I DshBoot : firstInteractive mode=shell elapsedMs=1611 presentationConfirmed=false
+11-14 13:23:15.893 15478 15478 I DshBoot : reportFullyDrawn elapsedMs=1612

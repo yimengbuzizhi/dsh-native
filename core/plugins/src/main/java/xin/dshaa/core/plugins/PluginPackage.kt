@@ -16,16 +16,27 @@ import java.util.zip.ZipInputStream
  * 设计取舍（2026-11-08，第二十六棒）：
  * - **认两种清单**：DSH 的 `package.json`（桌面端 npm 包）优先，Operit/ToolPkg 的
  *   `manifest.json` 作为兜底登记；两者入口都按「JS 模块 + apply(ctx)」试运行。
- * - **zip 读取带硬上限**：条目数 2000、单文件 4MB、解压总量 32MB，路径不许绝对/`..`，
+ * - **zip 读取带硬上限**：条目数 5000、单文件 32MB、解压总量 64MB、压缩包 64MB，路径不许绝对/`..`，
  *   防 zip-slip 与「用户误选了一个大压缩包把手机撑爆」。
+ *   docs/188 P4（2026-11-23）：原来单文件 4MB 会把 npm 真包 `dsh-client-ui-pet@0.1.10`
+ *   的 16.5MB `lib/client.js` 挡在门外；提到 32MB 后同一份包能装进来（用户可见上限见
+ *   `PluginStore.limitsText()`）。**体积上限不是唯一防线**：还有压缩比上限 [MAX_RATIO]。
  * - **单顶层目录自动剥掉**：手机上常见的压缩包是 `my-plugin/package.json`，
  *   剥掉公共根之后，清单里的 `main` 路径和包内路径才对得上。
  */
 object PluginPackage {
 
-    const val MAX_ENTRIES = 2_000
-    const val MAX_ENTRY_BYTES = 4L * 1024 * 1024
-    const val MAX_TOTAL_BYTES = 32L * 1024 * 1024
+    const val MAX_ENTRIES = 5_000
+    const val MAX_ENTRY_BYTES = 32L * 1024 * 1024
+    const val MAX_TOTAL_BYTES = 64L * 1024 * 1024
+    const val MAX_ARCHIVE_BYTES = 64L * 1024 * 1024
+
+    /**
+     * 防 zip bomb 的第二道闸：解压总量不能超过「压缩包大小（至少按 128KB 算）× 200」。
+     * 绝对值上限（64MB）先挡大包；比例检查挡「几 KB 解出几十 MB」的构造包。
+     */
+    const val MAX_RATIO = 200L
+    private const val RATIO_FLOOR_BYTES = 128L * 1024
 
     private val ID_PATTERN = Regex("""^[A-Za-z0-9@][A-Za-z0-9._@/-]{0,119}$""")
     private val MANIFEST_NAMES = setOf("package.json", "manifest.json")
@@ -33,7 +44,9 @@ object PluginPackage {
     /** 读 zip（含安全校验）。返回的路径已归一化，但还没剥公共顶层目录。 */
     fun read(file: File): ArchiveRead {
         if (!file.isFile) return ArchiveRead.Failed("文件不存在")
-        if (file.length() > MAX_TOTAL_BYTES * 2) return ArchiveRead.Failed("压缩包太大（>64MB），不是插件包？")
+        if (file.length() > MAX_ARCHIVE_BYTES) {
+            return ArchiveRead.Failed("压缩包太大（>${MAX_ARCHIVE_BYTES / 1024 / 1024}MB），不是插件包？")
+        }
         val entries = LinkedHashMap<String, ByteArray>()
         var total = 0L
         try {
@@ -51,9 +64,15 @@ object PluginPackage {
                         return ArchiveRead.Failed("压缩包文件数超过 $MAX_ENTRIES，不是插件包？")
                     }
                     val bytes = readLimited(zip, MAX_ENTRY_BYTES)
-                        ?: return ArchiveRead.Failed("单个文件超过 4MB：$path")
+                        ?: return ArchiveRead.Failed(
+                            "单个文件超过 ${MAX_ENTRY_BYTES / 1024 / 1024}MB：$path" +
+                                "（这个 zip 不能按原生插件导入；如果是带大 client bundle 的 Node 包，" +
+                                "可在导入确认里改选 Node）",
+                        )
                     total += bytes.size
-                    if (total > MAX_TOTAL_BYTES) return ArchiveRead.Failed("解压后总大小超过 32MB")
+                    if (total > MAX_TOTAL_BYTES) {
+                        return ArchiveRead.Failed("解压后总大小超过 ${MAX_TOTAL_BYTES / 1024 / 1024}MB")
+                    }
                     if (entries.put(path, bytes) != null) return ArchiveRead.Failed("压缩包里有重复路径：$path")
                 }
             }
@@ -61,7 +80,61 @@ object PluginPackage {
             return ArchiveRead.Failed("读不了这个压缩包：${t.message ?: t.javaClass.simpleName}")
         }
         if (entries.isEmpty()) return ArchiveRead.Failed("压缩包是空的")
+        if (looksLikeBomb(total, file.length())) {
+            return ArchiveRead.Failed(
+                "压缩比异常（${total / 1024}KB / ${file.length() / 1024}KB）：拒绝疑似 zip bomb",
+            )
+        }
         return ArchiveRead.Ok(entries.map { PluginFile(it.key, it.value) })
+    }
+
+    /** 解压总量 vs 压缩包大小；小 zip 至少按 [RATIO_FLOOR_BYTES] 算，避免正常小包误判。 */
+    private fun looksLikeBomb(total: Long, archiveBytes: Long): Boolean =
+        total > maxOf(archiveBytes, RATIO_FLOOR_BYTES) * MAX_RATIO
+
+    /**
+     * 导入确认用的**只读摘要**：不试运行、不要求 main 存在（Node 包常把 host 入口和 web
+     * client 分开放，main 缺失也要能先告诉用户这是什么包）。
+     *
+     * 判据与 [PluginOwnership] 一致；找不到 package.json / manifest.json 返回 null。
+     */
+    data class PackageSummary(
+        val id: String,
+        val name: String,
+        val version: String,
+        val description: String,
+        val manifestName: String,
+        val ownership: String,
+        val signals: List<String>,
+        val hasClient: Boolean,
+        val main: String?,
+    )
+
+    fun summarize(files: List<PluginFile>): PackageSummary? {
+        if (files.isEmpty()) return null
+        val candidates = files.filter { it.path.substringAfterLast('/') in MANIFEST_NAMES }
+        if (candidates.isEmpty()) return null
+        val minDepth = candidates.minOf { it.path.count { ch -> ch == '/' } }
+        val shallowest = candidates.filter { it.path.count { ch -> ch == '/' } == minDepth }
+        val manifestFile = shallowest.firstOrNull { it.path.endsWith("package.json") } ?: shallowest.first()
+        val json = runCatching {
+            Json.parseToJsonElement(manifestFile.bytes.toString(Charsets.UTF_8)).jsonObject
+        }.getOrNull() ?: return null
+        val isDsh = manifestFile.path.endsWith("package.json")
+        val detection = if (isDsh) PluginOwnership.detect(json) else PluginOwnership.Detection(PluginOwnership.NATIVE)
+        val name = json.string("name")?.trim().orEmpty().ifEmpty { json.string("id")?.trim().orEmpty() }
+        val id = json.string("id")?.trim().orEmpty().ifEmpty { name }
+        return PackageSummary(
+            id = id,
+            name = name.ifBlank { id },
+            version = json.string("version")?.trim().orEmpty().ifEmpty { "0.0.0" },
+            description = json.string("description")?.trim().orEmpty(),
+            manifestName = manifestFile.path,
+            ownership = detection.ownership,
+            signals = detection.signals,
+            hasClient = detection.hasClient,
+            main = json.string("main")?.trim()?.takeIf { it.isNotBlank() },
+        )
     }
 
     /**
@@ -185,6 +258,7 @@ object PluginPackage {
                 clientUi = clientUi,
                 bundlePatch = bundlePatch,
                 enginesDsh = enginesDsh,
+                ownership = PluginOwnership.detect(json).ownership,
             ),
         )
     }

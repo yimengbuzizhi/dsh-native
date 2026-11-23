@@ -1,0 +1,9 @@
+﻿PASS three-tabs
+PASS builtin-enabled-state
+PASS builtin-detail
+PASS search-disabled-shell
+PASS native-using-before-switch
+PASS shell-selected-via-ui
+PASS safe-mode
+PASS safe-plugin-manager
+PASS safe-select-alternative

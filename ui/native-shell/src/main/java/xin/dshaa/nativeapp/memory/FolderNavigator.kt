@@ -110,7 +110,7 @@ fun FolderNavigator(
 
     Surface(
         modifier = Modifier.fillMaxHeight().width(268.dp),
-        color = c.surface,
+        color = c.panel,
         tonalElevation = 2.dp,
         shadowElevation = 6.dp,
     ) {

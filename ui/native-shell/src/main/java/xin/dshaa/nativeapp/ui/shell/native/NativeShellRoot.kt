@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DrawerValue
@@ -53,6 +55,12 @@ import xin.dshaa.nativeapp.ui.shell.native.pages.NativeNav
 import xin.dshaa.nativeapp.ui.shell.native.pages.NativePageDispatch
 import xin.dshaa.nativeapp.ui.shell.native.pages.NativePages
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.component.GlassDivider
+import xin.dshaa.ui.design.component.LiquidBackdrop
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
 
 @Composable
 private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
@@ -76,6 +84,33 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
     // 返回设置后必须恢复「设置页自己的返回目标」，否则「设置→二级→返回→再返回」原地卡在设置。
     var subReturnPage by rememberSaveable { mutableStateOf<String?>(null) }
     var subReturnSub by rememberSaveable { mutableStateOf<String?>(null) }
+    // docs/190-A：一级页的返回栈（与 subReturn* 对称）。go() 打开一级页时把「当前页自己的返回
+    // 目标」存这里，backFromPage() 回来时恢复；否则「聊天→设置→记忆库→返回→设置→返回」原地不动。
+    var pageReturnPage by rememberSaveable { mutableStateOf<String?>(null) }
+    var pageReturnSub by rememberSaveable { mutableStateOf<String?>(null) }
+
+    /** 当前路由快照交给纯状态机 [NativeNavBackPolicy]，UI 只负责把结果写回 Compose 状态。 */
+    fun navState(): NativeNavBackPolicy.State = NativeNavBackPolicy.State(
+        screen = screenName,
+        sub = subScreenName,
+        backPage = backPage,
+        backSub = backSub,
+        pageReturnPage = pageReturnPage,
+        pageReturnSub = pageReturnSub,
+        subReturnPage = subReturnPage,
+        subReturnSub = subReturnSub,
+    )
+
+    fun applyNavState(next: NativeNavBackPolicy.State) {
+        screenName = next.screen
+        subScreenName = next.sub
+        backPage = next.backPage
+        backSub = next.backSub
+        pageReturnPage = next.pageReturnPage
+        pageReturnSub = next.pageReturnSub
+        subReturnPage = next.subReturnPage
+        subReturnSub = next.subReturnSub
+    }
     /**
      * H4 候选 E（docs/182）：从设置首页进二级页时，设置首页留在下面继续组合；返回时不再
      * 重新组合整页（真机实测二级页→设置单帧 150–300ms，主要是目标页首次组合）。
@@ -105,13 +140,13 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
         if (target != null && target.level == PageLevel.Primary &&
             vm.builtinScreenEnabled(id)
         ) {
-            navForward = true
-            // 从设置页进的功能页：返回回设置（0.3.4 显式记录）
-            backPage = BuiltinPageIds.Settings
-            backSub = null
-            retainSettingsHome = id == BuiltinPageIds.Settings
-            screenName = id
-            subScreenName = null
+            // docs/190-A：一级页压栈——返回目标是当前页，当前页自己的返回目标存 pageReturn*。
+            val next = NativeNavBackPolicy.onPrimaryOpen(navState(), id)
+            if (next != navState()) {
+                navForward = true
+                retainSettingsHome = next.screen == BuiltinPageIds.Settings
+                applyNavState(next)
+            }
         }
     }
     /** 从聊天页直接进的功能页：返回落回聊天页。 */
@@ -121,11 +156,9 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
             vm.builtinScreenEnabled(id)
         ) {
             navForward = true
-            backPage = null
-            backSub = null
             retainSettingsHome = false
-            screenName = id
-            subScreenName = null
+            // 显式「从聊天进」：不管调用时在哪，返回目标一律是聊天。
+            applyNavState(NativeNavBackPolicy.onPrimaryOpen(NativeNavBackPolicy.chat(), id))
         }
     }
     /**
@@ -139,14 +172,8 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
             vm.builtinScreenEnabled(id)
         ) {
             navForward = true
-            val back = NativeNavBackPolicy.forOpenSub(screenName, BuiltinPageIds.Settings)
             retainSettingsHome = screenName == BuiltinPageIds.Settings
-            subReturnPage = backPage
-            subReturnSub = backSub
-            backPage = back.page
-            backSub = back.sub
-            screenName = BuiltinPageIds.Settings
-            subScreenName = id
+            applyNavState(NativeNavBackPolicy.onSubOpen(navState(), id, BuiltinPageIds.Settings))
         }
     }
     /** 抽屉里点一级页：返回目标是打开抽屉时的来路（0.3.4 第 3 条）。 */
@@ -155,12 +182,17 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
         if (target != null && target.level == PageLevel.Primary &&
             vm.builtinScreenEnabled(id)
         ) {
-            navForward = true
-            backPage = drawerOriginPage
-            backSub = drawerOriginSub
-            retainSettingsHome = id == BuiltinPageIds.Settings
-            screenName = id
-            subScreenName = null
+            // 宽屏常驻侧边栏没有抽屉开合事件（drawerState 一直 Closed），来路就是当前页。
+            val originPage = if (drawerState.isOpen) drawerOriginPage else screenName
+            val originSub = if (drawerState.isOpen) drawerOriginSub else subScreenName
+            val next = NativeNavBackPolicy.onPrimaryOpen(
+                navState(), id, originPage = originPage, originSub = originSub,
+            )
+            if (next != navState()) {
+                navForward = true
+                retainSettingsHome = next.screen == BuiltinPageIds.Settings
+                applyNavState(next)
+            }
         }
     }
     /** 抽屉里的二级入口（工作区管理 / 助手配置 / 远程 DSH…）：返回同样回抽屉来路，不绕经设置。 */
@@ -169,14 +201,16 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
         if (target != null && target.level == PageLevel.Secondary &&
             vm.builtinScreenEnabled(id)
         ) {
+            val originPage = if (drawerState.isOpen) drawerOriginPage else screenName
+            val originSub = if (drawerState.isOpen) drawerOriginSub else subScreenName
             navForward = true
-            retainSettingsHome = drawerOriginPage == BuiltinPageIds.Settings
-            subReturnPage = backPage
-            subReturnSub = backSub
-            backPage = drawerOriginPage
-            backSub = drawerOriginSub
-            screenName = BuiltinPageIds.Settings
-            subScreenName = id
+            retainSettingsHome = originPage == BuiltinPageIds.Settings
+            applyNavState(
+                NativeNavBackPolicy.onSubOpen(
+                    navState(), id, BuiltinPageIds.Settings,
+                    originPage = originPage, originSub = originSub,
+                ),
+            )
         }
     }
     // M84-B：恢复出来的路由落在「已被内置插件关掉」的页面时，退回聊天/设置。
@@ -192,22 +226,17 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
         lastSub = sub
         if (!vm.builtinScreenEnabled(sub)) subScreenName = null
     }
-    /** 返回：回到显式记录的来路（聊天 / 设置首页 / 对应一级页）。 */
+    /** 返回：回到显式记录的来路（聊天 / 设置首页 / 对应一级页），并恢复那一页自己的来路。 */
     val backFromPage: () -> Unit = {
         navForward = false
-        screenName = backPage
-        subScreenName = backSub
-        retainSettingsHome = backPage == BuiltinPageIds.Settings
+        applyNavState(NativeNavBackPolicy.onBackFromPrimary(navState()))
+        retainSettingsHome = screenName == BuiltinPageIds.Settings
     }
     /** 二级页返回：先回显式记录的来路（设置内部进二级页时来路就是设置），再恢复设置页自己的返回目标。 */
     val closeSub: () -> Unit = {
         navForward = false
-        val targetPage = backPage
-        screenName = targetPage
-        subScreenName = backSub
-        retainSettingsHome = targetPage == BuiltinPageIds.Settings
-        backPage = subReturnPage
-        backSub = subReturnSub
+        applyNavState(NativeNavBackPolicy.onSubClose(navState()))
+        retainSettingsHome = screenName == BuiltinPageIds.Settings
     }
     // 宽屏（平板 / 折叠屏展开）侧边栏常驻：600dp 是 Material 的 compact/expanded 断点
     val wideLayout = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
@@ -244,8 +273,8 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
         openDrawer = openDrawer,
         toChat = {
             navForward = false
-            screenName = null
-            subScreenName = null
+            retainSettingsHome = false
+            applyNavState(NativeNavBackPolicy.chat())
         },
         go = go,
         goFromChat = goFromChat,
@@ -266,10 +295,7 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
         val requested = vm.debugScreenRequest ?: return@LaunchedEffect
         if (requested.equals("chat", ignoreCase = true) || requested.equals("home", ignoreCase = true)) {
             // 验收用：清回聊天落地页（关掉页面后测试「路由被拦」需要一个已知起点）
-            screenName = null
-            subScreenName = null
-            backPage = null
-            backSub = null
+            applyNavState(NativeNavBackPolicy.chat())
         } else {
             val match = NativePages.find(requested)
             if (match != null) {
@@ -287,10 +313,7 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
     androidx.compose.runtime.LaunchedEffect(vm.landingChatRequest) {
         if (vm.landingChatRequest <= 0L) return@LaunchedEffect
         navForward = false
-        screenName = null
-        subScreenName = null
-        backPage = null
-        backSub = null
+        applyNavState(NativeNavBackPolicy.chat())
         vm.consumeLandingChatRequest()
     }
 
@@ -324,8 +347,7 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                 localFeatures = conversation.isLocal,
                 onSelectTarget = { profileId ->
                     conversation.selectTarget(profileId)
-                    screenName = null
-                    subScreenName = null
+                    applyNavState(NativeNavBackPolicy.chat())
                     closeDrawer()
                 },
                 onManageRemote = { closeDrawer(); openSubFromDrawer(BuiltinPageIds.RemoteDsh) },
@@ -333,29 +355,25 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                 onOpenSession = { summary ->
                     closeDrawer()
                     navForward = false
-                    screenName = null
-                    subScreenName = null
+                    applyNavState(NativeNavBackPolicy.chat())
                     conversation.openSession(summary.id)
                 },
                 onNewChat = {
                     closeDrawer()
                     navForward = false
-                    screenName = null
-                    subScreenName = null
+                    applyNavState(NativeNavBackPolicy.chat())
                     conversation.newChat()
                 },
                 onSwitchWorkspace = { path ->
                     closeDrawer()
                     navForward = false
-                    screenName = null
-                    subScreenName = null
+                    applyNavState(NativeNavBackPolicy.chat())
                     vm.switchWorkspace(path)
                 },
                 onCreateWorkspace = { name, path ->
                     closeDrawer()
                     navForward = false
-                    screenName = null
-                    subScreenName = null
+                    applyNavState(NativeNavBackPolicy.chat())
                     vm.createWorkspace(name, path)
                 },
                 onManageWorkspaces = {
@@ -396,9 +414,26 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
             )
     }
 
+    /**
+     * 页面级背景：每个页面自己铺一层不透明「墙」。
+     *
+     * 为什么必须有：设置首页在打开二级页时是**保活组合**的（见上面的 M88 注释），二级页如果
+     * 是透明的，就会看到下面那一页的所有文字一层层叠上来（用户 2026-11-19 截图：标题/行文字
+     * 全部重影）。AnimatedContent 换页时旧页也会留到动画结束，同理。
+     *
+     * docs/187 §4.2：液态玻璃壳铺 `LiquidBackdrop`（水族箱墙面），原生壳铺 0.3.5 的实底色。
+     */
+    val PageBackdrop: @Composable (@Composable () -> Unit) -> Unit = { inner ->
+        if (DshTheme2.liquidEnabled) {
+            LiquidBackdrop(Modifier.fillMaxSize()) { inner() }
+        } else {
+            Box(Modifier.fillMaxSize().background(DshTheme2.colors.background)) { inner() }
+        }
+    }
+
     // 屏幕主体：宽屏时和常驻抽屉并排，窄屏时铺满
     val body: @Composable () -> Unit = {
-        Box(Modifier.fillMaxSize().background(c.background)) {
+        Box(Modifier.fillMaxSize()) {
             // M79：所有一级页/二级页共用一套转场（用户 2026-11-12：进二级页、退出都没有动画）。
             // H4 候选 A（docs/182 §H4）：新页 160ms 淡入 + 1/8 屏轻位移，旧页不动画，去掉 SizeTransform。
             // 外层 target 改成一/二级**页面**（二级页的 sub 交给内层）：从设置进二级页时设置首页
@@ -417,6 +452,7 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                 },
                 label = "dsh-screen",
             ) { page ->
+                PageBackdrop {
                 if (page == BuiltinPageIds.Settings) {
                     Box(Modifier.fillMaxSize()) {
                         // 设置首页：在设置栈里一直保留组合（含二级页打开时），返回时不再重新
@@ -485,7 +521,7 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                                         },
                                     ),
                             ) {
-                                NativePageDispatch(vm, BuiltinPageIds.Settings, shownSub, nav, hostUi)
+                                PageBackdrop { NativePageDispatch(vm, BuiltinPageIds.Settings, shownSub, nav, hostUi) }
                             }
                         }
                     }
@@ -493,13 +529,23 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                     // M85-C2：页面内容由壳自己的 dispatch 画（标题/图标/层级都在 `NativePages`）
                     NativePageDispatch(vm, page, null, nav, hostUi)
                 }
+                }
             }
         }
     }
 
     // M87-D：把插槽注册表交给整棵壳（抽屉/浮层也要读），会话有无消息供 `when.session` 过滤。
     val hasSlotMessages = conversation.state?.messages?.isNotEmpty() == true
-    Box(Modifier.fillMaxSize()) {
+    // docs/187 §4.2：液态玻璃壳整棵铺在「水族箱」背景上（页面内容透出它）；
+    // 原生壳铺 0.3.5 的实底 `background`，页面里的透明背景就落到这层上。
+    val ShellBackdrop: @Composable (@Composable () -> Unit) -> Unit = { inner ->
+        if (DshTheme2.liquidEnabled) {
+            LiquidBackdrop(Modifier.fillMaxSize(), animated = false, withSheen = false) { inner() }
+        } else {
+            Box(Modifier.fillMaxSize().background(DshTheme2.colors.background)) { inner() }
+        }
+    }
+    ShellBackdrop {
         CompositionLocalProvider(
             LocalSlotRegistry provides vm.slotRegistry,
             LocalSlotHasMessages provides hasSlotMessages,
@@ -508,10 +554,15 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                 // M83：宽屏不再用 Material 的 PermanentNavigationDrawer。它内部会再套一层
                 // PermanentDrawerSheet（默认容器色 surfaceContainerLow ≈ #FAFAFA、带圆角），
                 // 深色主题下侧边栏右上/右下角会露出两块白色缺口（用户：「四角/边缘有白色空白」）。
-                // 这里用普通 Row 拼常驻侧边栏：直角、铺满高度、紧贴左边缘，右侧一条 1dp 分隔线。
-                Row(Modifier.fillMaxSize().background(c.surface)) {
-                    Box(Modifier.width(304.dp).fillMaxHeight()) { drawerContent(true) }
-                    Box(Modifier.width(1.dp).fillMaxHeight().background(c.line))
+                // 这里用普通 Row 拼常驻侧边栏：左侧一整块竖玻璃，右边一条发丝分隔线。
+                Row(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier
+                            .width(304.dp)
+                            .fillMaxHeight()
+                            .padding(start = 12.dp, end = 12.dp, top = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel),
+                    ) { drawerContent(true) }
+                    GlassDivider(Modifier.fillMaxHeight(), horizontal = false)
                     Box(Modifier.weight(1f).fillMaxHeight()) { body() }
                 }
             } else {
@@ -542,6 +593,14 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
             // M87-D：shell.overlay 画在壳最上层（Modal 抽屉 / 常驻侧边栏 / 二级页之上）。
             // 聊天页底部是输入条：浮层让开约 128dp，别挡住发送/附件；其它页贴右下角。
             SlotOverlay("shell.overlay", bottomInset = if (screenName == null) 128 else 0)
+            // docs/190-C：Node 启动小卡片画在**任何页面**之上（非模态，不挡其它操作）。
+            NodeBootOverlay(
+                progress = vm.nodeBootProgress,
+                logs = vm.nodeHostLogs,
+                onDismiss = { vm.dismissNodeBoot() },
+                onRetry = { vm.retryNodeBoot() },
+                onStop = { vm.stopNodeBoot() },
+            )
         }
     }
 }
@@ -560,7 +619,17 @@ object BuiltinNativeShell : NativeShell {
     @Composable
     override fun Root(vm: NativeShellHost, ui: NativeShellHostUi) {
         if (!vm.onboardingDone) {
-            Onboarding(onDone = { vm.completeOnboarding() })
+            // 引导页背景由壳层背景提供（再多铺一层会让软件渲染直接跪掉）：
+            // 液态玻璃壳铺墙，原生壳铺实底（docs/187 §4.2）。
+            if (DshTheme2.liquidEnabled) {
+                LiquidBackdrop(Modifier.fillMaxSize(), animated = false, withSheen = false) {
+                    Onboarding(onDone = { vm.completeOnboarding() })
+                }
+            } else {
+                Box(Modifier.fillMaxSize().background(DshTheme2.colors.background)) {
+                    Onboarding(onDone = { vm.completeOnboarding() })
+                }
+            }
         } else {
             NativeShellContent(vm, ui)
         }

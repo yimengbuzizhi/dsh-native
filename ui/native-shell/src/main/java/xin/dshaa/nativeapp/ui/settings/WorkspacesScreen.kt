@@ -1,5 +1,9 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -59,7 +63,6 @@ import xin.dshaa.ui.shellapi.data.WorkspaceUi
 import xin.dshaa.nativeapp.ui.workspaces.CreateWorkspaceDialog
 import xin.dshaa.nativeapp.ui.workspaces.shortWorkspacePath
 import xin.dshaa.ui.design.component.MiniChip
-import xin.dshaa.ui.design.component.SettingsInfoBanner
 import xin.dshaa.ui.design.theme.DshTheme2
 import java.io.File
 
@@ -86,9 +89,9 @@ fun WorkspacesScreen(
     var deleteTarget by remember { mutableStateOf<WorkspaceUi?>(null) }
     val current = workspaces.firstOrNull { it.current }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {
@@ -118,12 +121,6 @@ fun WorkspacesScreen(
             contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 32.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item {
-                SettingsInfoBanner(
-                    "工作区 = 会话的 cwd，也是工具的可写根目录。切换工作区后：抽屉只显示该工作区的会话，" +
-                        "新会话建在该目录，技能根与 @file 索引跟着换；正在生成的对话会被停止。",
-                )
-            }
             workspaces.groupBy { it.managed }.forEach { (managed, list) ->
                 item(key = "header-$managed") {
                     Text(
@@ -166,7 +163,7 @@ fun WorkspacesScreen(
         var name by remember(target.id) { mutableStateOf(target.name) }
         AlertDialog(
             onDismissRequest = { renameTarget = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("重命名工作区") },
             text = { WorkspaceNameField(name, { name = it }) },
             confirmButton = {
@@ -182,7 +179,7 @@ fun WorkspacesScreen(
     deleteTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text("删除工作区") },
             text = {
                 Text(

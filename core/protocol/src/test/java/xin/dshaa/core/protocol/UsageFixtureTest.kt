@@ -7,15 +7,19 @@ import kotlin.test.assertNull
 
 class UsageFixtureTest {
     @Test
-    fun `anthropic cache categories are included once in total input`() {
+    fun `anthropic cache categories stay separate from uncached input`() {
         val start = assertIs<StreamParser.Event.MessageStart>(StreamParser.parse(
             """{"type":"message_start","message":{"id":"m","usage":{"input_tokens":12,"output_tokens":0,"cache_read_input_tokens":80,"cache_creation_input_tokens":8}}}""",
         ))
-        assertEquals(TokenUsage(100, 0, 80, 8), start.usage)
-        assertEquals(100, start.inputTokens)
+        // DSH 口径：input_tokens 本身不含缓存，cache 读/写单独记，不再加回 input。
+        assertEquals(TokenUsage(12, 0, 80, 8), start.usage)
+        assertEquals(12, start.inputTokens)
+        assertEquals(100, start.usage.totalInputTokens)
+        assertEquals(100, start.usage.totalTokens)
         val decoded = ProtocolJson.json.decodeFromString(StreamUsage.serializer(),
             """{"input_tokens":12,"cache_read_input_tokens":80,"cache_creation_input_tokens":8}""")
-        assertEquals(100, decoded.normalized().inputTokens)
+        assertEquals(12, decoded.normalized().inputTokens)
+        assertEquals(100, decoded.normalized().totalInputTokens)
     }
 
     @Test
@@ -38,7 +42,9 @@ class UsageFixtureTest {
             usage = usage.merge(event.usage)
         }
         assertEquals(TokenUsage(100, 10, 80), usage)
-        assertEquals(110, usage.totalTokens)
+        assertEquals(180, usage.totalInputTokens)
+        // total = 未缓存输入 100 + 缓存读 80 + 输出 10（DSH 同口径）。
+        assertEquals(190, usage.totalTokens)
         assertEquals(0, usage.merge(TokenUsage(outputTokens = 0)).outputTokens)
         assertNull(TokenUsage(inputTokens = 100).totalTokens)
     }

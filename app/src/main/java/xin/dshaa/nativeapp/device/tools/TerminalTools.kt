@@ -71,7 +71,7 @@ class TerminalTools(private val app: Application) {
         "input" -> inputInSession(args)
         "screen" -> sessionScreen(args)
         "close" -> closeSession(args)
-        else -> ToolResult.err("未知的终端操作：$action")
+        else -> ToolResult.err("Unknown terminal action: $action")
     }
 
     // ---------------- create_terminal_session ----------------
@@ -280,7 +280,7 @@ class TerminalTools(private val app: Application) {
             if (!DeviceShell.hasShizuku() && !DeviceShell.hasRoot()) {
                 return ToolResult.err(
                     "identity=shell is unavailable: Shizuku is not connected or not authorized. " +
-                        "Open 设置 → 权限与能力, grant Shizuku, then retry; " +
+                        "Open Settings → Permissions & Capabilities, grant Shizuku, then retry; " +
                         "or use identity=app for the Ubuntu proot shell.",
                 )
             }

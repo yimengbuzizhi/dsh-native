@@ -1,0 +1,7 @@
+﻿
+     Bound services:{Service[label=DSH 无障碍, feedbackType[FEEDBACK_GENERIC], capabilities=161, eventTypes=[TYPE_VIEW_CLI
+CKED, TYPE_VIEW_FOCUSED, TYPE_WINDOW_STATE_CHANGED, TYPE_WINDOW_CONTENT_CHANGED], notificationTimeout=100, requestA11yB
+tn=false]}
+     Enabled services:{{xin.dshaa.nativeapp/xin.dshaa.nativeapp.device.a11y.DshAccessibilityService}}
+
+

@@ -60,6 +60,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import xin.dshaa.ui.design.theme.wash
 
 /**
  * Operit 设置页组件词汇表（源码：ui/features/settings/sections/ModelApiSettingsSection.kt L1519-1788）。
@@ -68,25 +71,23 @@ import xin.dshaa.ui.design.theme.DshTheme2
  * 只把颜色换成本项目 token。
  */
 
-/** 分组标题：24dp 主色图标 + 标题（Operit `SettingsSectionHeader`）。 */
+/**
+ * 分组标题：24dp 主色图标 + 标题（Operit `SettingsSectionHeader`）。
+ *
+ * 2026-11-23（用户第 7 条）：设置页不再有纯说明性的副标题，这个槽位整个删掉——
+ * 全仓调用点从来没有传过 subtitle，留着只会再长回说明文字。
+ */
 @Composable
 fun SettingsSectionHeader(
     icon: ImageVector,
     title: String,
     modifier: Modifier = Modifier,
-    subtitle: String? = null,
 ) {
     val c = DshTheme2.colors
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = c.brand, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = c.text)
-            if (subtitle != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = c.sub)
-            }
-        }
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = c.text)
     }
 }
 
@@ -96,12 +97,10 @@ fun SettingsCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val c = DshTheme2.colors
-    Surface(
+    GlassSurface(
         modifier = modifier.fillMaxWidth().padding(top = 4.dp),
-        shape = RoundedCornerShape(14.dp),
-        color = c.surface,
-        border = BorderStroke(1.dp, c.line2),
+        shape = RoundedCornerShape(LiquidRadius.m),
+        level = LiquidLevel.Card,
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }
@@ -113,11 +112,10 @@ fun SettingsGroup(
     icon: ImageVector,
     title: String,
     modifier: Modifier = Modifier,
-    subtitle: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(modifier.fillMaxWidth()) {
-        SettingsSectionHeader(icon, title, subtitle = subtitle)
+        SettingsSectionHeader(icon, title)
         SettingsCard(content = content)
         Spacer(Modifier.height(16.dp))
     }
@@ -156,7 +154,7 @@ fun SettingsTextField(
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         shape = RoundedCornerShape(10.dp),
-        color = c.surfaceAlt.copy(alpha = if (c.isDark) 0.55f else 0.75f),
+        color = c.surfaceAlt.wash(if (c.isDark) 0.55f else 0.75f),
     ) {
         Column(Modifier.padding(12.dp)) {
             Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = c.text)
@@ -166,11 +164,17 @@ fun SettingsTextField(
             }
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(6.dp),
-                    color = c.background.copy(alpha = if (c.isDark) 0.75f else 0.6f),
-                    border = BorderStroke(1.dp, c.line.copy(alpha = 0.6f)),
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(9.dp))
+                        .liquidGlass(
+                            shape = RoundedCornerShape(9.dp),
+                            level = LiquidLevel.Pill,
+                            tint = c.surfaceAlt,
+                            tintGradient = 0f,
+                            elevated = false,
+                        ),
                 ) {
                     BasicTextField(
                         value = value,
@@ -231,21 +235,23 @@ fun SettingsTextField(
     }
 }
 
-/** Operit `SettingsSelectorRow`：标题/副标题 + 右侧当前值 + 下拉箭头。 */
+/** Operit `SettingsSelectorRow`：标题 + 右侧当前值 + 下拉箭头；副标题只在有状态要补时给。 */
 @Composable
 fun SettingsSelectorRow(
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     value: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
     val c = DshTheme2.colors
-    Surface(
-        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled) { onClick() },
-        shape = RoundedCornerShape(10.dp),
-        color = c.surfaceAlt.copy(alpha = if (c.isDark) 0.55f else 0.75f),
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(LiquidRadius.xs))
+            .background(c.surfaceAlt)
+            .liquidClickable(enabled = enabled) { onClick() },
     ) {
         Row(
             Modifier.padding(16.dp),
@@ -254,8 +260,10 @@ fun SettingsSelectorRow(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = c.text)
-                Spacer(Modifier.height(2.dp))
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = c.sub)
+                if (!subtitle.isNullOrBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = c.sub)
+                }
             }
             Spacer(Modifier.width(12.dp))
             Text(
@@ -294,7 +302,7 @@ data class SettingsOption(
 @Composable
 fun SettingsExpandablePickerRow(
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     value: String,
     options: List<SettingsOption>,
     onSelect: (String) -> Unit,
@@ -309,24 +317,27 @@ fun SettingsExpandablePickerRow(
         animationSpec = tween(180),
         label = "settings-picker-arrow",
     )
-    Surface(
-        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)),
-        shape = RoundedCornerShape(10.dp),
-        color = c.surfaceAlt.copy(alpha = if (c.isDark) 0.55f else 0.75f),
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(LiquidRadius.xs))
+            .background(c.surfaceAlt),
     ) {
         Column {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = enabled) { expanded = !expanded }
+                    .liquidClickable(enabled = enabled) { expanded = !expanded }
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = c.text)
-                    Spacer(Modifier.height(2.dp))
-                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = c.sub)
+                    if (!subtitle.isNullOrBlank()) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = c.sub)
+                    }
                 }
                 Spacer(Modifier.width(12.dp))
                 Text(
@@ -349,7 +360,7 @@ fun SettingsExpandablePickerRow(
                 exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(120)),
             ) {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(c.line.copy(alpha = 0.5f)))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(c.line.wash(0.5f)))
                     options.forEach { option ->
                         val selected = option.value == value
                         Row(
@@ -392,21 +403,22 @@ fun SettingsExpandablePickerRow(
     }
 }
 
-/** Operit `SettingsSwitchRow`：标题/副标题 + 右侧开关。 */
+/** Operit `SettingsSwitchRow`：标题（+ 可选状态说明）+ 右侧开关。 */
 @Composable
 fun SettingsSwitchRow(
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
     val c = DshTheme2.colors
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = c.surfaceAlt.copy(alpha = if (c.isDark) 0.55f else 0.75f),
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(LiquidRadius.xs))
+            .background(c.surfaceAlt),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -420,8 +432,10 @@ fun SettingsSwitchRow(
                     fontWeight = FontWeight.Medium,
                     color = if (enabled) c.text else c.sub,
                 )
-                Spacer(Modifier.height(2.dp))
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = c.sub)
+                if (!subtitle.isNullOrBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = c.sub)
+                }
             }
             Spacer(Modifier.width(8.dp))
             Switch(
@@ -458,37 +472,40 @@ fun SettingsInfoBanner(text: String, modifier: Modifier = Modifier, tint: Color?
     }
 }
 
-/** Operit `CompactSettingsItem`：图标 + 标题/副标题 + 右箭头（设置首页的行）。 */
+/** Operit `CompactSettingsItem`：图标 + 标题（+ 可选当前值/状态）+ 右箭头（设置首页的行）。 */
 @Composable
 fun SettingsNavRow(
     icon: ImageVector,
     title: String,
-    subtitle: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val c = DshTheme2.colors
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 4.dp, vertical = 10.dp),
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .liquidClickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = c.brand, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(12.dp))
+        Icon(icon, contentDescription = null, tint = c.brand, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(1.dp))
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = c.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!subtitle.isNullOrBlank()) {
+                Spacer(Modifier.height(1.dp))
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = c.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         trailing?.invoke() ?: Icon(
             Icons.Rounded.KeyboardArrowRight,
             contentDescription = null,
             tint = c.faint,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
         )
     }
 }
@@ -505,15 +522,14 @@ fun CollapsibleSettingsCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val c = DshTheme2.colors
-    Surface(
+    GlassSurface(
         modifier = modifier.fillMaxWidth().padding(top = 4.dp),
-        shape = RoundedCornerShape(14.dp),
-        color = c.surface,
-        border = BorderStroke(1.dp, c.line2),
+        shape = RoundedCornerShape(LiquidRadius.m),
+        level = LiquidLevel.Card,
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onToggle() },
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).liquidClickable { onToggle() },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(icon, contentDescription = null, tint = c.brand, modifier = Modifier.size(22.dp))

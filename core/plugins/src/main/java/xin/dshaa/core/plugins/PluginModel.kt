@@ -45,6 +45,11 @@ data class PluginManifest(
     val bundlePatch: String? = null,
     /** DSH `engines.dsh`：插件要求的 DSH 版本范围。 */
     val enginesDsh: String? = null,
+    /**
+     * docs/188 P4：导入时识别出的归属（`native` / `node`），只作为**默认值**；
+     * 用户在导入确认里可以改，最终写进 [PluginRecord.ownership]。
+     */
+    val ownership: String = PluginOwnership.NATIVE,
 )
 
 /** 插件注册的一句提示词段（DSH `ctx.systemPrompt.section`）。 */
@@ -546,6 +551,12 @@ data class PluginRecord(
     val contributions: List<PluginContribution> = emptyList(),
     /** M87-C/D：插件往宿主原生界面注册的插槽（见 [SlotSpec.SLOTS]）。 */
     val slots: List<PluginSlot> = emptyList(),
+    /**
+     * docs/188 P4：导入时确认的归属（`native` / `node`），落盘在 `plugins.json`。
+     * 只用于插件页分区与「同 id 不许双装」的判断；**不进 session.v4**。
+     * 旧记录没有这个键 → 按原生处理（不重装、不迁移、不改开关）。
+     */
+    val ownership: String = PluginOwnership.NATIVE,
 )
 
 /**
@@ -781,6 +792,9 @@ class PluginRegistryFile(private val file: File) {
                     missingServices = obj.stringList("missingServices"),
                     effects = obj.stringList("effects"),
                     subscriptions = obj.stringList("subscriptions"),
+                    ownership = obj.string("ownership")
+                        ?.takeIf { it == PluginOwnership.NODE || it == PluginOwnership.NATIVE }
+                        ?: PluginOwnership.NATIVE,
                 )
                 // M87-G 迁移：旧记录没有 contributions，按 0.3.4 的字段补出脚本/客户端/预设，
                 // 并把 irFormat 标成 legacy-js；不重装、不改开关、id/权限/角色不变。
@@ -1149,6 +1163,10 @@ class PluginRegistryFile(private val file: File) {
                                     }
                                     record.error?.let { put("error", it) }
                                     put("installedAt", record.installedAt)
+                                    // docs/188 P4：归属只写非默认值，旧清单保持原样。
+                                    if (record.ownership != PluginOwnership.NATIVE) {
+                                        put("ownership", record.ownership)
+                                    }
                                 },
                             )
                         }

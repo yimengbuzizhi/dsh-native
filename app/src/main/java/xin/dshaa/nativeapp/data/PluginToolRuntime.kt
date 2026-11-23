@@ -97,7 +97,7 @@ class PluginToolRuntime(
                     pluginName = record.name,
                     toolName = toolName,
                     description = record.toolDescriptions[toolName].orEmpty()
-                        .ifBlank { "插件「${record.name}」注册的工具" },
+                        .ifBlank { "Tool registered by plugin \"${record.name}\"" },
                     schema = schema,
                     entry = entry,
                     permissions = permissions,
@@ -133,13 +133,13 @@ class PluginToolRuntime(
             val meta = mapOf("plugin" to binding.pluginId, "pluginTool" to binding.toolName)
             // 先挡明显不对的调用（缺必填/类型错/枚举外），错误原文直接给模型看。
             PluginSchema.validate(binding.schema, filled)?.let { invalid ->
-                return ToolResult.err("插件工具参数不合法：$invalid", meta = meta)
+                return ToolResult.err("Invalid plugin tool arguments: $invalid", meta = meta)
             }
             val result = withContext(Dispatchers.IO) { run(binding, filled.toString(), ctx.timeoutMs) }
             return if (result.ok) {
                 ToolResult.ok(result.text, meta = meta)
             } else {
-                ToolResult.err(result.error ?: "插件工具执行失败", meta = meta)
+                ToolResult.err(result.error ?: "Plugin tool execution failed", meta = meta)
             }
         }
     }
@@ -168,7 +168,7 @@ class PluginToolRuntime(
         timeoutMs: Long = 30_000,
     ): PluginInvokeResult {
         val entry = File(record.path, record.main)
-        if (!entry.isFile) return PluginInvokeResult(false, error = "入口文件不在了：${record.main}")
+        if (!entry.isFile) return PluginInvokeResult(false, error = "Plugin entry file is missing: ${record.main}")
         val configJson = PluginSchema.effectiveText(record.configSchema, record.config, record.configDefaults)
         val binding = Binding(
             pluginId = record.id,
@@ -199,9 +199,9 @@ class PluginToolRuntime(
         scriptFor: (xin.dshaa.core.plugins.TransformedModule) -> String,
     ): PluginInvokeResult {
         val source = runCatching { binding.entry.readText(Charsets.UTF_8) }
-            .getOrElse { return PluginInvokeResult(false, error = "读不了插件入口：${it.message}") }
+            .getOrElse { return PluginInvokeResult(false, error = "Cannot read plugin entry file: ${it.message}") }
         val module = runCatching { PluginModule.transform(source) }
-            .getOrElse { return PluginInvokeResult(false, error = "解析插件模块失败：${it.message}") }
+            .getOrElse { return PluginInvokeResult(false, error = "Failed to parse plugin module: ${it.message}") }
         val sandbox = PluginSandbox(
             pluginId = binding.pluginId,
             workspace = binding.workspace,
@@ -210,7 +210,7 @@ class PluginToolRuntime(
             bridge = hostBridge,
         )
         val script = runCatching { scriptFor(module) }
-            .getOrElse { return PluginInvokeResult(false, error = "生成插件调用脚本失败：${it.message}") }
+            .getOrElse { return PluginInvokeResult(false, error = "Failed to generate plugin invocation script: ${it.message}") }
 
         // 异步宿主能力（net.fetch / shell.exec 的异步形态）在别的线程跑，完成后回灌 QuickJS。
         val hostExecutor = Executors.newCachedThreadPool { runnable ->
@@ -262,7 +262,7 @@ class PluginToolRuntime(
             })
         }.getOrElse {
             hostExecutor.shutdownNow()
-            return PluginInvokeResult(false, error = "QuickJS 不可用（这个 ABI 没编进去？）：${it.message}")
+            return PluginInvokeResult(false, error = "QuickJS is unavailable (this ABI may not be included): ${it.message}")
         }
         jsRef.set(js)
 
@@ -286,7 +286,7 @@ class PluginToolRuntime(
                 JsStatus.COMPLETED -> {
                     val payload = decodeString(outcome.valueJson)
                     if (payload == null) {
-                        PluginInvokeResult(false, error = "插件执行没有返回结果（completed，value=null）")
+                        PluginInvokeResult(false, error = "Plugin execution returned no result (completed, value=null)")
                     } else {
                         PluginModule.parseInvoke(payload)
                     }
@@ -294,16 +294,16 @@ class PluginToolRuntime(
 
                 JsStatus.INTERRUPTED -> PluginInvokeResult(
                     false,
-                    error = "插件执行超时（>${timeoutMs}ms）或已被中断",
+                    error = "Plugin execution timed out (>${timeoutMs}ms) or was interrupted",
                 )
 
                 JsStatus.ERROR -> PluginInvokeResult(
                     false,
-                    error = "插件执行报错：${outcome.error ?: "QuickJS error"}",
+                    error = "Plugin execution failed: ${outcome.error ?: "QuickJS error"}",
                 )
             }
         } catch (t: Throwable) {
-            PluginInvokeResult(false, error = "插件执行崩溃：${t.message ?: t.javaClass.simpleName}")
+            PluginInvokeResult(false, error = "Plugin execution crashed: ${t.message ?: t.javaClass.simpleName}")
         } finally {
             watchdog.interrupt()
             hostExecutor.shutdownNow()

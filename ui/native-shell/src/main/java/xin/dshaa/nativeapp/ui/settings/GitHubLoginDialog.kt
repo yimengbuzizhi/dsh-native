@@ -44,7 +44,7 @@ fun GitHubLoginDialog(auth: GitHubAuth, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        containerColor = c.surface,
+        containerColor = c.panel,
         title = { Text("GitHub 账号", fontWeight = FontWeight.SemiBold) },
         text = {
             Column {

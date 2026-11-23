@@ -84,7 +84,7 @@
   },
   {
     "name": "edit",
-    "description": "Edit an existing UTF-8 text file by replacing literal text.",
+    "description": "Edit an existing UTF-8 text file by replacing literal text. For a large rewrite (old_string or new_string over 2MB), use the `write` tool with append=true instead: write the file in chunks rather than sending two huge strings.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -969,7 +969,7 @@
   },
   {
     "name": "write",
-    "description": "Create or fully replace a UTF-8 text file.",
+    "description": "Create, fully replace, or append to a UTF-8 text file. Keep a single `content` around or under 200KB; for larger files write in chunks with append=true — the first call with append=false creates the file, later calls with append=true add chunks.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -979,7 +979,11 @@
         },
         "content": {
           "type": "string",
-          "description": "Full UTF-8 text content to write."
+          "description": "Full UTF-8 text content to write. Keep it around or under 200KB per call; write larger files in chunks with append=true."
+        },
+        "append": {
+          "type": "boolean",
+          "description": "Append to the file instead of replacing it. Defaults to false; append=true creates the file if it does not exist and creates missing parent directories."
         },
         "sandbox_permissions": {
           "type": "string",

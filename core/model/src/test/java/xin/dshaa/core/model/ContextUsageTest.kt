@@ -29,4 +29,14 @@ class ContextUsageTest {
         val next = previous.copy(requestNo = 2, inputTokens = 2000)
         assertEquals(2000, next.allocatedBreakdown().sum())
     }
+
+    @Test fun cacheReadAndWriteCountTowardPromptOccupancy() {
+        // DSH 口径：inputTokens 只是未缓存输入；占用/分段要把缓存读/写加回来。
+        val usage = ContextUsage(1, inputTokens = 20, cacheReadTokens = 80, cacheCreationTokens = 8,
+            estimatedSystem = 1, estimatedTools = 1, estimatedMessages = 2)
+        assertEquals(108, usage.totalInputTokens)
+        assertEquals(108, usage.allocatedBreakdown().sum())
+        // 缺 input 时仍按估算展示（未报告 ≠ 0）。
+        assertEquals(listOf(1, 1, 2), usage.copy(inputTokens = null).allocatedBreakdown())
+    }
 }

@@ -2,64 +2,49 @@ package xin.dshaa.nativeapp.data
 
 import android.content.Context
 import android.util.Log
-import kotlinx.coroutines.runBlocking
-import java.io.BufferedOutputStream
 import java.io.File
 
 /**
- * M85-B：随 APK 打包的内置插件（`assets/builtin-plugins/<id>/`）。
+ * 已删除的内置插件清理（`docs/187` §五）。
  *
- * 和用户导入的插件**同一套格式/同一套开关**：首次启动时打进 `files/plugins/<id>/` 并走一次真实
- * 试运行；之后就是普通插件记录（可停用，可被同 id 的导入插件覆盖）。宿主不享受任何特权。
+ * 历史：`builtin.shell.whale`（鲸歌可选壳）与 `builtin.floating.demo`（悬浮窗插口示例）曾随包
+ * 打进 `assets/builtin-plugins/` 并装进 `files/plugins/`。用户 2026-11-23 明确说它们没用，
+ * 已从 APK 里删掉；**老设备上残留的记录与目录要在启动时一起清掉**，否则插件页/角色页会留下
+ * 一条指向不存在目录的坏记录（`whale` 还会继续出现在壳候选里）。
+ *
+ * 这里只做「删」，不再安装任何内置插件（以后要内置插件另开入口）。
  */
 object BundledPlugins {
 
-    const val WHALE_SHELL = "builtin.shell.whale"
+    /** 需要清理的历史内置插件 id。 */
+    val obsoleteIds: List<String> = listOf(
+        "builtin.shell.whale",
+        "builtin.floating.demo",
+    )
 
-    private const val ASSET_ROOT = "builtin-plugins"
     private const val TAG = "DshBundled"
 
-    /** 内置默认壳：缺记录才安装；用户删掉后下次启动会补回（M85-B 先这样，M85-C 前再定「删除」语义）。 */
-    fun ensureWhaleShell(context: Context, store: PluginStore) {
-        ensure(context, store, WHALE_SHELL)
-    }
-
-    private fun ensure(context: Context, store: PluginStore, id: String) {
-        val assetDir = "$ASSET_ROOT/$id"
-        val names = runCatching { context.assets.list(assetDir)?.filter { it.endsWith(".json") || it.endsWith(".js") }.orEmpty() }
-            .getOrDefault(emptyList())
-        if (names.isEmpty()) {
-            Log.w(TAG, "内置插件 assets 缺失：$assetDir")
-            return
-        }
-        // 版本升级：记录还在但版本不同 → 用 APK 里的新文件覆盖（配置/授权按重装规则保留）。
-        val assetVersion = runCatching {
-            context.assets.open("$assetDir/package.json").use { input ->
-                org.json.JSONObject(input.readBytes().toString(Charsets.UTF_8)).optString("version")
+    /**
+     * 幂等清理：删 `files/plugins/<id>/` 与 `plugins.json` 里的记录（[PluginStore.uninstall] 两者都管）。
+     * 不存在就什么都不做；任何一步失败只记日志，不挡启动。
+     */
+    fun purgeObsolete(context: Context, store: PluginStore) {
+        val installed = runCatching { store.list().map { it.id }.toSet() }.getOrDefault(emptySet())
+        for (id in obsoleteIds) {
+            val dir = File(File(context.filesDir, "plugins"), id)
+            val recorded = id in installed
+            if (!recorded && !dir.exists()) continue
+            // 记录先删（uninstall 会删目录 + 更新 plugins.json）；记录不在但目录还在时补删目录。
+            val removed = runCatching { store.uninstall(id) }
+                .getOrElse { PluginStore.Result(false, it.message ?: it.javaClass.simpleName) }
+            if (!removed.ok) {
+                Log.w(TAG, "清理旧内置插件失败：$id ${removed.message}")
             }
-        }.getOrDefault("")
-        val existing = store.list().firstOrNull { it.id == id }
-        if (existing != null && (assetVersion.isBlank() || existing.version == assetVersion)) return
-        val zip = File(context.cacheDir, "bundled-$id.zip")
-        val created = runCatching {
-            BufferedOutputStream(zip.outputStream()).use { out ->
-                java.util.zip.ZipOutputStream(out).use { zos ->
-                    names.forEach { name ->
-                        zos.putNextEntry(java.util.zip.ZipEntry(name))
-                        context.assets.open("$assetDir/$name").use { input -> input.copyTo(zos) }
-                        zos.closeEntry()
-                    }
-                }
+            if (dir.exists()) {
+                val gone = runCatching { dir.deleteRecursively() }.getOrDefault(false)
+                Log.i(TAG, "残留目录 $id 删除=$gone")
             }
-            true
-        }.getOrElse {
-            Log.w(TAG, "打包内置插件失败：$id ${it.message}")
-            false
+            Log.i(TAG, "旧内置插件已清理：$id（记录=$recorded, uninstall=${removed.ok}）")
         }
-        if (!created) return
-        val result = runCatching { runBlocking { store.installFile(zip, enabled = true) } }
-            .getOrElse { PluginStore.Result(false, it.message ?: it.javaClass.simpleName) }
-        zip.delete()
-        Log.i(TAG, "内置插件 $id install ok=${result.ok} ${result.message}")
     }
 }

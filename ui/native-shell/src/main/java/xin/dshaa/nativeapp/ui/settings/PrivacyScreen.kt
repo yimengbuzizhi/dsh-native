@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import android.webkit.CookieManager
 import android.webkit.WebStorage
 import android.webkit.WebViewDatabase
@@ -90,9 +95,9 @@ fun PrivacyScreen(
 
     LaunchedEffect(Unit) { refresh() }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {
@@ -106,11 +111,11 @@ fun PrivacyScreen(
 
             SettingsSectionHeader(icon = Icons.Rounded.CleaningServices, title = "占用情况")
             SettingsCard {
-                UsageRow("网页缓存与本地存储", usage.webView, "插件窗口页面、登录页、模型页的 WebView 数据")
-                UsageRow("临时文件（cache）", usage.cache, "导入插件时解出来的临时 zip、截图临时文件")
-                UsageRow("插件本体", usage.plugins, "files/plugins · 删插件请到「插件」页", keep = true)
-                UsageRow("会话历史", usage.sessions, "对话记录 · 删除请用「对话历史管理」", keep = true)
-                UsageRow("记忆库", usage.memory, "databases/memory.db · 记忆库页面管理", keep = true)
+                UsageRow("网页缓存与本地存储", usage.webView)
+                UsageRow("临时文件（cache）", usage.cache)
+                UsageRow("插件本体", usage.plugins, "files/plugins", keep = true)
+                UsageRow("会话历史", usage.sessions, keep = true)
+                UsageRow("记忆库", usage.memory, "databases/memory.db", keep = true)
             }
 
             Spacer(Modifier.height(16.dp))
@@ -118,17 +123,14 @@ fun PrivacyScreen(
             SettingsCard {
                 ActionRow(
                     title = "清理网页缓存与 Cookie",
-                    subtitle = "清 WebView 缓存 / Cookie / localStorage（插件窗口会重新登录/重置偏好）",
                     onClick = { pending = Action.WebView },
                 )
                 ActionRow(
                     title = "清理临时文件",
-                    subtitle = "清空 cacheDir（不动插件、会话、记忆、设置）",
                     onClick = { pending = Action.Cache },
                 )
                 ActionRow(
                     title = "清空头像图片缓存",
-                    subtitle = "只清内存里的 Bitmap 缓存，磁盘上的头像还在",
                     onClick = {
                         AvatarLoader.clear()
                         notice = "已清空头像内存缓存"
@@ -137,7 +139,6 @@ fun PrivacyScreen(
                 )
                 ActionRow(
                     title = "清理全部临时数据（上面两项一起）",
-                    subtitle = "网页缓存 + 临时文件，最省事的一档",
                     onClick = { pending = Action.Both },
                 )
             }
@@ -154,13 +155,6 @@ fun PrivacyScreen(
                     color = c.sub,
                     lineHeight = MaterialTheme.typography.bodySmall.fontSize * 1.7f,
                 )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "要删会话 → 对话历史管理；要删插件 → 插件页卸载；要清记忆 → 记忆库。",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = c.faint,
-                )
-                Spacer(Modifier.height(10.dp))
                 Surface(
                     onClick = onOpenSessions,
                     shape = RoundedCornerShape(12.dp),
@@ -179,10 +173,6 @@ fun PrivacyScreen(
                 Spacer(Modifier.height(12.dp))
                 SettingsInfoBanner(notice)
             }
-            SettingsInfoBanner(
-                "这些清理都是可再生的：清完插件窗口要重新加载一次，网页缓存会自己重新长回来；" +
-                    "会话、插件、密钥、角色卡一个都不动。",
-            )
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -190,7 +180,7 @@ fun PrivacyScreen(
     pending?.let { action ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { if (!busy) pending = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = { Text(action.title) },
             text = { Text(action.detail) },
             confirmButton = {
@@ -275,12 +265,14 @@ private fun formatBytes(bytes: Long): String = when {
 }
 
 @Composable
-private fun UsageRow(title: String, bytes: Long, subtitle: String, keep: Boolean = false) {
+private fun UsageRow(title: String, bytes: Long, subtitle: String? = null, keep: Boolean = false) {
     val c = DshTheme2.colors
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleSmall, color = c.text)
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = c.faint, maxLines = 2)
+            if (!subtitle.isNullOrBlank()) {
+                Text(subtitle, style = MaterialTheme.typography.labelSmall, color = c.faint, maxLines = 2)
+            }
         }
         Text(
             if (bytes < 0) "—" else formatBytes(bytes),
@@ -291,7 +283,7 @@ private fun UsageRow(title: String, bytes: Long, subtitle: String, keep: Boolean
 }
 
 @Composable
-private fun ActionRow(title: String, subtitle: String, onClick: () -> Unit) {
+private fun ActionRow(title: String, onClick: () -> Unit) {
     val c = DshTheme2.colors
     Row(
         Modifier
@@ -303,9 +295,6 @@ private fun ActionRow(title: String, subtitle: String, onClick: () -> Unit) {
     ) {
         Icon(Icons.Rounded.PhotoLibrary, null, tint = c.sub, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = c.text)
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = c.faint)
-        }
+        Text(title, style = MaterialTheme.typography.titleSmall, color = c.text, modifier = Modifier.weight(1f))
     }
 }

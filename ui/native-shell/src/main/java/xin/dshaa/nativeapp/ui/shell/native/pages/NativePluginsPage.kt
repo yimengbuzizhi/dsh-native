@@ -73,6 +73,30 @@ internal fun NativePluginsPage(
         pluginExtensions = host.pluginExtensionsUi,
         pluginMiddlewareEnabled = host.pluginMiddlewareEnabled,
         onTogglePluginMiddleware = host::setPluginMiddlewareEnabled,
+        // docs/185 P2 / docs/188 P4：Node 插件宿主（实验开关 + 两分区状态/清单/日志）。
+        nodeHostEnabled = host.nodePluginHostEnabled,
+        nodeHostState = host.nodeHostStateText,
+        nodeHostStatus = host.nodeHostStatus,
+        onToggleNodeHost = host::setNodePluginHostEnabled,
+        nodeHostPlugins = host.nodeHostPlugins,
+        nodeHostManifest = host.nodeHostManifest,
+        nodeHostLogs = host.nodeHostLogs,
+        onReloadNodeHost = host::reloadNodeHost,
+        onImportNodePlugin = host::importNodePlugin,
         onRefreshExtensions = host::refreshPluginExtensions,
+        // docs/188 P4：统一导入（识别归属 + 可改 + 迁移）。
+        pluginImportDraft = host.pluginImportDraft,
+        pluginImportLimits = host.pluginImportLimitsText,
+        onBeginPluginImport = host::beginPluginImport,
+        onConfirmPluginImport = host::confirmPluginImport,
+        onCancelPluginImport = host::cancelPluginImport,
+        // docs/187 P3-d：预设（模型 + 提示词段 + 工具 + 权限的纯数据组合）。
+        presetTargets = host.presetTargetsUi,
+        activePresetId = host.activePresetTargetUi,
+        presetNotice = host.presetNoticeUi,
+        onApplyPreset = { host.applyPreset(it) },
+        onClearPreset = host::clearPreset,
+        onSavePreset = { host.savePresetFromCurrent(it) },
+        onDeletePreset = { host.deletePreset(it) },
     )
 }

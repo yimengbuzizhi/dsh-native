@@ -272,7 +272,7 @@ class FloatingWindowManager(
             setContent {
                 DshTheme(darkTheme = themeIsDark(), accentId = themeAccent()) {
                     Surface(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        color = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
                         shadowElevation = 8.dp,
                     ) {

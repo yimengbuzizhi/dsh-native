@@ -53,16 +53,16 @@ class PluginDevToolsContractTest {
 
     @Test fun middlewareStateTextTellsModelWhenHooksAreBypassed() {
         val on = PluginDevTools.middlewareStateText(true)
-        assertTrue(on, on.contains("插件中间件总开关：开"))
-        assertFalse(on, on.contains("旁路"))
+        assertTrue(on, on.contains("Plugin middleware master switch: on"))
+        assertFalse(on, on.contains("bypassed"))
 
         val off = PluginDevTools.middlewareStateText(false)
-        assertTrue(off, off.contains("插件中间件总开关：关"))
-        assertTrue(off, off.contains("旁路"))
-        assertTrue(off, off.contains("扩展点插件不会生效"))
+        assertTrue(off, off.contains("Plugin middleware master switch: off"))
+        assertTrue(off, off.contains("bypassed"))
+        assertTrue(off, off.contains("extension-point plugins will not take effect"))
         // M88-I：设置页「插件」分组已删除，开关只在 插件页 → 扩展点 顶部；文案不能再指旧位置。
-        assertTrue(off, off.contains("插件页") && off.contains("扩展点"))
-        assertFalse(off, off.contains("设置 → 插件"))
+        assertTrue(off, off.contains("Plugins page") && off.contains("Extension points"))
+        assertFalse(off, off.contains("Settings → Plugins"))
     }
 
     @Test fun builtinPluginDevGroupCoversEveryPluginDevTool() {
@@ -74,19 +74,26 @@ class PluginDevToolsContractTest {
         }
     }
 
-    @Test fun aiControlSwitchAndRoleValidationArePure() {
-        // 设置关闭 → 固定错误码；开启 → 放行（null）。
-        assertNull(PluginDevTools.aiControlError(true))
-        val disabled = PluginDevTools.aiControlError(false)!!
-        assertTrue(disabled, disabled.contains("ai_plugin_control_disabled"))
-        assertTrue(disabled, disabled.contains("AI 插件控制已关闭"))
+    @Test fun aiControlToolsAreAlwaysCallableWriteTools() {
+        // docs/190 §3-F：「AI 全控制插件」总开关已永久删除——grant/revoke/config/role/middleware
+        // 永远可调，但仍按写类走全局审批 + 审计，且都不会进只读白名单。
+        listOf(
+            "plugin_dev_grant", "plugin_dev_revoke", "plugin_dev_config", "plugin_dev_role",
+            "plugin_dev_middleware",
+        ).forEach { name ->
+            assertTrue("$name 应在工具表里", name in PluginDevTools.toolNames)
+            assertTrue("$name 应是写工具", name in PluginDevTools.writeNames)
+            assertFalse("$name 不能进只读白名单", name in PluginDevTools.readOnlyNames)
+        }
+    }
 
+    @Test fun roleValidationIsPure() {
         // role/value 解析：未知角色与空 value 都显式报错。
         assertNull(PluginDevTools.roleError("shell", "native"))
         assertNull(PluginDevTools.roleError("model", "builtin.model.deepseek"))
         assertNull(PluginDevTools.roleError("agent", "m85.echo#echo"))
-        assertTrue(PluginDevTools.roleError("bogus", "x")!!.contains("未知角色"))
-        assertTrue(PluginDevTools.roleError("shell", "  ")!!.contains("需要 value"))
+        assertTrue(PluginDevTools.roleError("bogus", "x")!!.contains("Unknown role"))
+        assertTrue(PluginDevTools.roleError("shell", "  ")!!.contains("requires value"))
         assertEquals(
             setOf("shell", "loading", "agent", "storage", "prompt", "model"),
             PluginDevTools.ROLE_NAMES,

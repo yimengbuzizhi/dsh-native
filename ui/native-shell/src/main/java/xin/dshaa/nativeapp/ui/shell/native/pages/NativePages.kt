@@ -11,6 +11,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderZip
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Restore
@@ -67,6 +68,7 @@ object NativePages {
         NativePage(BuiltinPageIds.ModelConfig, "模型配置", Icons.Rounded.Api, PageLevel.Secondary),
         NativePage(BuiltinPageIds.Assistant, "助手配置", Icons.Rounded.Person, PageLevel.Secondary),
         NativePage(BuiltinPageIds.Behavior, "显示与行为", Icons.Rounded.Visibility, PageLevel.Secondary),
+        NativePage(BuiltinPageIds.Appearance, "主题和外观", Icons.Rounded.Palette, PageLevel.Secondary),
         NativePage(BuiltinPageIds.Backup, "备份与恢复", Icons.Rounded.FolderZip, PageLevel.Secondary),
         NativePage(BuiltinPageIds.DataMigration, "旧版数据导入", Icons.Rounded.Restore, PageLevel.Secondary),
         NativePage(BuiltinPageIds.Skills, "技能", Icons.Rounded.Star, PageLevel.Secondary),

@@ -7,10 +7,12 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.Region
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -29,6 +31,8 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +47,8 @@ import xin.dshaa.nativeapp.MainActivity
 import xin.dshaa.nativeapp.fish.BigFish
 import xin.dshaa.nativeapp.fish.FishSnapshot
 import xin.dshaa.nativeapp.fish.FishState
+import xin.dshaa.core.plugins.ContainerKind
+import xin.dshaa.core.plugins.ContainerSpec
 import java.io.ByteArrayInputStream
 import java.io.File
 import kotlin.math.hypot
@@ -80,6 +86,18 @@ class ClientPluginWindowService : Service() {
     private var pluginDir: String = ""
     private var pluginName: String = ""
     private var entryPath: String = ""
+
+    /** P3-e：这个窗口是三种容器里的哪一种（Intent 不带 = 保持 M70 的悬浮窗行为）。 */
+    private var kind: ContainerKind = ContainerKind.FLOATING
+
+    /** 原生标题栏的当前标题（`setTitle` 可改；悬浮窗无标题栏，标题进通知）。 */
+    private var containerTitle: String = ""
+
+    /** 插件经 `postMessage` 发上来的最近几条（排障/证据用；不落盘、不进会话）。 */
+    private val hostMessages = ArrayDeque<String>()
+
+    /** 原生标题栏的标题 TextView（只有 chrome 容器有）。 */
+    private var titleView: TextView? = null
 
     /** 当前 turn 的工具调用时间（喂给 sessions 面的 nodes.time）。 */
     private val turnToolTimes = mutableListOf<Long>()
@@ -127,6 +145,21 @@ class ClientPluginWindowService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // P3-e：容器种类。Intent 里没带 = 老调用方（插件页「打开插件窗口」）→ 悬浮窗；
+        // 带了但解析不出来 → 明确失败，不悄悄换成悬浮窗（否则用户以为全屏其实是个小窗）。
+        val rawKind = intent?.getStringExtra(EXTRA_KIND)
+        val parsed = if (rawKind.isNullOrBlank()) ContainerKind.FLOATING else ContainerKind.parse(rawKind)
+        if (parsed == null) {
+            Log.w(TAG, "unknown container kind=$rawKind, stop")
+            Toast.makeText(this, "未知容器种类：$rawKind（只支持 fullscreen / floating / sheet）", Toast.LENGTH_LONG)
+                .show()
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        kind = parsed
+        containerTitle = intent?.getStringExtra(EXTRA_TITLE)?.trim()
+            ?.ifBlank { null }
+            ?: ContainerSpec.defaultTitle(kind, intent?.getStringExtra(EXTRA_PLUGIN_NAME).orEmpty())
         if (root != null && (id != pluginId || dir != pluginDir || entry != entryPath)) {
             // 同一时间只留一个插件窗口：换插件先拆旧的
             removeOverlay()
@@ -179,52 +212,33 @@ class ClientPluginWindowService : Service() {
     }
 
     private fun showView(): Boolean = try {
+        val geometry = ContainerSpec.geometry(kind)
         // 有宿主适配层（assets/client-host/adapters/<id>.js）的插件默认走「窗口可触摸 + 适配层收窗口」
         // 这一条，界面才不会被 Android 12+ 压成 0.8 透明度。
-        passThrough = !hasHostAdapter(pluginId)
-        val widthPx = dp(WIDTH_DP)
-        val heightPx = dp(HEIGHT_DP)
-        val container = OverlayRoot(this)
+        // 只有悬浮窗才谈穿透：fullscreen / sheet 是用户主动打开的整块界面，必须整窗可点。
+        passThrough = kind == ContainerKind.FLOATING && !hasHostAdapter(pluginId)
         val web = buildWebView()
+        val container = OverlayRoot(this)
+        if (geometry.chrome) container.background = chromeBackground()
+        val content: View = if (geometry.chrome) buildChrome(web) else web
         container.addView(
-            web,
+            content,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
-        val lp = WindowManager.LayoutParams(
-            widthPx,
-            heightPx,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
-            },
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                // 手势穿透模式（没有适配层的插件）才加：插件 UI 以外的触摸落到下层 App。
-                // 代价见 [applyPassThrough]：Android 12+ 会强制这种窗口 alpha=0.8。
-                (if (passThrough) WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE else 0) or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = prefs.getInt(positionKey("x"), screenWidth() - widthPx - dp(6))
-            // 默认把窗口底边抬到输入框上方：插件桌宠通常贴在窗口右下角，不然会压住输入框。
-            y = prefs.getInt(positionKey("y"), screenHeight() - heightPx - dp(80))
-            x = x.coerceIn(-widthPx + dp(60), screenWidth() - dp(60))
-            y = y.coerceIn(0, screenHeight() - dp(80))
-        }
+        val lp = buildLayoutParams(geometry)
         windowManager.addView(container, lp)
         root = container
         webView = web
         params = lp
         web.loadUrl(hostUrl())
-        Log.i(TAG, "overlay plugin=$pluginId entry=$entryPath ${widthPx}x$heightPx at ${lp.x},${lp.y} passThrough=$passThrough")
+        Log.i(
+            TAG,
+            "container kind=${kind.wire} plugin=$pluginId entry=$entryPath " +
+                "${lp.width}x${lp.height} at ${lp.x},${lp.y} passThrough=$passThrough title=$containerTitle",
+        )
         collectJob = scope.launch {
             BigFish.state.collectLatest { snapshot ->
                 track(snapshot)
@@ -235,6 +249,171 @@ class ClientPluginWindowService : Service() {
     } catch (error: Throwable) {
         Log.e(TAG, "add overlay failed: ${error.message}", error)
         false
+    }
+
+    /** 三种容器的窗口参数（几何全部来自 [ContainerSpec]，这里只做 dp→px 与标志位换算）。 */
+    private fun buildLayoutParams(geometry: xin.dshaa.core.plugins.ContainerGeometry): WindowManager.LayoutParams {
+        val screenW = screenWidth()
+        val screenH = screenHeight()
+        val floatingWidth = geometry.widthDp?.let { dp(it) }?.coerceAtMost(screenW)
+            ?: WindowManager.LayoutParams.MATCH_PARENT
+        val fixedHeightDp: Float? = geometry.heightDp
+        val floatingHeight = when {
+            geometry.anchoredBottom -> ContainerSpec.sheetHeightPx(screenH, dp(320f))
+            fixedHeightDp != null -> dp(fixedHeightDp).coerceAtMost(screenH)
+            else -> WindowManager.LayoutParams.MATCH_PARENT
+        }
+        var flags = WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+        if (geometry.dimBehind > 0f) {
+            flags = flags or WindowManager.LayoutParams.FLAG_DIM_BEHIND
+        }
+        flags = if (geometry.draggable) {
+            // 悬浮窗保持 M70 的形态：不抢焦点、可穿透/可拖。
+            flags or
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                (if (passThrough) WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE else 0) or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        } else {
+            // fullscreen / sheet：要能输入（插件设置卡里可能有输入框）、背后压暗。
+            flags or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        }
+        return WindowManager.LayoutParams(
+            floatingWidth,
+            floatingHeight,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_PHONE
+            },
+            flags,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            dimAmount = geometry.dimBehind
+            gravity = if (geometry.anchoredBottom) Gravity.BOTTOM or Gravity.START else Gravity.TOP or Gravity.START
+            if (geometry.draggable) {
+                x = prefs.getInt(positionKey("x"), screenW - floatingWidth - dp(6))
+                // 默认把窗口底边抬到输入框上方：插件桌宠通常贴在窗口右下角，不然会压住输入框。
+                y = prefs.getInt(positionKey("y"), screenH - floatingHeight - dp(80))
+                x = x.coerceIn(-floatingWidth + dp(60), screenW - dp(60))
+                y = y.coerceIn(0, screenH - dp(80))
+            } else {
+                x = 0
+                y = 0
+            }
+        }
+    }
+
+    /** fullscreen / sheet 的原生标题栏：标题 + 关闭（插件 `setTitle` 改的就是这里）。 */
+    private fun buildChrome(web: WebView): View {
+        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(CHROME_BAR_COLOR)
+            setPadding(dp(14f), dp(8f), dp(6f), dp(8f))
+        }
+        val title = TextView(this).apply {
+            text = containerTitle
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        titleView = title
+        bar.addView(title, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val close = TextView(this).apply {
+            text = "关闭"
+            setTextColor(CHROME_CLOSE_COLOR)
+            textSize = 15f
+            setPadding(dp(14f), dp(6f), dp(14f), dp(6f))
+            setOnClickListener { closeContainer("标题栏关闭") }
+        }
+        bar.addView(close, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40f)))
+        column.addView(bar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46f)))
+        column.addView(web, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        return column
+    }
+
+    private fun chromeBackground(): android.graphics.drawable.Drawable = GradientDrawable().apply {
+        setColor(CHROME_BACKGROUND_COLOR)
+        // sheet 只圆上面两角；fullscreen 圆角在屏幕外看不见，无副作用。
+        cornerRadii = floatArrayOf(dp(18f).toFloat(), dp(18f).toFloat(), dp(18f).toFloat(), dp(18f).toFloat(), 0f, 0f, 0f, 0f)
+    }
+
+    /** 改标题：chrome 容器改标题栏；悬浮窗改常驻通知（它没有标题栏）。 */
+    private fun applyTitle(raw: String) {
+        val text = raw.trim().take(80).ifBlank { ContainerSpec.defaultTitle(kind, pluginName) }
+        containerTitle = text
+        titleView?.text = text
+        if (!ContainerSpec.geometry(kind).chrome) {
+            runCatching {
+                (getSystemService(NotificationManager::class.java)).notify(NOTIFICATION_ID, buildNotification())
+            }
+        }
+        Log.i(TAG, "container title -> $text kind=${kind.wire}")
+    }
+
+    /** 关闭自己（插件按钮 / 标题栏 / 双指轻点都走这里）。 */
+    private fun closeContainer(reason: String) {
+        Log.i(TAG, "container close kind=${kind.wire} plugin=$pluginId reason=$reason")
+        stopSelf()
+    }
+
+    private fun recordHostMessage(raw: String) {
+        val text = raw.take(4000)
+        synchronized(hostMessages) {
+            hostMessages.addLast(text)
+            while (hostMessages.size > 20) hostMessages.removeFirst()
+        }
+        Log.i(TAG, "container message plugin=$pluginId: $text")
+        val action = runCatching { JSONObject(text).optString("type") }.getOrDefault("")
+        when (action) {
+            "close" -> main.post { closeContainer("插件 postMessage close") }
+            "title" -> {
+                val title = runCatching { JSONObject(text).optString("title") }.getOrDefault("")
+                main.post { applyTitle(title) }
+            }
+            "toast" -> {
+                val message = runCatching { JSONObject(text).optString("text") }.getOrDefault("")
+                main.post { Toast.makeText(this, message.take(80), Toast.LENGTH_SHORT).show() }
+            }
+            else -> Unit
+        }
+    }
+
+    /** 主题（读主题能力）：暗色/液态玻璃开关 + 一条来源说明；不编造调色板。 */
+    private fun themeJson(): String {
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        val liquid = runCatching { prefs.getString("dsh_shell", "").orEmpty() == "liquid" }.getOrDefault(false)
+        return JSONObject()
+            .put("dark", night)
+            .put("liquid", liquid)
+            .put("background", "#00000000")
+            .put("source", "uiMode+dsh_shell")
+            .toString()
+    }
+
+    /** 设备能力（走桥）：只报真实能拿到的字段；拿不到的不写。 */
+    private fun deviceJson(): String {
+        val metrics = resources.displayMetrics
+        val abi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) Build.SUPPORTED_ABIS.firstOrNull() else null
+        return JSONObject()
+            .put("sdk", Build.VERSION.SDK_INT)
+            .put("release", Build.VERSION.RELEASE)
+            .put("model", Build.MODEL)
+            .put("brand", Build.BRAND)
+            .put("abi", abi ?: "")
+            .put("density", metrics.density.toDouble())
+            .put("widthDp", (metrics.widthPixels / metrics.density).toInt())
+            .put("heightDp", (metrics.heightPixels / metrics.density).toInt())
+            .put("overlay", true)
+            .put("capabilities", JSONArray(ContainerSpec.capabilities))
+            .toString()
     }
 
     // ---- WebView / 本地文件服务 ----
@@ -292,7 +471,9 @@ class ClientPluginWindowService : Service() {
     private fun hostUrl(): String {
         val encodedEntry = android.net.Uri.encode(entryPath)
         return "https://$HOST/host/index.html?plugin=${android.net.Uri.encode(pluginId)}" +
-            "&entry=$encodedEntry&name=${android.net.Uri.encode(pluginName)}"
+            "&entry=$encodedEntry&name=${android.net.Uri.encode(pluginName)}" +
+            // P3-e：页面要知道自己在哪种容器里（`window.__DSH_CONTAINER__.kind`）。
+            "&container=${android.net.Uri.encode(kind.wire)}"
     }
 
     private fun serveAsset(relative: String): WebResourceResponse? {
@@ -440,6 +621,8 @@ class ClientPluginWindowService : Service() {
     // ---- 窗口位置 / 手势 ----
 
     private fun moveWindow(dx: Int, dy: Int) {
+        // 只有悬浮窗能拖；sheet/fullscreen 的窗口位置由容器决定。
+        if (!ContainerSpec.geometry(kind).draggable) return
         val p = params ?: return
         val w = root?.width ?: 0
         val h = root?.height ?: 0
@@ -456,6 +639,11 @@ class ClientPluginWindowService : Service() {
      * 屏幕位置不动（否则一开设置面板鲸鱼娘就跳走）。尺寸夹在屏幕内。
      */
     private fun resizeWindow(newWidth: Int, newHeight: Int) {
+        // fullscreen / sheet 的尺寸由容器决定（整屏 / 2/3 屏），插件不能改。
+        if (!ContainerSpec.geometry(kind).draggable) {
+            Log.i(TAG, "resize ignored for container ${kind.wire}: ${newWidth}x$newHeight")
+            return
+        }
         val p = params ?: return
         val view = root ?: return
         val width = newWidth.coerceIn(dp(120), screenWidth())
@@ -636,7 +824,13 @@ class ClientPluginWindowService : Service() {
     }
 
     private fun collapse() {
-        Toast.makeText(this, "插件窗口已收起（插件页可再打开）", Toast.LENGTH_SHORT).show()
+        // fullscreen / sheet 是用户主动打开的整块界面：收起时给对应文案，别再说「窗口」。
+        val text = when (kind) {
+            ContainerKind.FULLSCREEN -> "插件整页已关闭"
+            ContainerKind.SHEET -> "插件抽屉已收起"
+            ContainerKind.FLOATING -> "插件窗口已收起（插件页可再打开）"
+        }
+        Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
         stopSelf()
     }
 
@@ -791,6 +985,47 @@ class ClientPluginWindowService : Service() {
                 )
             }
         }
+
+        // ---- P3-e：容器能力（只有 5 个；见 core/plugins/ContainerSpec.capabilities） ----.
+
+        /** 这个容器的身份：kind / 插件 / 标题 / 能力表（页面据此决定要不要显示标题栏按钮）。 */
+        @JavascriptInterface
+        fun container(): String = JSONObject()
+            .put("kind", kind.wire)
+            .put("pluginId", pluginId)
+            .put("name", pluginName)
+            .put("title", containerTitle)
+            .put("capabilities", JSONArray(ContainerSpec.capabilities))
+            .toString()
+
+        /** 设标题：chrome 容器改标题栏；悬浮窗改通知文案。 */
+        @JavascriptInterface
+        fun setTitle(title: String) {
+            main.post { applyTitle(title) }
+        }
+
+        /** 关闭自己（插件内的关闭按钮/手势走这里；不需要回 App）。 */
+        @JavascriptInterface
+        fun closeSelf() {
+            main.post { closeContainer("插件 closeSelf") }
+        }
+
+        /**
+         * 发消息给宿主：原生记日志并留最近 20 条；`{"type":"close"|"title"|"toast"}` 有直接效果。
+         * **不**进会话、不触发模型轮次 —— 不做会话流内嵌（docs/187 §9.2 红线）。
+         */
+        @JavascriptInterface
+        fun postMessage(json: String) {
+            recordHostMessage(json)
+        }
+
+        /** 读主题：暗色 / 液态玻璃开关（真实来源：uiMode + `dsh_shell`）。 */
+        @JavascriptInterface
+        fun theme(): String = themeJson()
+
+        /** 设备能力（走桥）：sdk/机型/ABI/屏幕尺寸 + 本容器能力表。 */
+        @JavascriptInterface
+        fun device(): String = deviceJson()
     }
 
     /** 单指全部交给 WebView（页面里再合成鼠标事件）；双指 native 拖窗，轻点收起。 */
@@ -875,8 +1110,14 @@ class ClientPluginWindowService : Service() {
             Notification.Builder(this)
         }
         return builder
-            .setContentTitle("插件窗口")
-            .setContentText("正在运行插件自己的界面（双指拖动 / 双指轻点收起）")
+            .setContentTitle("插件容器 · ${containerTitle.ifBlank { pluginName }}")
+            .setContentText(
+                when (kind) {
+                    ContainerKind.FULLSCREEN -> "插件整页（标题栏「关闭」可退出）"
+                    ContainerKind.SHEET -> "插件抽屉（下滑区域外或标题栏可关闭）"
+                    ContainerKind.FLOATING -> "正在运行插件自己的界面（双指拖动 / 双指轻点收起）"
+                },
+            )
             .setSmallIcon(android.R.drawable.sym_def_app_icon)
             .setContentIntent(pending)
             .setOngoing(true)
@@ -890,6 +1131,12 @@ class ClientPluginWindowService : Service() {
         const val EXTRA_PLUGIN_NAME = "plugin_name"
         const val EXTRA_ENTRY = "plugin_entry"
 
+        /** P3-e：容器种类（`fullscreen` / `floating` / `sheet`）；不带 = floating。 */
+        const val EXTRA_KIND = "container_kind"
+
+        /** P3-e：原生标题栏的初始标题（插件之后还能 `setTitle` 改）。 */
+        const val EXTRA_TITLE = "container_title"
+
         private const val TAG = "DshClientHost"
         private const val WEB_TAG = "DshClientHostWeb"
         private const val BRIDGE_NAME = "DSHNative"
@@ -897,9 +1144,12 @@ class ClientPluginWindowService : Service() {
         private const val CHANNEL_ID = "dsh-client-host"
         private const val NOTIFICATION_ID = 4010
 
-        private const val WIDTH_DP = 300f
-        private const val HEIGHT_DP = 380f
         private const val KV_MAX_CHARS = 262_144
+
+        /** 标题栏配色（半透明深色，深浅主题下都能看清；插件自己的页面照旧）。 */
+        private const val CHROME_BAR_COLOR = 0xF21A1D23.toInt()
+        private const val CHROME_BACKGROUND_COLOR = 0xFF14171C.toInt()
+        private const val CHROME_CLOSE_COLOR = 0xFFFF8A8A.toInt()
 
         @Volatile
         private var running = false

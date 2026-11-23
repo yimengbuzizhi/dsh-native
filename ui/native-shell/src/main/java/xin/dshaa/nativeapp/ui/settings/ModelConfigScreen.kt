@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardActions
@@ -61,12 +66,12 @@ import xin.dshaa.core.llm.LlmProviders
 import xin.dshaa.ui.design.component.CollapsibleSettingsCard
 import xin.dshaa.ui.design.component.MiniChip
 import xin.dshaa.ui.design.component.SettingsCard
-import xin.dshaa.ui.design.component.SettingsInfoBanner
 import xin.dshaa.ui.design.component.SettingsSectionHeader
 import xin.dshaa.ui.design.component.SettingsSelectorRow
 import xin.dshaa.ui.design.component.SettingsTextField
 import xin.dshaa.ui.design.component.SettingsSwitchRow
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 
 /**
  * 模型与参数配置（独立页）——照 Operit `ModelConfigScreen` 的页面拆分与字段顺序：
@@ -143,9 +148,9 @@ fun ModelConfigScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {
@@ -225,7 +230,6 @@ fun ModelConfigScreen(
             SettingsCard {
                 SettingsSelectorRow(
                     title = "API提供商",
-                    subtitle = "点击选择API提供商",
                     value = provider.name,
                     onClick = { showProviderDialog = true },
                 )
@@ -238,16 +242,11 @@ fun ModelConfigScreen(
                 }
                 SettingsSelectorRow(
                     title = "模型通道",
-                    subtitle = "默认按 API 提供商协议；也可选插件注册的供应商",
                     value = channelLabel,
                     onClick = { showChannelDialog = true },
                 )
-                if (provider.id == SettingsStore.PROVIDER_CUSTOM) {
-                    SettingsInfoBanner("自定义端点：任意 Anthropic Messages 兼容服务，路径按 {base}/v1/messages 拼。")
-                }
                 SettingsTextField(
                     title = "API端点",
-                    subtitle = "例如: https://api.deepseek.com/anthropic",
                     value = settings.baseUrl,
                     onValueChange = { settings.setBaseUrl(it.replace("\n", "").replace(" ", "")) },
                     placeholder = SettingsStore.defaultBaseUrl(provider.id),
@@ -259,7 +258,7 @@ fun ModelConfigScreen(
                 )
                 SettingsTextField(
                     title = "API密钥",
-                    subtitle = if (settings.apiKey.isBlank()) "未设置密钥，可直接输入" else "已设置，点击右侧眼睛显示",
+                    subtitle = if (settings.apiKey.isBlank()) "未设置" else "已设置",
                     value = settings.apiKey,
                     onValueChange = { settings.setApiKey(it.replace("\n", "").replace(" ", "")) },
                     placeholder = "sk-…",
@@ -278,21 +277,19 @@ fun ModelConfigScreen(
                     style = MaterialTheme.typography.labelMedium,
                     color = c.sub,
                 )
-                Text(
-                    if (settings.enabledModels.isEmpty()) {
-                        "还没有模型：点下面「从供应商拉取模型列表」，勾选要用的模型。"
-                    } else {
-                        "点一行切换当前模型；输入条模型浮层只列这些（共 ${settings.enabledModels.size} 个）。"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = c.faint,
-                )
+                if (settings.enabledModels.isEmpty()) {
+                    Text(
+                        "还没有模型：点下面「从供应商拉取模型列表」，勾选要用的模型。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = c.faint,
+                    )
+                }
                 val availableModels = settings.enabledModels
                 Column(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .background(c.surfaceAlt.copy(alpha = 0.45f)),
+                        .background(c.surfaceAlt.wash(0.45f)),
                 ) {
                     availableModels.forEach { m ->
                         val selected = m == settings.model
@@ -351,21 +348,11 @@ fun ModelConfigScreen(
                 }
                 SettingsSwitchRow(
                     title = "模型支持识图",
-                    subtitle = if (settings.visionEnabled) {
-                        "图片直接发给模型（read_image / 聊天发图都走这条）"
-                    } else {
-                        "关闭后 read_image 与聊天发图都会被拒；打开由你自己声明模型能力"
-                    },
                     checked = settings.visionEnabled,
                     onCheckedChange = { settings.setVisionEnabled(it) },
                 )
                 SettingsSwitchRow(
                     title = "启用 DeepSeek 网络搜索",
-                    subtitle = if (settings.webSearchEnabled) {
-                        "模型可调用 web_search（服务端搜索，一次搜索一个模型轮次）"
-                    } else {
-                        "已隐藏 web_search：请求里不给这个工具，模型不会再联网"
-                    },
                     checked = settings.webSearchEnabled,
                     onCheckedChange = { settings.setWebSearchEnabled(it) },
                 )
@@ -384,17 +371,11 @@ fun ModelConfigScreen(
             CollapsibleSettingsCard(
                 icon = Icons.Rounded.Tune,
                 title = "模型参数设置",
-                subtitle = "生成参数",
                 expanded = paramsExpanded,
                 onToggle = { paramsExpanded = !paramsExpanded },
             ) {
                 SettingsTextField(
                     title = "上下文窗口 tokens",
-                    subtitle = if (settings.contextWindow > 0) {
-                        "自动压缩按它算触发线（窗口 × 0.8）；deepseek-flash 默认 1048576"
-                    } else {
-                        "留空/0 = 未知：不自动压缩，仍可手动 /compact"
-                    },
                     value = contextWindowText,
                     onValueChange = { v -> contextWindowText = v.filter { it.isDigit() }.take(8) },
                     onFocusChanged = { focused ->
@@ -420,21 +401,17 @@ fun ModelConfigScreen(
                 )
                 SettingsSelectorRow(
                     title = "思考强度",
-                    subtitle = when (settings.reasoningEffort) {
-                        "off" -> "关闭：thinking=disabled、不发 output_config（回答快、不思考）"
-                        else -> "reasoning effort（output_config.effort）"
-                    },
                     value = reasoningEffortLabel(settings.reasoningEffort),
                     onClick = { effortPicker = true },
                 )
                 if (effortPicker) {
                     AlertDialog(
                         onDismissRequest = { effortPicker = false },
-                        containerColor = c.surface,
+                        containerColor = c.panel,
                         title = { Text("思考强度", fontWeight = FontWeight.SemiBold) },
                         text = {
                             Column {
-                                REASONING_CHOICES.forEach { (id, name, desc) ->
+                                REASONING_CHOICES.forEach { (id, name) ->
                                     val selected = settings.reasoningEffort == id
                                     Row(
                                         Modifier
@@ -447,16 +424,13 @@ fun ModelConfigScreen(
                                             .padding(vertical = 10.dp, horizontal = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Column(Modifier.weight(1f)) {
-                                            Text(
-                                                name,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                                color = c.text,
-                                            )
-                                            Spacer(Modifier.height(2.dp))
-                                            Text(desc, style = MaterialTheme.typography.bodySmall, color = c.sub)
-                                        }
+                                        Text(
+                                            name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = c.text,
+                                            modifier = Modifier.weight(1f),
+                                        )
                                         if (selected) {
                                             Icon(Icons.Rounded.Check, null, tint = c.brandBright, modifier = Modifier.size(18.dp))
                                         }
@@ -477,17 +451,9 @@ fun ModelConfigScreen(
             CollapsibleSettingsCard(
                 icon = Icons.Rounded.Dns,
                 title = "高级设置",
-                subtitle = "请求与通道",
                 expanded = advancedExpanded,
                 onToggle = { advancedExpanded = !advancedExpanded },
             ) {
-                SettingsInfoBanner(
-                    if (settings.protocol == "openai") {
-                        "OpenAI Chat Completions：POST {base}/v1/chat/completions，Authorization: Bearer，流式 SSE。"
-                    } else {
-                        "Anthropic Messages：POST {base}/v1/messages，x-api-key，流式 SSE。"
-                    },
-                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MiniChip(if (settings.protocol == "openai") "chat/completions" else "anthropic-version: 2023-06-01")
                     Spacer(Modifier.width(8.dp))
@@ -520,7 +486,7 @@ fun ModelConfigScreen(
                                 showProviderDialog = false
                             },
                             shape = RoundedCornerShape(10.dp),
-                            color = if (selected) c.brand.copy(alpha = 0.12f) else c.surfaceAlt.copy(alpha = 0.6f),
+                            color = if (selected) c.brand.copy(alpha = 0.12f) else c.surfaceAlt.wash(0.6f),
                         ) {
                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
@@ -539,7 +505,7 @@ fun ModelConfigScreen(
                 }
             },
             confirmButton = { TextButton(onClick = { showProviderDialog = false }) { Text("关闭") } },
-            containerColor = c.surface,
+            containerColor = c.panel,
         )
     }
 
@@ -564,7 +530,7 @@ fun ModelConfigScreen(
                                 showChannelDialog = false
                             },
                             shape = RoundedCornerShape(10.dp),
-                            color = if (selected) c.brand.copy(alpha = 0.12f) else c.surfaceAlt.copy(alpha = 0.6f),
+                            color = if (selected) c.brand.copy(alpha = 0.12f) else c.surfaceAlt.wash(0.6f),
                         ) {
                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
@@ -582,15 +548,10 @@ fun ModelConfigScreen(
                             }
                         }
                     }
-                    Text(
-                        "插件供应商只在插件启用时出现；停用后自动回落到协议通道。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = c.faint,
-                    )
                 }
             },
             confirmButton = { TextButton(onClick = { showChannelDialog = false }) { Text("关闭") } },
-            containerColor = c.surface,
+            containerColor = c.panel,
         )
     }
 
@@ -607,7 +568,7 @@ fun ModelConfigScreen(
         }
         AlertDialog(
             onDismissRequest = { fetchedModels = null },
-            containerColor = c.surface,
+            containerColor = c.panel,
             title = {
                 Text(
                     "选择要启用的模型（已选 ${selection.size}/${models.size}）",
@@ -621,7 +582,7 @@ fun ModelConfigScreen(
                         .verticalScroll(rememberScrollState()),
                 ) {
                     Text(
-                        "勾选的模型会出现在输入条的模型浮层里；没勾的不会出现。当前模型：${settings.model}（一律保留）。",
+                        "当前模型：${settings.model}（一律保留）。",
                         style = MaterialTheme.typography.labelSmall,
                         color = c.faint,
                     )
@@ -706,14 +667,13 @@ private fun reasoningEffortLabel(value: String): String = when (value) {
 }
 
 /**
- * 思考强度四选一（上游 dsh-llm-deepseek 的 REASONING_EFFORTS 原文，说明也照抄）：
- * id / 显示名 / 说明。默认 high。
+ * 思考强度四选一（上游 dsh-llm-deepseek 的 REASONING_EFFORTS 原文）：id / 显示名。默认 high。
  */
 private val REASONING_CHOICES = listOf(
-    Triple("off", "关闭（Off）", "简单任务不需要思考：不发 output_config，最快"),
-    Triple("low", "低（Low）", "日常任务 / 对延迟敏感时用"),
-    Triple("high", "高（High，默认）", "大多数任务的默认平衡档"),
-    Triple("max", "最高（Max）", "最难、质量优先的任务才用"),
+    "off" to "关闭（Off）",
+    "low" to "低（Low）",
+    "high" to "高（High，默认）",
+    "max" to "最高（Max）",
 )
 
 private fun requestUrl(base: String): String {

@@ -319,13 +319,24 @@ class JsCallbackLlmProvider(
         return input.toString()
     }
 
-    /** JS input/inputTokens is total input, with cache fields treated as subsets like TokenUsage. */
-    private fun JsonObject.tokenUsage(): TokenUsage = TokenUsage(
-        inputTokens = (int("input") ?: int("inputTokens"))?.takeIf { it >= 0 },
-        outputTokens = (int("output") ?: int("outputTokens"))?.takeIf { it >= 0 },
-        cacheReadInputTokens = int("cacheReadInputTokens")?.takeIf { it >= 0 },
-        cacheCreationInputTokens = int("cacheCreationInputTokens")?.takeIf { it >= 0 },
-    )
+    /**
+     * 插件 `usage` 的 `input` / `inputTokens` 是**总输入**（含缓存），缓存字段是它的子集；
+     * 归一成 DSH 口径 = 未缓存输入：总输入 − 缓存读 − 缓存写（不给出时按 0）。
+     */
+    private fun JsonObject.tokenUsage(): TokenUsage {
+        val totalInput = (int("input") ?: int("inputTokens"))?.takeIf { it >= 0 }
+        val cacheRead = int("cacheReadInputTokens")?.takeIf { it >= 0 }
+        val cacheCreation = int("cacheCreationInputTokens")?.takeIf { it >= 0 }
+        return TokenUsage(
+            inputTokens = totalInput?.let { total ->
+                (total.toLong() - (cacheRead ?: 0) - (cacheCreation ?: 0))
+                    .coerceAtLeast(0).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            },
+            outputTokens = (int("output") ?: int("outputTokens"))?.takeIf { it >= 0 },
+            cacheReadInputTokens = cacheRead,
+            cacheCreationInputTokens = cacheCreation,
+        )
+    }
 
     private fun JsonObject.string(key: String): String? = runCatching {
         this[key]?.jsonPrimitive?.contentOrNull

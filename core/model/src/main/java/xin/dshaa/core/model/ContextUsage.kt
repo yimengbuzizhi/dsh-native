@@ -18,9 +18,19 @@ data class ContextUsage(
     val startedAt: Long = 0L,
     val updatedAt: Long = 0L,
 ) {
-    /** 按估算权重分配真实总数；使用最大余数法，三段之和始终等于实际输入。 */
+    /**
+     * 整份提示词的实际 token = 未缓存输入 + 缓存读 + 缓存写（DSH 口径）。
+     * [inputTokens] 只含未缓存部分，所以上下文占用/分段比例必须用这个，否则缓存命中时会显示成
+     * 「只用了几百 token」。
+     */
+    val totalInputTokens: Int? get() = inputTokens?.let { input ->
+        (input.toLong() + (cacheReadTokens ?: 0) + (cacheCreationTokens ?: 0))
+            .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    }
+
+    /** 按估算权重分配真实总数；使用最大余数法，三段之和始终等于实际输入（未缓存 + 缓存读/写）。 */
     fun allocatedBreakdown(): List<Int> {
-        val total = inputTokens ?: return listOf(estimatedSystem, estimatedTools, estimatedMessages)
+        val total = totalInputTokens ?: return listOf(estimatedSystem, estimatedTools, estimatedMessages)
         val weights = listOf(estimatedSystem, estimatedTools, estimatedMessages).map { it.coerceAtLeast(0).toLong() }
         val sum = weights.sum()
         if (sum == 0L) return listOf(0, 0, total.coerceAtLeast(0))

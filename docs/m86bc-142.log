@@ -1,0 +1,158 @@
+PASS baseline pages pages=22
+PASS baseline unknown unknown=[]
+PASS baseline duplicates duplicates=[]
+PASS baseline catalogMatch catalogMatch=True
+PASS baseline unowned unowned=['Plugins', 'Settings']
+== builtin.fs ==
+PASS builtin.fs disabled disabled=['builtin.fs']
+PASS builtin.fs pages-off Workspace=False
+PASS builtin.fs unknown unknown=[]
+PASS builtin.fs duplicates duplicates=[]
+PASS builtin.fs entry-gone chat content-desc 工作区
+PASS builtin.fs blocked:Workspace routes=[]
+PASS builtin.fs pages-on Workspace=True
+PASS builtin.fs route:Workspace want=page=Workspace sub=-
+== builtin.shell ==
+PASS builtin.shell disabled disabled=['builtin.shell']
+PASS builtin.shell pages-off Terminal=False
+PASS builtin.shell unknown unknown=[]
+PASS builtin.shell duplicates duplicates=[]
+PASS builtin.shell entry-gone:Terminal entry=终端
+PASS builtin.shell blocked:Terminal routes=[]
+PASS builtin.shell pages-on Terminal=True
+PASS builtin.shell route:Terminal want=page=Terminal sub=-
+== builtin.jobs ==
+PASS builtin.jobs disabled disabled=['builtin.jobs']
+PASS builtin.jobs pages-off Jobs=False
+PASS builtin.jobs unknown unknown=[]
+PASS builtin.jobs duplicates duplicates=[]
+PASS builtin.jobs entry-gone:Jobs entry=后台任务
+PASS builtin.jobs blocked:Jobs routes=[]
+PASS builtin.jobs pages-on Jobs=True
+PASS builtin.jobs route:Jobs want=page=Jobs sub=-
+== builtin.agent ==
+PASS builtin.agent disabled disabled=['builtin.agent']
+PASS builtin.agent pages-off Agents=False
+PASS builtin.agent unknown unknown=[]
+PASS builtin.agent duplicates duplicates=[]
+PASS builtin.agent entry-gone:Agents entry=子代理
+PASS builtin.agent blocked:Agents routes=[]
+PASS builtin.agent pages-on Agents=True
+PASS builtin.agent route:Agents want=page=Agents sub=-
+== builtin.skill ==
+PASS builtin.skill disabled disabled=['builtin.skill']
+PASS builtin.skill pages-off Skills=False
+PASS builtin.skill unknown unknown=[]
+PASS builtin.skill duplicates duplicates=[]
+PASS builtin.skill entry-gone:Skills entry=技能
+PASS builtin.skill blocked:Skills routes=[]
+PASS builtin.skill pages-on Skills=True
+PASS builtin.skill route:Skills want=page=Settings sub=Skills
+== builtin.memory ==
+PASS builtin.memory disabled disabled=['builtin.memory']
+PASS builtin.memory pages-off Memory=False
+PASS builtin.memory unknown unknown=[]
+PASS builtin.memory duplicates duplicates=[]
+PASS builtin.memory entry-gone:Memory entry=记忆库
+PASS builtin.memory blocked:Memory routes=[]
+PASS builtin.memory pages-on Memory=True
+PASS builtin.memory route:Memory want=page=Memory sub=-
+== builtin.page.sessions ==
+PASS builtin.page.sessions disabled disabled=['builtin.page.sessions']
+PASS builtin.page.sessions pages-off Sessions=False
+PASS builtin.page.sessions unknown unknown=[]
+PASS builtin.page.sessions duplicates duplicates=[]
+PASS builtin.page.sessions entry-gone:Sessions entry=对话历史管理
+PASS builtin.page.sessions blocked:Sessions routes=[]
+PASS builtin.page.sessions pages-on Sessions=True
+PASS builtin.page.sessions route:Sessions want=page=Sessions sub=-
+== builtin.page.workspaces ==
+PASS builtin.page.workspaces disabled disabled=['builtin.page.workspaces']
+PASS builtin.page.workspaces pages-off Workspaces=False
+PASS builtin.page.workspaces unknown unknown=[]
+PASS builtin.page.workspaces duplicates duplicates=[]
+PASS builtin.page.workspaces entry-gone:Workspaces entry=工作区管理
+PASS builtin.page.workspaces blocked:Workspaces routes=[]
+PASS builtin.page.workspaces pages-on Workspaces=True
+PASS builtin.page.workspaces route:Workspaces want=page=Settings sub=Workspaces
+== builtin.page.device ==
+PASS builtin.page.device disabled disabled=['builtin.page.device']
+PASS builtin.page.device pages-off VirtualScreen=False,Accessibility=False,Permissions=False
+PASS builtin.page.device unknown unknown=[]
+PASS builtin.page.device duplicates duplicates=[]
+PASS builtin.page.device entry-gone:VirtualScreen entry=虚拟屏
+PASS builtin.page.device entry-gone:Accessibility entry=无障碍
+PASS builtin.page.device entry-gone:Permissions entry=权限与能力
+PASS builtin.page.device blocked:VirtualScreen routes=[]
+PASS builtin.page.device blocked:Accessibility routes=[]
+PASS builtin.page.device blocked:Permissions routes=[]
+PASS builtin.page.device pages-on VirtualScreen=True,Accessibility=True,Permissions=True
+PASS builtin.page.device route:VirtualScreen want=page=VirtualScreen sub=-
+PASS builtin.page.device route:Accessibility want=page=Accessibility sub=-
+PASS builtin.page.device route:Permissions want=page=Settings sub=Permissions
+== builtin.page.packages ==
+PASS builtin.page.packages disabled disabled=['builtin.page.packages']
+PASS builtin.page.packages pages-off Packages=False
+PASS builtin.page.packages unknown unknown=[]
+PASS builtin.page.packages duplicates duplicates=[]
+PASS builtin.page.packages entry-gone:Packages entry=包管理
+PASS builtin.page.packages blocked:Packages routes=[]
+PASS builtin.page.packages pages-on Packages=True
+PASS builtin.page.packages route:Packages want=page=Packages sub=-
+== builtin.page.model ==
+PASS builtin.page.model disabled disabled=['builtin.page.model']
+PASS builtin.page.model pages-off ModelConfig=False
+PASS builtin.page.model unknown unknown=[]
+PASS builtin.page.model duplicates duplicates=[]
+PASS builtin.page.model entry-gone:ModelConfig entry=模型与参数配置
+PASS builtin.page.model blocked:ModelConfig routes=[]
+PASS builtin.page.model pages-on ModelConfig=True
+PASS builtin.page.model route:ModelConfig want=page=Settings sub=ModelConfig
+== builtin.page.assistant ==
+PASS builtin.page.assistant disabled disabled=['builtin.page.assistant']
+PASS builtin.page.assistant pages-off Assistant=False,Behavior=False
+PASS builtin.page.assistant unknown unknown=[]
+PASS builtin.page.assistant duplicates duplicates=[]
+PASS builtin.page.assistant entry-gone:Assistant entry=助手配置
+PASS builtin.page.assistant entry-gone:Behavior entry=显示与行为
+PASS builtin.page.assistant blocked:Assistant routes=[]
+PASS builtin.page.assistant blocked:Behavior routes=[]
+PASS builtin.page.assistant pages-on Assistant=True,Behavior=True
+PASS builtin.page.assistant route:Assistant want=page=Settings sub=Assistant
+PASS builtin.page.assistant route:Behavior want=page=Settings sub=Behavior
+== builtin.page.data ==
+PASS builtin.page.data disabled disabled=['builtin.page.data']
+PASS builtin.page.data pages-off Backup=False,DataMigration=False,Privacy=False
+PASS builtin.page.data unknown unknown=[]
+PASS builtin.page.data duplicates duplicates=[]
+PASS builtin.page.data entry-gone:Backup entry=备份与恢复
+PASS builtin.page.data entry-gone:DataMigration entry=旧版数据导入
+PASS builtin.page.data entry-gone:Privacy entry=隐私与数据清理
+PASS builtin.page.data blocked:Backup routes=[]
+PASS builtin.page.data blocked:DataMigration routes=[]
+PASS builtin.page.data blocked:Privacy routes=[]
+PASS builtin.page.data pages-on Backup=True,DataMigration=True,Privacy=True
+PASS builtin.page.data route:Backup want=page=Settings sub=Backup
+PASS builtin.page.data route:DataMigration want=page=Settings sub=DataMigration
+PASS builtin.page.data route:Privacy want=page=Settings sub=Privacy
+== builtin.page.remote ==
+PASS builtin.page.remote disabled disabled=['builtin.page.remote']
+PASS builtin.page.remote pages-off RemoteDsh=False
+PASS builtin.page.remote unknown unknown=[]
+PASS builtin.page.remote duplicates duplicates=[]
+PASS builtin.page.remote entry-gone:RemoteDsh entry=远程 DSH
+PASS builtin.page.remote blocked:RemoteDsh routes=[]
+PASS builtin.page.remote pages-on RemoteDsh=True
+PASS builtin.page.remote route:RemoteDsh want=page=Settings sub=RemoteDsh
+== builtin.page.about ==
+PASS builtin.page.about disabled disabled=['builtin.page.about']
+PASS builtin.page.about pages-off About=False
+PASS builtin.page.about unknown unknown=[]
+PASS builtin.page.about duplicates duplicates=[]
+PASS builtin.page.about entry-gone:About entry=关于 DSH 原生版
+PASS builtin.page.about blocked:About routes=[]
+PASS builtin.page.about pages-on About=True
+PASS builtin.page.about route:About want=page=Settings sub=About
+PASS final all-enabled
+PASS final disabled-empty disabled=[]
+RESULT total=142 passed=142 failed=0

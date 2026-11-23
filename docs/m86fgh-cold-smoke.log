@@ -1,0 +1,8 @@
+﻿--------- beginning of main
+11-14 12:29:19.260  8700  8700 I DshBoot : activityStart elapsedRealtimeMs=313660392
+11-14 12:29:19.999  8700  8700 I DshBoot : loading:ea2341debc7eb5e5cd7b747f3e0c64e979513e36fc327ed94d85e97f883883f9 drawCallback=frameCommit elapsedMs=740 presentationConfirmed=false
+11-14 12:29:20.000  8700  8700 I DshBoot : loadingFirstDraw elapsedMs=741
+11-14 12:29:20.383  8700  8700 I DshBoot : coreReady elapsedMs=1124
+11-14 12:29:21.272  8700  8700 I DshBoot : shell drawCallback=frameCommit elapsedMs=2014 presentationConfirmed=false
+11-14 12:29:21.273  8700  8700 I DshBoot : shellFirstDraw elapsedMs=2014
+11-14 12:29:21.273  8700  8700 I DshBoot : reportFullyDrawn elapsedMs=2014

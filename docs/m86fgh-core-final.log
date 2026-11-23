@@ -1,0 +1,93 @@
+﻿> Task :core:attachment:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:llm:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:plugins:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:session:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:attachment:preBuild UP-TO-DATE
+> Task :core:tools:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:engine:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:skill:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:protocol:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:jobs:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:model:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:tools:processResources NO-SOURCE
+> Task :core:session:processResources NO-SOURCE
+> Task :core:llm:processResources NO-SOURCE
+> Task :core:attachment:preDebugBuild UP-TO-DATE
+> Task :core:protocol:processResources NO-SOURCE
+> Task :core:engine:processResources NO-SOURCE
+> Task :core:attachment:generateDebugResValues UP-TO-DATE
+> Task :core:attachment:generateDebugResources UP-TO-DATE
+> Task :core:engine:processTestResources NO-SOURCE
+> Task :core:session:processTestResources UP-TO-DATE
+> Task :core:attachment:packageDebugResources UP-TO-DATE
+> Task :core:attachment:parseDebugLocalResources UP-TO-DATE
+> Task :core:attachment:generateDebugRFile UP-TO-DATE
+> Task :core:attachment:javaPreCompileDebug UP-TO-DATE
+> Task :core:attachment:preDebugUnitTestBuild UP-TO-DATE
+> Task :core:model:compileKotlin UP-TO-DATE
+> Task :core:skill:compileKotlin UP-TO-DATE
+> Task :core:jobs:compileKotlin UP-TO-DATE
+> Task :core:jobs:compileJava NO-SOURCE
+> Task :core:model:compileJava NO-SOURCE
+> Task :core:skill:compileJava NO-SOURCE
+> Task :core:model:processResources NO-SOURCE
+> Task :core:skill:processResources NO-SOURCE
+> Task :core:jobs:processResources NO-SOURCE
+> Task :core:skill:classes UP-TO-DATE
+> Task :core:model:classes UP-TO-DATE
+> Task :core:jobs:classes UP-TO-DATE
+> Task :core:attachment:generateDebugUnitTestStubRFile UP-TO-DATE
+> Task :core:model:jar UP-TO-DATE
+> Task :core:skill:jar UP-TO-DATE
+> Task :core:jobs:jar UP-TO-DATE
+> Task :core:attachment:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :core:plugins:processResources NO-SOURCE
+> Task :core:plugins:processTestResources NO-SOURCE
+> Task :core:protocol:compileKotlin UP-TO-DATE
+> Task :core:protocol:compileJava NO-SOURCE
+> Task :core:protocol:classes UP-TO-DATE
+> Task :core:protocol:jar UP-TO-DATE
+> Task :core:llm:compileKotlin UP-TO-DATE
+> Task :core:tools:compileKotlin UP-TO-DATE
+> Task :core:tools:compileJava NO-SOURCE
+> Task :core:llm:compileJava NO-SOURCE
+> Task :core:llm:classes UP-TO-DATE
+> Task :core:tools:classes UP-TO-DATE
+> Task :core:llm:jar UP-TO-DATE
+> Task :core:tools:jar UP-TO-DATE
+> Task :core:attachment:compileDebugKotlin
+> Task :core:attachment:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:attachment:bundleLibRuntimeToJarDebug
+> Task :core:attachment:processDebugJavaRes UP-TO-DATE
+> Task :core:attachment:bundleLibCompileToJarDebug
+> Task :core:plugins:compileKotlin
+> Task :core:plugins:compileJava NO-SOURCE
+> Task :core:plugins:classes UP-TO-DATE
+> Task :core:plugins:jar
+> Task :core:attachment:compileDebugUnitTestKotlin
+> Task :core:attachment:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :core:attachment:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :core:session:compileKotlin
+> Task :core:session:compileJava NO-SOURCE
+> Task :core:session:classes UP-TO-DATE
+> Task :core:plugins:compileTestKotlin
+> Task :core:plugins:compileTestJava NO-SOURCE
+> Task :core:plugins:testClasses UP-TO-DATE
+> Task :core:session:jar
+> Task :core:attachment:testDebugUnitTest
+> Task :core:session:compileTestKotlin
+> Task :core:session:compileTestJava NO-SOURCE
+> Task :core:session:testClasses UP-TO-DATE
+> Task :core:plugins:test
+> Task :core:session:test
+> Task :core:engine:compileKotlin
+> Task :core:engine:compileJava NO-SOURCE
+> Task :core:engine:classes UP-TO-DATE
+> Task :core:engine:jar UP-TO-DATE
+> Task :core:engine:compileTestKotlin
+> Task :core:engine:compileTestJava NO-SOURCE
+> Task :core:engine:testClasses UP-TO-DATE
+> Task :core:engine:test
+
+BUILD SUCCESSFUL in 13s
+40 actionable tasks: 16 executed, 24 up-to-date

@@ -32,6 +32,7 @@ import xin.dshaa.nativeapp.ui.settings.AboutScreen
 import xin.dshaa.nativeapp.ui.settings.AssistantScreen
 import xin.dshaa.nativeapp.ui.settings.BackupScreen
 import xin.dshaa.nativeapp.ui.settings.BehaviorScreen
+import xin.dshaa.nativeapp.ui.settings.AppearanceScreen
 import xin.dshaa.nativeapp.ui.settings.DataMigrationScreen
 import xin.dshaa.nativeapp.ui.settings.ModelConfigScreen
 import xin.dshaa.nativeapp.ui.settings.PrivacyScreen
@@ -353,9 +354,20 @@ fun NativePageDispatch(
                 BuiltinPageIds.Assistant -> AssistantScreen(
                     settings = vm.settings,
                     plugins = vm.pluginsUi,
+                    promptCoreEnabled = vm.builtinPromptCoreEnabled(),
+                    onOpenPromptCore = {
+                        // docs/190-E：去插件页打开「提示词：鲸歌内置规则」。先关二级页再进一级页，
+                        // 返回栈按 A 的新策略记录（Plugins → 返回 → 设置 → 返回 → 聊天）。
+                        nav.closeSub()
+                        nav.go(BuiltinPageIds.Plugins)
+                    },
                     onBack = nav.closeSub,
                 )
                 BuiltinPageIds.Behavior -> BehaviorScreen(
+                    settings = vm.settings,
+                    onBack = nav.closeSub,
+                )
+                BuiltinPageIds.Appearance -> AppearanceScreen(
                     settings = vm.settings,
                     onBack = nav.closeSub,
                 )
@@ -429,6 +441,7 @@ fun NativePageDispatch(
                     onOpenModelConfig = { nav.openSub(BuiltinPageIds.ModelConfig) },
                     onOpenAssistant = { nav.openSub(BuiltinPageIds.Assistant) },
                     onOpenBehavior = { nav.openSub(BuiltinPageIds.Behavior) },
+                    onOpenAppearance = { nav.openSub(BuiltinPageIds.Appearance) },
                     onOpenPrivacy = { nav.openSub(BuiltinPageIds.Privacy) },
                     onOpenBackup = { nav.openSub(BuiltinPageIds.Backup) },
                     onOpenMigration = { nav.openSub(BuiltinPageIds.DataMigration) },

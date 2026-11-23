@@ -249,12 +249,96 @@ interface NativeShellHost {
 
     fun setPluginMiddlewareEnabled(enabled: Boolean)
 
-    // ── M88-E：AI 全控制插件（审计 / 开关 / 撤销） ─────────────────────────────────
+    // ── docs/185 P2 / docs/188 P4：Node 插件宿主（实验） ───────────────────────────
 
-    /** 设置里的「AI 全控制插件」总开关（关 = grant/revoke/config/role 直接拒绝）。 */
-    val aiPluginControlEnabled: Boolean
+    /** 插件页 Node 分区的开关（默认关）。 */
+    val nodePluginHostEnabled: Boolean
 
-    fun setAiPluginControl(enabled: Boolean)
+    /** 宿主状态人话版：`解析运行时 42%` / `已就绪 · 4 个工具 · v26.4.0` / `启动失败：…`。 */
+    val nodeHostStateText: String
+
+    /** P4：结构化状态（OFF/IDLE/EXTRACTING/STARTING/READY/FAILED/STOPPED + 失败提示）。 */
+    val nodeHostStatus: NodeHostStatusUi
+
+    fun setNodePluginHostEnabled(enabled: Boolean)
+
+    /** 宿主里已经加载的模块 + 各自注册的工具（就绪后才有内容）。 */
+    val nodeHostPlugins: List<NodeHostPluginUi>
+
+    /** P4：清单里登记过的 Node 插件（宿主关着也要显示，不能一片空白）。 */
+    val nodeHostManifest: List<NodeHostManifestUi>
+
+    /** 宿主日志尾巴（最近 N 行，排障用）。 */
+    val nodeHostLogs: List<String>
+
+    /** docs/190-C：全局启动小卡片的进度（非模态；READY 1s 后自动隐藏，FAILED 保持）。 */
+    val nodeBootProgress: NodeBootProgressUi
+
+    /** docs/190-C：「重试」（宿主关着时先开开关，开着就直接重载）。 */
+    fun retryNodeBoot()
+
+    /** docs/190-C：「取消启动」= 关掉宿主开关（进程停掉、工具名收回）。 */
+    fun stopNodeBoot()
+
+    /** docs/190-C：「收起」只隐藏小卡片，不改宿主状态。 */
+    fun dismissNodeBoot()
+
+    /** 重启宿主，重新按清单加载插件（也是失败后的「重试启动」）。 */
+    fun reloadNodeHost()
+
+    /** 导入一个 Node 插件 zip（解到 `data/plugins/`、写清单、重启宿主）。 */
+    fun importNodePlugin(uri: Uri)
+
+    // ── docs/188 P4：统一导入（识别归属 + 可改 + 迁移） ─────────────────────────────
+
+    /** 待确认的导入（null = 没有对话框）。 */
+    val pluginImportDraft: PluginImportDraftUi?
+
+    /** 原生 / Node 两侧当前的导入上限事实（导入页原样展示）。 */
+    val pluginImportLimitsText: String
+
+    /** 选完 zip 先识别，不直接安装；确认对话框据此显示「原生 / Node」与迁移风险。 */
+    fun beginPluginImport(uri: Uri)
+
+    /** 按用户确认的归属安装；`native` / `node` 以外直接拒绝。 */
+    fun confirmPluginImport(ownership: String)
+
+    fun cancelPluginImport()
+
+    /**
+     * docs/187 P3-c：斜杠输入框命中 Node 插件命令后转发给宿主执行。
+     *
+     * 返回 false = 没这个命令/宿主没就绪（调用方已经拿到一句人话错误），true = 已受理（异步执行，
+     * 结果走 command notice）。权限与审计沿用 P2 的 `node-audit.jsonl`。
+     */
+    fun invokeNodeCommand(name: String, rawInput: String): Boolean
+
+    // ── docs/187 P3-d：预设（纯数据：模型 + 提示词段 + 工具 + 权限） ─────────────────
+
+    /**
+     * 角色页「预设」区的可选列表。预设落在 `files/node/data/presets.json`，
+     * **不进 session.v4**；套用只收窄选择，不改插件本身。
+     */
+    val presetTargetsUi: List<xin.dshaa.core.plugins.PluginPreset>
+
+    /** 当前套用的预设 id（null = 没套用）。 */
+    val activePresetTargetUi: String?
+
+    /** 最近一次预设操作的一句话结果（保存/套用/删除/清除）。 */
+    val presetNoticeUi: String?
+
+    /** 套用；返回 false 时 [presetNoticeUi] 带原因（模型通道不可用等）。 */
+    fun applyPreset(id: String): Boolean
+
+    /** 清除套用（收窄解除；模型选择保留）。 */
+    fun clearPreset()
+
+    /** 把当前状态（模型/提示词段/工具/权限）存成预设；名字非法返回 false。 */
+    fun savePresetFromCurrent(name: String): Boolean
+
+    fun deletePreset(id: String): Boolean
+
+    // ── M88-E：AI 全控制插件（审计 / 撤销；docs/190 §3-F 已永久删除总开关） ──────────
 
     /** 撤销本进程最近一次 AI 授予（或按审计回放找最近一条）。 */
     fun undoAiPluginGrant()
@@ -290,8 +374,21 @@ interface NativeShellHost {
     /** 这个页面现在是否允许进入（内置页面插件被关掉时 false）。 */
     fun builtinScreenEnabled(screenName: String): Boolean
 
+    /** docs/190-E：鲸歌内置提示词规则（`builtin.prompt.core`）是否启用；默认 true。 */
+    fun builtinPromptCoreEnabled(): Boolean
+
     /** 界面壳候选，包含停用或缺授权项；启用与使用中分别展示。 */
     val shellTargetsUi: List<RoleTargetUi>
+
+    /**
+     * 是否启用「液态玻璃」界面壳（`docs/187` §4）。
+     *
+     * 液态玻璃**不是**替换原生界面的新界面，而是同一份页面代码的可选外观：
+     * `false`（默认）= 原生 UI，色板/背景/卡片与 0.3.5 一致；
+     * `true` = 玻璃色板 + 墙面背景 + 玻璃卡片。由角色页「界面：液态玻璃（实验）」切换，
+     * 持久化在 `dsh_shell = liquid`。
+     */
+    val liquidUiEnabled: Boolean
 
     /** 用户选择可用壳；失败保留当前界面并给出插件提示。 */
     fun selectShell(value: String): Boolean

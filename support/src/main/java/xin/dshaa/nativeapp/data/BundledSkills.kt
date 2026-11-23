@@ -19,6 +19,8 @@ object BundledSkills {
     private val skills = listOf(
         Bundled("dsh-plugin-adapter", "skills/dsh-plugin-adapter/SKILL.md"),
         Bundled("dsh-plugin-authoring", "skills/dsh-plugin-authoring/SKILL.md"),
+        // docs/190-B：真 DSH / cordis 插件跑在 Node 宿主；这是「AI 做 Node 插件」的随包技能。
+        Bundled("dsh-node-plugin-authoring", "skills/dsh-node-plugin-authoring/SKILL.md"),
     )
 
     /** 内置技能名（M81：这些不给「删除」入口，只能关；用户自己导入的才能删）。 */

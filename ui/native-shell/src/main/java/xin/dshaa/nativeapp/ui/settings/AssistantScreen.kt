@@ -1,5 +1,10 @@
 package xin.dshaa.nativeapp.ui.settings
 
+import xin.dshaa.ui.design.component.liquidGlass
+import xin.dshaa.ui.design.theme.LiquidLevel
+import xin.dshaa.ui.design.theme.LiquidRadius
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -67,14 +72,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import xin.dshaa.core.plugins.PluginRecord
 import xin.dshaa.ui.shellapi.data.AssistantProfile
+import xin.dshaa.ui.shellapi.data.PromptSizeEstimate
 import xin.dshaa.ui.shellapi.data.SettingsStore
 import xin.dshaa.ui.design.component.AvatarLoader
 import xin.dshaa.ui.design.component.DshAvatar
 import xin.dshaa.ui.design.component.SettingsCard
-import xin.dshaa.ui.design.component.SettingsInfoBanner
 import xin.dshaa.ui.design.component.SettingsSectionHeader
 import xin.dshaa.ui.design.component.SettingsTextField
 import xin.dshaa.ui.design.theme.DshTheme2
+import xin.dshaa.ui.design.theme.wash
 import java.io.File
 
 /**
@@ -93,6 +99,10 @@ import java.io.File
 fun AssistantScreen(
     settings: SettingsStore,
     plugins: List<PluginRecord> = emptyList(),
+    /** docs/190-E：鲸歌内置提示词规则（builtin.prompt.core）是否启用。 */
+    promptCoreEnabled: Boolean = true,
+    /** 关掉时「去插件页打开」的跳转。 */
+    onOpenPromptCore: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val c = DshTheme2.colors
@@ -116,9 +126,9 @@ fun AssistantScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
-            Modifier.fillMaxWidth().background(c.surface).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {
@@ -136,6 +146,32 @@ fun AssistantScreen(
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp)) {
 
+            // docs/190-E：内置提示词规则被关掉时，这里要说清楚「还剩下什么」并能一键去插件页打开。
+            if (!promptCoreEnabled) {
+                Spacer(Modifier.height(4.dp))
+                Surface(
+                    onClick = onOpenPromptCore,
+                    shape = RoundedCornerShape(12.dp),
+                    color = c.warn.copy(alpha = 0.14f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                        Text(
+                            "鲸歌内置提示词已关闭",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = c.warn,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "当前请求不拼内置规则段（sections.json + 计划策略），仍保留你的人设/系统提示词、插件段和运行时上下文。点这里去插件页重新打开「提示词：鲸歌内置规则」。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = c.sub,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+
             // ======= 我的助手（多份列表） =======
             SettingsSectionHeader(icon = Icons.Rounded.Person, title = "我的助手")
             SettingsCard {
@@ -146,7 +182,7 @@ fun AssistantScreen(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (isEditing) c.surfaceAlt.copy(alpha = 0.55f) else c.surface)
+                            .background(if (isEditing) c.surfaceAlt.wash(0.55f) else c.surface)
                             .clickable { editingId = profile.id }
                             .padding(horizontal = 10.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -202,7 +238,7 @@ fun AssistantScreen(
                         }
                     }
                     if (index != profiles.lastIndex) {
-                        Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp).height(1.dp).background(c.line.copy(alpha = 0.5f)))
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp).height(1.dp).background(c.line.wash(0.5f)))
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -241,7 +277,7 @@ fun AssistantScreen(
                         Spacer(Modifier.height(6.dp))
                         Surface(
                             shape = RoundedCornerShape(999.dp),
-                            color = c.surfaceAlt.copy(alpha = 0.7f),
+                            color = c.surfaceAlt.wash(0.7f),
                             modifier = Modifier.clickable {
                                 picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                             },
@@ -268,7 +304,7 @@ fun AssistantScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
                                 shape = RoundedCornerShape(999.dp),
-                                color = c.surfaceAlt.copy(alpha = 0.7f),
+                                color = c.surfaceAlt.wash(0.7f),
                                 modifier = Modifier.clickable {
                                     settings.updateAssistantProfile(editing.copy(avatar = ""))
                                     AvatarLoader.clear()
@@ -308,21 +344,18 @@ fun AssistantScreen(
             SettingsCard {
                 SettingsTextField(
                     title = "名字",
-                    subtitle = "显示在每条 AI 消息头、聊天页顶栏与工作台；写进人设段（「你的名字是…」）",
                     value = editing.name,
                     onValueChange = { settings.updateAssistantProfile(editing.copy(name = it.trimStart())) },
                     placeholder = "鲸歌",
                 )
                 AssistantLongField(
                     title = "简介",
-                    subtitle = "只用于展示（设置页/预览），不进入提示词",
                     value = editing.desc,
                     onValueChange = { settings.updateAssistantProfile(editing.copy(desc = it)) },
                     placeholder = "一句话描述这个助手",
                 )
                 AssistantLongField(
                     title = "开场白",
-                    subtitle = "新会话还没消息时显示的第一句话（只显示，不写进提示词、不伪造 assistant 历史）",
                     value = editing.opening,
                     onValueChange = { settings.updateAssistantProfile(editing.copy(opening = it)) },
                     placeholder = "比如：今天想让我帮你做点什么？",
@@ -334,14 +367,12 @@ fun AssistantScreen(
             SettingsCard {
                 AssistantLongField(
                     title = "人设",
-                    subtitle = "注入 deployment:persona-prefix（order 0），替换默认的 coding agent 文案；留空 = 用上游默认人设",
                     value = editing.persona,
                     onValueChange = { settings.updateAssistantProfile(editing.copy(persona = it)) },
                     placeholder = "例如：你是一只住在手机里的鲸鱼，说话温柔、爱用短句，遇到问题先动手再解释。",
                 )
                 AssistantLongField(
                     title = "系统提示词",
-                    subtitle = "注入 deployment:persona-suffix（order 10200，全文最后一段）；适合放行为规则/口癖/禁忌",
                     value = editing.system,
                     onValueChange = { settings.updateAssistantProfile(editing.copy(system = it)) },
                     placeholder = "例如：回答尽量简短；不确定时直接说不确定；不要用感叹号。",
@@ -374,8 +405,8 @@ fun AssistantScreen(
                                     .fillMaxWidth()
                                     .padding(top = 6.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(c.surfaceAlt.copy(alpha = 0.45f))
-                                    .border(1.dp, c.line.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                    .background(c.surfaceAlt.wash(0.45f))
+                                    .border(1.dp, c.line.wash(0.5f), RoundedCornerShape(10.dp))
                                     .padding(horizontal = 10.dp, vertical = 8.dp),
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -442,11 +473,6 @@ fun AssistantScreen(
                         }
                     }
                 }
-                SettingsInfoBanner(
-                    "插件预设读自组合包的 cordis.patch.yml（@deepseek-ai/dsh-agent-preset + dsh-persona 的 " +
-                        "prefix/suffix）。套用只是把这两段文本复制成一份新的角色卡并设为当前使用，" +
-                        "补丁里的其它配置（子插件、工具开关）鲸歌不执行；预设本体仍跟着插件走，停用或卸载插件后这里会消失。",
-                )
             }
 
             // ======= 插件自带的助手配置（只读，M73） =======
@@ -484,8 +510,8 @@ fun AssistantScreen(
                                         .fillMaxWidth()
                                         .padding(bottom = 6.dp)
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(c.surfaceAlt.copy(alpha = 0.45f))
-                                        .border(1.dp, c.line.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                        .background(c.surfaceAlt.wash(0.45f))
+                                        .border(1.dp, c.line.wash(0.5f), RoundedCornerShape(10.dp))
                                         .padding(horizontal = 10.dp, vertical = 8.dp),
                                 ) {
                                     Text(
@@ -514,7 +540,7 @@ fun AssistantScreen(
                             }
                         }
                         if (index != withPrompt.lastIndex) {
-                            Box(Modifier.fillMaxWidth().height(1.dp).background(c.line.copy(alpha = 0.5f)))
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(c.line.wash(0.5f)))
                         }
                     }
                 }
@@ -579,7 +605,6 @@ private val VARIABLE_PLACEHOLDER = Regex("\\{\\{([A-Za-z0-9_.:\\-]+)\\}\\}")
 @Composable
 private fun AssistantLongField(
     title: String,
-    subtitle: String,
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
@@ -606,35 +631,50 @@ private fun AssistantLongField(
 
     SettingsTextField(
         title = title,
-        subtitle = subtitle,
         value = value,
         onValueChange = onValueChange,
         placeholder = placeholder,
         singleLine = false,
         collapsedMaxHeight = 132.dp,
         footerActions = {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("${value.length} 字", style = MaterialTheme.typography.labelSmall, color = c.faint)
-                Spacer(Modifier.weight(1f))
-                TextButton(
-                    onClick = {
-                        importer.launch(
-                            arrayOf("text/*", "text/markdown", "application/json", "application/octet-stream"),
-                        )
-                    },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                ) {
-                    Icon(Icons.Rounded.UploadFile, null, tint = c.brandBright, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("导入文件", style = MaterialTheme.typography.labelMedium, color = c.brandBright)
+            val size = PromptSizeEstimate.of(value)
+            Column {
+                // docs/190-D：长提示词提醒。只提示、不截断（用户拍板「提示词不设硬上限」）。
+                if (size.long) {
+                    Text(
+                        "≈${size.approxTokens} tokens，超过 ${PromptSizeEstimate.LONG_PROMPT_TOKENS}：建议拆成多段，或改用插件段（不设硬上限）",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = c.warn,
+                        modifier = Modifier.padding(bottom = 2.dp),
+                    )
                 }
-                TextButton(
-                    onClick = { fullscreen = true },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                ) {
-                    Icon(Icons.Rounded.Fullscreen, null, tint = c.brandBright, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("全屏", style = MaterialTheme.typography.labelMedium, color = c.brandBright)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "${value.length} 字 · ≈${size.approxTokens} tokens",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (size.long) c.warn else c.faint,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    TextButton(
+                        onClick = {
+                            importer.launch(
+                                arrayOf("text/*", "text/markdown", "application/json", "application/octet-stream"),
+                            )
+                        },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Icon(Icons.Rounded.UploadFile, null, tint = c.brandBright, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("导入文件", style = MaterialTheme.typography.labelMedium, color = c.brandBright)
+                    }
+                    TextButton(
+                        onClick = { fullscreen = true },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Icon(Icons.Rounded.Fullscreen, null, tint = c.brandBright, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("全屏", style = MaterialTheme.typography.labelMedium, color = c.brandBright)
+                    }
                 }
             }
         },
@@ -667,10 +707,10 @@ private fun FullscreenTextDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Surface(modifier = Modifier.fillMaxSize(), color = c.background) {
+        Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
                 Row(
-                    Modifier.fillMaxWidth().background(c.surface).padding(horizontal = 8.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(onClick = onDismiss) { Text("取消", color = c.sub) }
@@ -700,7 +740,7 @@ private fun FullscreenTextDialog(
                         .fillMaxWidth()
                         .padding(12.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(c.surface)
+                        .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
                         .padding(14.dp),
                     textStyle = TextStyle(color = c.text, fontSize = 15.sp, lineHeight = 23.sp),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(c.brand),

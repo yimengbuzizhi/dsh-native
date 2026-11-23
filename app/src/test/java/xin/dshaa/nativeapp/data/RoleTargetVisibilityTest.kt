@@ -45,23 +45,41 @@ class RoleTargetVisibilityTest {
         assertTrue(builtin.visibleInRoleList())
     }
 
-    @Test fun bundledPluginShellFollowsItsOwnSwitch() {
+    @Test fun thirdPartyShellFollowsItsOwnSwitch() {
         // 2026-11-15 用户反馈：内置里关掉「鲸歌可选壳」后，角色页仍显示「鲸歌默认壳」。
-        // whale 是 bundled 插件（有开关），不是宿主内置实现，停用后必须从角色页消失。
-        val whale = RoleTargetUi(
+        // 插件壳是插件实现（有开关），不是宿主内置实现，停用后必须从角色页消失。
+        // docs/187 §5.1 之后 `builtin.shell.whale` 已删除，示例用第三方插件壳。
+        val pluginShell = RoleTargetUi(
             role = "shell",
-            implementationId = "builtin.shell.whale",
-            label = "鲸歌默认壳（Surface）· surface",
-            pluginId = "builtin.shell.whale",
-            provider = "鲸歌可选壳（Surface）",
+            implementationId = "m85f.webview-shell",
+            label = "第三方壳（WebView）· webview",
+            pluginId = "m85f.webview-shell",
+            provider = "示例壳插件",
+            builtin = false,
+            enabled = false,
+            permitted = true,
+            selectionValue = "m85f.webview-shell#m85f.webview-shell",
+            unavailableReason = "提供方插件已停用",
+        )
+        assertFalse(pluginShell.visibleInRoleList())
+        assertTrue(pluginShell.copy(enabled = true).visibleInRoleList())
+    }
+
+    @Test fun liquidGlassShellIsBuiltinAndAlwaysListed() {
+        // 液态玻璃壳（docs/187 §4.2）是宿主内置实现：`builtin=true` + `pluginId=null`，
+        // 所以它即使「停用」（回原生）也要留在角色页，让用户能再选回来。
+        val liquid = RoleTargetUi(
+            role = "shell",
+            implementationId = "builtin.shell.liquid",
+            label = "界面：液态玻璃（实验）",
+            pluginId = null,
             builtin = true,
             enabled = false,
             permitted = true,
-            selectionValue = "builtin.shell.whale#builtin.shell.whale",
-            unavailableReason = "提供方插件已停用",
+            active = false,
+            selectionValue = "liquid",
         )
-        assertFalse(whale.visibleInRoleList())
-        assertTrue(whale.copy(enabled = true).visibleInRoleList())
+        assertTrue(liquid.visibleInRoleList())
     }
 
     @Test fun agentTargetsFollowTheSameRule() {
