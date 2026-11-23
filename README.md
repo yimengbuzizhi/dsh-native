@@ -63,7 +63,7 @@
 - 设计与终点：`docs/115-一切皆插件的终点.md`、`docs/144-M85-宿主骨架与一切皆插件-设计.md`
 - 插件作者指南（随 App 以内置技能提供）：`dsh-plugin-authoring`；
   DSH/社区插件适配：`dsh-plugin-adapter`
-- 各版本发布记录与已知限制：`docs/184-发布-v0.3.5.md`、[Releases](https://github.com/yimengbuzizhi/dsh-native/releases)
+- 各版本发布记录与已知限制：`docs/191-发布-v0.3.6.md`、[Releases](https://github.com/yimengbuzizhi/dsh-native/releases)
 
 ## 功能
 
