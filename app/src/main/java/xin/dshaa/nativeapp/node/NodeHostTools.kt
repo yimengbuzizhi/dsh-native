@@ -779,7 +779,8 @@ class NodeHostTools(
                 "nodehost_install",
                 "Install a Node plugin from a directory or .zip inside the workspace, after the Node importer's " +
                     "size/entry checks. A directory is packaged as a single-root zip first (Android has no zip command). " +
-                    "The package must bundle its own node_modules or only use packages the host already provides; the " +
+                    "The package must bundle its own node_modules or only use packages the host already provides " +
+                    "(the host bundles the full @deepseek-ai/dsh production dependency tree); the " +
                     "host is restarted when it is on. Write action: asks for approval and is audited.",
                 schema(
                     """{"path":{"type":"string","minLength":1,"description":"Plugin directory or .zip path, resolved against the workspace."},"name":{"type":"string","description":"Fallback directory name when the package has no single root folder."}}""",

@@ -39,7 +39,7 @@ const val CONTINUE_TRUNCATED_PROMPT =
  * 「继续生成」卡片的可行动文案（docs/182 §H1 第 4 条）：
  * ① 点继续生成 ② 让我分几段写 ③ 重发并说明分段 —— 不引导用户去改已隐藏的设置。
  *
- * @param outputTokenLimit 当前单轮上限（8192），只用于把话说清楚；0 = 不显示具体数值。
+ * @param outputTokenLimit 当前单轮上限（2026-11-24 起默认 256000、按窗口收窄），只用于把话说清楚；0 = 不显示具体数值。
  * @param queuedMessages 还有待发送消息时补一句「待发送消息已保留」（与插件回合路径对齐）。
  */
 fun truncationResumeNotice(

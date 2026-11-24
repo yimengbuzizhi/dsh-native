@@ -353,6 +353,11 @@ class MainActivity : ComponentActivity() {
             if (intent?.getBooleanExtra("dsh_auto_approve", false) == true) {
                 getSharedPreferences("dsh", 0).edit().putString("approval_mode", "auto").apply()
             }
+            // 安全模式自救（2026-11-24）：`--ez dsh_safe_mode true` 下次进入界面即停用全部第三方插件
+            // （真执行在 AppViewModel.consumeStartupDebug；Application 阶段判定的是冷启动崩溃循环）。
+            if (intent?.getBooleanExtra("dsh_safe_mode", false) == true) {
+                getSharedPreferences("dsh", 0).edit().putBoolean("debug_safe_mode", true).apply()
+            }
             // 计划模式验收：`--ez dsh_plan_mode true` 新建会话时先进计划模式（可与 dsh_send 连用）
             if (intent?.getBooleanExtra("dsh_plan_mode", false) == true) {
                 getSharedPreferences("dsh", 0).edit().putBoolean("debug_plan_mode", true).apply()
@@ -368,7 +373,10 @@ class MainActivity : ComponentActivity() {
             // 锁屏/无 UI 时把当前模型的窗口与请求输出上限改小，让压力阈值够得着；
             // 测完用同样的 extras 写回正式值（256000 / 1048576）。
             intent?.getIntExtra("dsh_max_tokens", 0)?.takeIf { it > 0 }?.let { value ->
-                getSharedPreferences("dsh", 0).edit().putInt("max_tokens", value).apply()
+                getSharedPreferences("dsh", 0).edit()
+                    .putInt("max_tokens", value)
+                    .putBoolean("max_tokens_override", true)
+                    .apply()
             }
             intent?.getIntExtra("dsh_ctx_window", 0)?.takeIf { it > 0 }?.let { value ->
                 val sp = getSharedPreferences("dsh", 0)

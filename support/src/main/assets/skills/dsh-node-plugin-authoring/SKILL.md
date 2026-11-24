@@ -12,8 +12,9 @@ whenToUse: 用户要求「做一个 DSH / cordis / Node 插件」「把 npm 上�
 
 ## Node 宿主是什么（先看事实，不要猜）
 
-- 独立 Node 进程：`files/node/runtime/<版本>/dsh/host.mjs`，里面是真 `@deepseek-ai/cordis` + dsh 的 system-prompt / tools / projections 服务，另有鲸歌补的 `llm` / `commands` 服务。
-- 插件按 `files/node/data/node-host-plugins.json` 逐个 `import()` + `ctx.plugin(mod, config)`；模块路径 `./plugins/<目录>/<入口>` 相对 `data/`，裸包名（如 `@deepseek-ai/dsh-tool-todo`）从运行时解析。
+- 独立 Node 进程：`files/node/runtime/<版本>/dsh/host.mjs`，里面是真 `@deepseek-ai/cordis` + dsh 的 system-prompt / tools / projections 服务，另有鲸歌补的 `llm` / `commands` 服务；`dsh/node_modules` 是**完整 `@deepseek-ai/dsh@0.2.2-rc.5` 生产树**（约 200 个顶层包、95k 文件、解压约 1.2GB）。
+- 插件按 `files/node/data/node-host-plugins.json` 逐个 `import()` + `ctx.plugin(mod, config)`；模块路径 `./plugins/<目录>/<入口>` 相对 `data/`，裸包名（如 `@deepseek-ai/dsh-tool-todo`）从运行时那棵树解析——树里有的包不用随插件带。
+- 首次打开开关要解压约 1.2GB 运行时（真机约 1 分钟，期间工具还没出现）；之后只校验 stamp，不重复解压。
 - 宿主 Ready 后，插件注册的工具会以 `node_<原名>` 并进模型工具表；**没 Ready 就没有这些工具**。App 其余功能不依赖宿主。
 - 只有 **arm64** 打包了 `libnode.so`；x86_64 模拟器上宿主必然 FAILED（`nodehost_doctor` 会说清 ABI），不要在那种设备上反复重试。
 - v1 **没有** Node 侧界面/容器桥：插件不能注册页面、整壳、slot、WebView。要界面就走原生插件，或让用户改用支持界面的原生插件。Node 插件交付的是工具/提示词/命令/模型供应商这些数据面能力。
@@ -67,7 +68,7 @@ export function apply(ctx, config) {
 
 - 入口必须是 **ESM**（`export`），宿主用 `import()` 加载；不要交 `module.exports = ...` 或 TS 源码。
 - 插件名/工具名都要稳定、唯一；和宿主已有工具重名会被后注册覆盖或报错。
-- 依赖：Android 上没有 `npm install`。插件 zip 里要么自带 `node_modules/`，要么只用运行时已有的 `@deepseek-ai/*` / cordis / zod 等包。不要把整个桌面 dsh 仓库塞进来。
+- 依赖：Android 上没有 `npm install`。运行时带完整 dsh 生产树（`@deepseek-ai/*` 及 cordis/cosmokit/zod 等传递依赖，约 200 个顶层包），包名能命中就不用随包带；**树里没有的第三方包才必须自带 `node_modules/`**。不要把整个桌面 dsh 仓库塞进来。
 - `apply` 只做登记；副作用放 `execute`，否则每次重载/启动都会执行。
 - 配置：清单条目里的 `config` 会原样传给 `apply(ctx, config)`；重装同 id 默认保留旧 config。
 - zip 限额（`NodePluginInstaller`）：zip ≤64MB、单文件 ≤32MB、解压后 ≤256MB、条目 ≤20000、压缩比 ≤200×。`nodehost_install` 也接受**目录**，宿主会按单根目录打包，所以手机上不需要 `zip` 命令。
@@ -107,7 +108,7 @@ export function apply(ctx, config) {
 ## 交付前检查
 
 - [ ] `package.json` 的 name/main 与实际入口一致；入口是 ESM；没有 TS/裸相对 import。
-- [ ] 依赖要么随包带 `node_modules`，要么只用运行时 `@deepseek-ai/*`；没有真实密钥硬编码。
+- [ ] 依赖要么随包带 `node_modules`，要么只用运行时生产树里已有的包（`@deepseek-ai/*` 及其传递依赖）；没有真实密钥硬编码。
 - [ ] `nodehost_install` 成功；`nodehost_status` Ready；`nodehost_plugins` 里该模块 `ok=true`、工具/命令/供应商列出。
 - [ ] 至少真实调用一次工具（`node_<name>`）；错误参数也跑一次；日志无凭据。
 - [ ] 失败场景：坏包/加载失败时 `nodehost_logs` 有可读错误；隔离后其余插件仍可用。

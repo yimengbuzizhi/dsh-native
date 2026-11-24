@@ -346,6 +346,12 @@ fun ChatScreen(
     /** M85-E：提示词不可用时的提示（非 null = 顶部横幅 + 一键恢复内置提示词）。 */
     promptSafetyNotice: String? = null,
     onRestoreBuiltinPrompt: () -> Unit = {},
+    /**
+     * 2026-11-24：崩溃循环安全模式（非 null = 顶部红色横幅 + 一键恢复第三方插件）。
+     * 判定与停用在 `DshApplication.onCreate`，这里只负责把话说清楚并给恢复入口。
+     */
+    safeModeNotice: String? = null,
+    onExitSafeMode: () -> Unit = {},
     capabilities: ChatUiCapabilities = ChatUiCapabilities.Local,
     canSubmit: Boolean = true,
     connectionNotice: String? = null,
@@ -863,6 +869,15 @@ fun ChatScreen(
                 TextButton(onClick = onReconnect) { Text("重试") }
                 TextButton(onClick = onSwitchToLocal) { Text("本机") }
             }
+        }
+        // 2026-11-24：崩溃循环安全模式。放在最上面、先于会话内容，保证用户一眼看到「插件被停了，能恢复」。
+        safeModeNotice?.let { notice ->
+            RoleSafetyBar(
+                title = "安全模式（插件已被停用）",
+                reason = notice,
+                action = "恢复第三方插件",
+                onRestore = onExitSafeMode,
+            )
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (visible.isEmpty()) {

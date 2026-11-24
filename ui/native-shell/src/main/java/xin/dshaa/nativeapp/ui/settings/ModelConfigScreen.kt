@@ -109,7 +109,9 @@ fun ModelConfigScreen(
 
     // 用户反馈：以前每次按键都直接写 settings 并 clamp，导致模型名删空也会立刻变回
     // deepseek-flash。改成编辑期只改本地文本，失焦/完成时再校验落盘。
-    // 2026-11-09：删掉「最大输出 tokens」设置（用户要求；请求固定用默认 8192）。
+    // 2026-11-09：删掉「最大输出 tokens」设置（用户要求）。
+    // 2026-11-24：用户要求取消 8000 多的上限 → 默认 256000，已知窗口时按窗口一半收窄（见 OutputBudget），
+    // 仍然不暴露成设置项；只有调试通道 `dsh_max_tokens` 能改。
     // 上下文窗口（M44）：空 = 0 = 未知（自动压缩关闭）；按模型记忆
     var contextWindowText by remember {
         mutableStateOf(settings.contextWindow.takeIf { it > 0 }?.toString().orEmpty())

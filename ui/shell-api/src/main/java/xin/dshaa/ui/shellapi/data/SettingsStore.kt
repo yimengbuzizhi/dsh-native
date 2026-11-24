@@ -2,6 +2,7 @@ package xin.dshaa.ui.shellapi.data
 
 import android.content.SharedPreferences
 import androidx.compose.runtime.mutableStateOf
+import xin.dshaa.core.model.OutputBudget
 
 /**
  * 本地设置（API Key 先用私有 SharedPreferences；M3 换 Keystore 加密并兼容读取）。
@@ -47,8 +48,16 @@ class SettingsStore(private val sp: SharedPreferences) {
     )
 
     // ---- 模型参数 ----
-    // 2026-11-09：用户要求删掉「最大输出 tokens」设置；请求固定用 DEFAULT_MAX_TOKENS。
-    private val _maxTokens = mutableStateOf(DEFAULT_MAX_TOKENS)
+    // 2026-11-09：用户要求删掉「最大输出 tokens」设置 → 请求固定 8192。
+    // 2026-11-24：用户要求「取消 8000 多的输出限制」→ 默认改成上游的 256000，
+    // 已知窗口时再按 OutputBudget 收一半（不再有逐条 8192 的硬顶）。
+    private val _maxTokens = mutableStateOf(
+        if (sp.getBoolean(KEY_MAX_TOKENS_OVERRIDE, false)) {
+            sp.getInt(KEY_MAX_TOKENS, DEFAULT_MAX_TOKENS)
+        } else {
+            DEFAULT_MAX_TOKENS
+        },
+    )
     private val _temperature = mutableStateOf(sp.getFloat(KEY_TEMPERATURE, -1f).takeIf { it >= 0f }?.toDouble())
     // 上下文窗口（M44）：按模型记忆；0 = 未知（自动压缩关闭，手工 /compact 不受影响）
     private val _contextWindow = mutableStateOf(
@@ -164,7 +173,11 @@ class SettingsStore(private val sp: SharedPreferences) {
     val assistantOpening: String get() = activeAssistant.opening
     /** 角色卡系统提示词（M71）：注入 system 的 `deployment:persona-suffix`（order 10200，最后一段）。 */
     val assistantSystem: String get() = activeAssistant.system
-    val maxTokens: Int get() = _maxTokens.value
+    /**
+     * 单轮请求的 `max_tokens`：期望值 [DEFAULT_MAX_TOKENS]（上游 256k），
+     * 已知窗口时按 [OutputBudget] 收到一半，避免把窗口撑满。
+     */
+    val maxTokens: Int get() = OutputBudget.effective(_maxTokens.value, _contextWindow.value)
     val temperature: Double? get() = _temperature.value
     val reasoningEffort: String get() = _reasoningEffort.value
     /** 当前模型的上下文窗口（tokens，M44）；0 = 未知 → 自动压缩关闭。 */
@@ -449,8 +462,11 @@ class SettingsStore(private val sp: SharedPreferences) {
     }
 
     fun setMaxTokens(v: Int) {
-        _maxTokens.value = v.coerceIn(1024, 1_000_000)
-        sp.edit().putInt(KEY_MAX_TOKENS, _maxTokens.value).apply()
+        _maxTokens.value = v.coerceIn(OutputBudget.MIN_MAX_TOKENS, 1_000_000)
+        sp.edit()
+            .putInt(KEY_MAX_TOKENS, _maxTokens.value)
+            .putBoolean(KEY_MAX_TOKENS_OVERRIDE, true)
+            .apply()
     }
 
     /** 上下文窗口（M44）：0 = 未知/关闭自动压缩。按当前模型记忆。 */
@@ -551,8 +567,12 @@ class SettingsStore(private val sp: SharedPreferences) {
         const val OPENAI_BASE_URL = "https://api.openai.com/v1"
         const val DEFAULT_MODEL = "deepseek-flash"
 
-        /** 单轮请求的 max_tokens（上游默认档；2026-11-09 起不再暴露给用户改）。 */
-        const val DEFAULT_MAX_TOKENS = 8_192
+        /**
+         * 单轮请求的 `max_tokens` 期望值：对齐上游 `dsh-llm-deepseek` 的适配器默认 **256000**
+         * （2026-11-24 起；之前固定 8192 会把长回复截断）。实际发送值还会按模型窗口收一半，
+         * 见 [OutputBudget.effective]。
+         */
+        const val DEFAULT_MAX_TOKENS = OutputBudget.DEFAULT_MAX_TOKENS
 
         /**
          * 上游模型目录里明确声明 `inputModalities=["text","image"]` 的模型（docs/26）。
@@ -658,6 +678,13 @@ class SettingsStore(private val sp: SharedPreferences) {
         private const val KEY_ASSISTANT_PROFILES = "assistant_profiles"
         private const val KEY_ASSISTANT_ACTIVE = "assistant_active_id"
         private const val KEY_MAX_TOKENS = "max_tokens"
+
+        /**
+         * `max_tokens` 是否被**显式改过**（旧版设置页 / 调试通道 `dsh_max_tokens`）。
+         * 老版本可能留着一个 8192 的键，没有这个标记就一律按 [DEFAULT_MAX_TOKENS] 处理，
+         * 免得上限改大后被历史值拉回去。
+         */
+        private const val KEY_MAX_TOKENS_OVERRIDE = "max_tokens_override"
         private const val KEY_TEMPERATURE = "temperature"
         private const val KEY_REASONING_EFFORT = "reasoning_effort"
         private const val KEY_MAX_MODE = "max_mode"

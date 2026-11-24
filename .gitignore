@@ -30,3 +30,6 @@ parity/dbg*.log*
 
 # 开发截图（真机截图含个人数据，不公开）
 docs/shots/
+
+# Node 运行时（375MB，GitHub 单文件限制；见 README 构建说明）
+app/src/main/assets/node/runtime.zip

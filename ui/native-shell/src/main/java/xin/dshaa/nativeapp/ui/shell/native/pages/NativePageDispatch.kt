@@ -172,6 +172,8 @@ fun NativePageDispatch(
                     connectionNotice = conversation.connectionNotice,
                     onReconnect = { conversation.reconnect() },
                     onSwitchToLocal = { conversation.selectTarget(null) },
+                    safeModeNotice = vm.safeModeNotice,
+                    onExitSafeMode = { vm.exitSafeMode() },
                     onDraftChange = { conversation.updateDraft(it) },
                     onApproval = { allow, always -> vm.resolveApproval(allow, always) },
                     onAnswer = { answers -> conversation.answer(answers) },

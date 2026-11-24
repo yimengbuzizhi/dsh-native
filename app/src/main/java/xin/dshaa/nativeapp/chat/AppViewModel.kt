@@ -327,7 +327,7 @@ private const val PROMPT_ASSEMBLE_TIMEOUT_MS = 8_000L
 
 /**
  * Node 宿主「随应用后台启动」的延迟：原生插件体系和首帧先就位，再起 node 进程，
- * 免得开机时 75MB RSS + 1.5s 解压抢 CPU（用户手动开开关时不等）。
+ * 免得开机时 Node 进程常驻（≈75MB RSS）和首次解压（完整运行时 ≈1.2GB，约 1 分钟）抢 CPU/IO。
  */
 private const val NODE_HOST_AUTOSTART_DELAY_MS = 1_500L
 
@@ -378,6 +378,60 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
     // 存储：`files/plugins/<id>/` + `files/plugins.json`。
 
     private val pluginStore = PluginStore(app)
+
+    /**
+     * 崩溃循环安全模式（2026-11-24，用户反馈「插件写坏只能重装」）。
+     *
+     * 判定与停用在 [xin.dshaa.nativeapp.DshApplication.onCreate] 里做完（必须早于插件加载）；
+     * 这里只负责把状态和恢复入口交给界面。
+     */
+    private val safeMode = xin.dshaa.nativeapp.data.SafeMode(app)
+
+    /** 安全模式横幅文案；null = 正常。 */
+    override val safeModeNotice: String?
+        get() = if (!safeMode.active) {
+            null
+        } else {
+            val count = safeMode.disabledIds.size
+            val why = when (safeMode.storedReason) {
+                xin.dshaa.nativeapp.data.SafeMode.REASON_BOOT_FAILED ->
+                    "连续 ${xin.dshaa.nativeapp.data.SafeModePolicy.MAX_FAILED_BOOTS} 次开机没走到界面（插件加载失败）"
+                xin.dshaa.nativeapp.data.SafeMode.REASON_MANUAL -> "手动进入"
+                else ->
+                    "1 分钟内连续启动 ${xin.dshaa.nativeapp.data.SafeModePolicy.MAX_LAUNCHES} 次"
+            }
+            // 手动进入时 Node 往往是先按开关自动起的（判定在界面就绪后），别在横幅里许诺「不自动启动」。
+            val nodeNote = if (safeMode.storedReason == xin.dshaa.nativeapp.data.SafeMode.REASON_MANUAL) {
+                "Node 宿主开关不受影响"
+            } else {
+                "本次也不自动启动 Node 宿主"
+            }
+            "安全模式（$why）：已停用 $count 个第三方插件（$nodeNote）。" +
+                "恢复后如果仍然崩溃，会自动再次进入安全模式。"
+        }
+
+    /** 手动进入安全模式（调试通道 / 用户自救）：停用全部第三方插件，不重启也能立刻生效。 */
+    fun enterSafeModeNow() {
+        val enabled = pluginStore.list().filter { it.enabled }.map { it.id }.toSet()
+        safeMode.activate(enabled, reason = xin.dshaa.nativeapp.data.SafeMode.REASON_MANUAL)
+        val disabled = if (enabled.isEmpty()) 0 else pluginStore.setAllEnabled(false)
+        pluginsUi = pluginStore.list()
+        pluginNotice = "已进入安全模式：停用 $disabled 个第三方插件（可在插件页逐个恢复）"
+        Log.w("DshSafeMode", "manual safe mode: disabled=$disabled known=${enabled.size}")
+    }
+
+    /** 退出安全模式：按名单把第三方插件开回去（不丢插件/配置/会话）。 */
+    override fun exitSafeMode() {
+        if (!safeMode.active) return
+        val ids = safeMode.disabledIds
+        var restored = 0
+        ids.forEach { id ->
+            if (pluginStore.setEnabled(id, true)) restored += 1
+        }
+        safeMode.deactivate()
+        pluginsUi = pluginStore.list()
+        pluginNotice = "已退出安全模式，恢复 $restored 个插件"
+    }
 
     /**
      * M88-E（docs/183 §5）：插件操作审计（AI 授予/撤销/改配置/选角色）。
@@ -458,12 +512,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
             }
             onPhase("ready", "准备界面…")
             runtimeReady = true
+            // 走到这里才算「开机完成」：安全模式据此区分「插件加载期崩了」与「正常启动」。
+            safeMode.markBootOk()
             installRuntimeBindings()
             // P4：Node 开关关着也要把清单/状态读一次，否则 Node 分区会显示 0/空白（真机 bug）。
             // docs/190-B：上次以 Failed 结束 → 本次开机不自动启动，改为横幅 + FAILED 状态（App 其余照用）。
             if (settings.nodePluginHostEnabled) loadNodeHostFailureState()
             refreshNodeHostDiagnostics()
-            if (settings.nodePluginHostEnabled) {
+            if (settings.nodePluginHostEnabled && !safeMode.active) {
                 if (nodeHostSkippedAutoStart) {
                     nodeHostStateText = "已跳过自动启动（上次启动失败）"
                     nodeBootStartedAt = System.currentTimeMillis()
@@ -844,7 +900,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
             code = "off",
             title = "已关闭（OFF）",
             detail = "Node 宿主没开：Node 插件不会加载；原生插件、聊天和工具不受影响。",
-            hint = "打开开关后会在后台起 Node（首次要解压约 25MB 运行时）。",
+            hint = "打开开关后会在后台起 Node（首次要解压约 1.2GB 运行时）。",
         ),
     )
         private set
@@ -3717,6 +3773,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
     private val debugInputMutex = kotlinx.coroutines.sync.Mutex()
 
     private fun consumeStartupDebug() {
+        // 调试通道：`am start --ez dsh_safe_mode true` → 立刻进入安全模式（验证恢复入口/自救用）
+        val startupPrefs = getApplication<Application>().getSharedPreferences("dsh", 0)
+        if (startupPrefs.getBoolean("debug_safe_mode", false)) {
+            startupPrefs.edit().remove("debug_safe_mode").apply()
+            enterSafeModeNow()
+        }
         // 调试通道：`am start --es dsh_import_zip <绝对路径>` → 直接打开旧版导入页
         settings.debugImportPath?.let { path ->
             importRequest = if (File(path).isAbsolute) path else File(getApplication<Application>().filesDir, path).absolutePath
@@ -8700,7 +8762,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
                 code = "off",
                 title = "已关闭（OFF）",
                 detail = "Node 宿主没开：Node 插件不会加载；原生插件、聊天和工具不受影响。",
-                hint = "打开开关后会在后台起 Node（首次要解压约 25MB 运行时）。",
+                hint = "打开开关后会在后台起 Node（首次要解压约 1.2GB 运行时）。",
             )
 
             // docs/190-B：上次以 Failed 结束 → 本次开机没自动启动（横幅同时可见）。
@@ -8715,7 +8777,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
                 code = "extracting",
                 title = "正在解压（EXTRACTING）· ${state.percent}%",
                 detail = state.detail.ifBlank { "正在准备 Node 运行时" },
-                hint = "首次启动要解压运行时；失败会保留原因，重试会重新解压（不删已装插件）。",
+                hint = "首次启动要解压约 1.2GB 运行时（约 1 分钟）；失败会保留原因，重试会重新解压（不删已装插件）。",
             )
 
             state is NodePluginHost.State.Starting -> NodeHostStatusUi(

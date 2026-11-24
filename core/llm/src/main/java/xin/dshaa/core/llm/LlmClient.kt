@@ -28,7 +28,8 @@ data class LlmConfig(
     val apiKey: String,
     val baseUrl: String = DEFAULT_BASE_URL,
     val model: String = "deepseek-flash",
-    val maxTokens: Int = 8_192,
+    // 默认与上游 dsh-llm-deepseek 一致（256000）；2026-11-24 前这里是 8192，会把长回复截断。
+    val maxTokens: Int = 256_000,
     val temperature: Double? = null,
 ) {
     companion object {

@@ -79,6 +79,16 @@ interface NativeShellHost {
      */
     fun continueTruncated(): Boolean
 
+    /**
+     * 2026-11-24：崩溃循环安全模式横幅（null = 正常）。
+     *
+     * 判定与「停用第三方插件」在 `DshApplication.onCreate` 完成；壳只负责展示与给恢复入口。
+     */
+    val safeModeNotice: String? get() = null
+
+    /** 退出安全模式：按名单恢复第三方插件（不丢插件/配置/会话）。 */
+    fun exitSafeMode() {}
+
     fun cancelQueuedPrompt(id: String)
 
     fun resumeQueuedPrompts()

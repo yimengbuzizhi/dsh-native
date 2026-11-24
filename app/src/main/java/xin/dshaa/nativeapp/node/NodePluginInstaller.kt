@@ -18,8 +18,8 @@ import kotlinx.serialization.json.put
  *
  * 做的事只有两件：把 zip 解到 `files/node/data/plugins/<名字>/`，再把这个目录写进
  * `data/node-host-plugins.json`（宿主启动时按它 `ctx.plugin(module, config)`）。
- * **不跑 npm install**：包里得自带 `node_modules`，或者只依赖宿主已有的
- * `@deepseek-ai` 命名空间下的包（dsh-tool-todo、cordis、zod 等）。
+ * **不跑 npm install**：包里得自带 `node_modules`，或者只依赖宿主已有的包
+ * （运行时带完整 `@deepseek-ai/dsh` 生产树：`@deepseek-ai/…` 及 cordis/cosmokit/zod 等传递依赖）。
  *
  * 导入健壮性（docs/187 §九 第 7 项 / docs/188 P4）：
  * - zip 里没有统一顶层目录时，用 **zip 文件名**做目录名（不再全部挤进 `plugin/` 互相覆盖）；

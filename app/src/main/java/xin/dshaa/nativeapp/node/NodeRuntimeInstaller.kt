@@ -334,8 +334,11 @@ class NodeRuntimeInstaller(private val context: Context) {
          *
          * p3.1：`host.mjs` 加了 `llm` / `commands` 两个宿主服务（P3-b/c），
          * `plugins/hello-plugin` 加了演示供应商与演示命令；条目集合未变（2526 条）。
+         *
+         * full1（docs/194 §四.0）：`dsh/node_modules` 换成完整 `@deepseek-ai/dsh@0.2.2-rc.5`
+         * 生产树（95,327 文件）；`host.mjs` 与 `lib/` 未动，条目数 101,965。
          */
-        const val RUNTIME_VERSION = "node26.4.0-dsh0.2.2-rc.5-p3.1"
+        const val RUNTIME_VERSION = "node26.4.0-dsh0.2.2-rc.5-full1"
 
         private const val RUNTIME_ASSET_NAME = "runtime.zip"
         private const val BUFFER_SIZE = 64 * 1024
@@ -350,9 +353,10 @@ class NodeRuntimeInstaller(private val context: Context) {
          * 运行时 zip 的条目数（含目录），只用来算进度百分比。
          *
          * docs/190-C：旧值 2184 是早期估算，实际打包 2526 条 → 进度会提前冲到 99% 再长时间不动。
+         * docs/194 §四.0 换成完整生产树后是 101,965 条（6,622 目录 + 95,343 文件）。
          * 现在与 `assets/node/runtime.zip` 的真实条目数对齐，并由 JVM 测试
          * `NodeRuntimeInstallerEntryCountTest` 守住（改 zip 忘了改常量会红）。
          */
-        internal const val TOTAL_ENTRIES = 2526
+        internal const val TOTAL_ENTRIES = 101965
     }
 }

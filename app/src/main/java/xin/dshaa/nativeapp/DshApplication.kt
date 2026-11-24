@@ -25,6 +25,10 @@ import xin.dshaa.nativeapp.device.floating.FloatingBallService
 class DshApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // 2026-11-24：崩溃循环自救。必须在任何插件加载之前判定（本方法先于 Activity/AppViewModel），
+        // 60 秒内第 5 次启动 → 停用全部第三方插件，App 用内置实现起来，顶部横幅可一键恢复。
+        runCatching { enterSafeModeIfCrashLooping() }
+            .onFailure { android.util.Log.w("DshSafeMode", "safe mode check failed: ${it.message}") }
         ShowerEnvironment.shellRunner = DeviceShell
         // jar 暂存到 App 专属外部目录（shell 用户可读），不再写 /sdcard/Download（需要 MANAGE_EXTERNAL_STORAGE）
         ShowerEnvironment.stagingDir = DeviceShell.showerJarDir(this)
@@ -43,5 +47,26 @@ class DshApplication : Application() {
                 FloatingBallService.showWhenBackground(this@DshApplication)
             }
         })
+    }
+
+    /**
+     * 用户 2026-11-24：「一分钟之内重启应用 5 次进入安全模式；已经有用户写插件写坏，只能重装」。
+     *
+     * 只做两件事：记一次启动；达到阈值就**在插件加载之前**把第三方插件全停用并把名单留好，
+     * 供聊天页横幅「恢复第三方插件」使用。停用是写 `plugins.json` 的 enabled，等同用户在插件页
+     * 手动关掉——恢复时按名单开回去，不丢插件、不丢配置、不丢会话。
+     *
+     * 为什么同步做：Async 化会让首个 Activity 抢在停用前把坏插件加载起来（那正是要避免的崩溃）。
+     * 注册表只是一个 JSON，读写在主线程毫秒级。
+     */
+    private fun enterSafeModeIfCrashLooping() {
+        val safeMode = xin.dshaa.nativeapp.data.SafeMode(this)
+        if (safeMode.active) return
+        if (!safeMode.recordLaunch()) return
+        val store = xin.dshaa.nativeapp.data.PluginStore(this)
+        val enabled = store.list().filter { it.enabled }.map { it.id }.toSet()
+        safeMode.activate(enabled)
+        val disabled = if (enabled.isEmpty()) 0 else store.setAllEnabled(false)
+        android.util.Log.w("DshSafeMode", "entered safe mode: plugins disabled=$disabled (${enabled.size} known)")
     }
 }

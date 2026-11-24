@@ -1510,16 +1510,48 @@ private fun ContextPanel(state: ChatSessionState, onDismiss: () -> Unit) {
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                "总数为本次请求的实际输入（含缓存）；三段为同一请求的文本比例估算。" +
+                "三段为同一请求的文本比例估算，总和 = 真实输入（含缓存）。" +
                     if ((snapshot?.imageCount ?: 0) > 0) "图片 ${snapshot?.imageCount} 张，图片 token 未单独估算。" else "",
                 style = MaterialTheme.typography.labelSmall,
                 color = c.faint,
             )
             Spacer(Modifier.height(6.dp))
+            // 2026-11-24（用户）：缓存要看得懂。
+            // - 命中率按上游 token-meter 口径 = 缓存读 / 整份提示词（未缓存 + 缓存读 + 缓存写）；
+            // - 「缓存写」在 DeepSeek 的自动缓存端点上本来就不返回，显示 0/未计算会让人以为坏了，
+            //   这里分开写「未返回」和「明确的 0」。
+            val hit = snapshot?.cacheHitRate
+            Text(
+                buildString {
+                    append("缓存命中：")
+                    if (hit != null) {
+                        append(String.format(java.util.Locale.US, "%.0f%%", hit * 100))
+                        append("（读 ${formatTokenCount(snapshot?.cacheReadTokens ?: 0)}")
+                        append(" / 提示词 ${formatTokenCount(used)}）")
+                    } else {
+                        append("—（该端点没有返回缓存读）")
+                    }
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (hit != null) c.text else c.faint,
+            )
+            Spacer(Modifier.height(4.dp))
+            val cacheWrite = snapshot?.cacheCreationTokens
+            Text(
+                "缓存写入：" + when {
+                    cacheWrite != null && cacheWrite > 0 ->
+                        "${formatTokenCount(cacheWrite)} tokens（下次可能命中）"
+                    cacheWrite != null ->
+                        "0（自动缓存端点不单独计写入，只按命中/未命中计费）"
+                    else -> "—（该端点不返回缓存写入）"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = c.faint,
+            )
+            Spacer(Modifier.height(4.dp))
             Text(
                 "本次输出 " + (snapshot?.outputTokens?.let { "${formatTokenCount(it)} tokens" } ?: "未报告") +
-                    " · 缓存读取 " + (snapshot?.cacheReadTokens?.let { formatTokenCount(it) } ?: "未报告") +
-                    " · 缓存写入 " + (snapshot?.cacheCreationTokens?.let { formatTokenCount(it) } ?: "未报告"),
+                    " · 未缓存输入 " + (snapshot?.inputTokens?.let { formatTokenCount(it) } ?: "未报告"),
                 style = MaterialTheme.typography.labelSmall,
                 color = c.faint,
             )

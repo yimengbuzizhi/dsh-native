@@ -23,7 +23,7 @@ whenToUse: 用户拿来一个 DSH 插件（npm 包 / GitHub 仓库 / dist/index.
 
 - 入口是 `export const name` / `export function apply(ctx)` → Node 宿主。
 - 入口是 `module.exports` / TS 源码 → 先构建成 ESM 再装；Node 宿主用 `import()` 加载。
-- 有 `dependencies` 且不是 `@deepseek-ai/*` → 必须把依赖随包打进 `node_modules/`（不能在手机上 `npm install`）。
+- 依赖先看运行时：它带完整 dsh 生产树（`@deepseek-ai/*` 及 cordis/cosmokit/zod 等传递依赖，约 200 个顶层包），包名命中就不必随包带；树里没有的第三方依赖才必须打进 `node_modules/`（手机上不能 `npm install`）。
 - 有绑定桌面/Electron/原生 helper 的代码 → Node 宿主也跑不了，如实标不支持。
 
 ## 1. Node 宿主路线（真 DSH 插件首选）

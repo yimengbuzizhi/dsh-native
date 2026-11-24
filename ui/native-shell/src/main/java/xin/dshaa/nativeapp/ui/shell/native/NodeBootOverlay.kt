@@ -165,7 +165,7 @@ fun NodeBootOverlay(
             }
             if (progress.phase == "extracting" && progress.percent < 100) {
                 Text(
-                    "首次解压约 25MB，之后 1–3 秒。",
+                    "首次解压约 1.2GB（约 1 分钟），之后 1–3 秒。",
                     style = MaterialTheme.typography.labelSmall,
                     color = c.faint,
                 )
