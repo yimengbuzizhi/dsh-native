@@ -57,6 +57,12 @@ class TerminalManager private constructor(
     private val nativeLibDir: String = context.applicationInfo.nativeLibraryDir
     private val activeSessions = ConcurrentHashMap<String, TerminalSession>()
     private val closingSessions = ConcurrentHashMap.newKeySet<String>()
+
+    /** 启动期输出（bash/proot 的真实报错要能带出来，别只报 timeout）。 */
+    private val sessionStartupLog = ConcurrentHashMap<String, StringBuilder>()
+
+    /** 启动失败原因（进程提前退出 / startSession 抛错）：createNewSession 据此立刻失败。 */
+    private val sessionFailures = ConcurrentHashMap<String, String>()
     
     // SharedPreferences for reading settings
     private val prefs = context.getSharedPreferences("terminal_settings", Context.MODE_PRIVATE)
@@ -119,6 +125,9 @@ class TerminalManager private constructor(
 
         private const val TAG = "TerminalManager"
         private const val UBUNTU_FILENAME = "ubuntu-noble-aarch64-pd-v4.18.0.tar.xz"
+        /** 首次会话要解 rootfs，30s 不够；进程提前退出会走 fail-fast，不会真等满。 */
+        private const val SESSION_INIT_TIMEOUT_MS = 120_000L
+        private const val STARTUP_LOG_LIMIT = 4096
         private const val MAX_HISTORY_ITEMS = 500
         private const val MAX_OUTPUT_LINES_PER_ITEM = 1000
         private const val TERMINAL_ENTER = "\r"
@@ -169,22 +178,34 @@ class TerminalManager private constructor(
             initializeSession(newSession.id)
         }
 
-        // 等待会话初始化完成
-        val success = withTimeoutOrNull(30000) { // 30秒超时
-            terminalState.first { state ->
-                val session = state.sessions.find { it.id == newSession.id }
-                session?.initState == com.ai.assistance.operit.terminal.data.SessionInitState.READY
+        // 等待会话初始化完成（首次可能要解 Ubuntu rootfs，给足时间；进程提前退出则立刻失败）
+        val deadline = System.currentTimeMillis() + SESSION_INIT_TIMEOUT_MS
+        while (true) {
+            val session = terminalState.value.sessions.find { it.id == newSession.id }
+            if (session?.initState == SessionInitState.READY) break
+            sessionFailures[newSession.id]?.let { reason ->
+                Log.e(TAG, "Session ${newSession.id} failed before ready: $reason")
+                sessionManager.closeSession(newSession.id)
+                sessionFailures.remove(newSession.id)
+                sessionStartupLog.remove(newSession.id)
+                throw Exception("terminal failed to start: $reason")
             }
-        }
-
-        if (success == null) {
-            Log.e(TAG, "Session initialization timeout for session: ${newSession.id}")
-            // 初始化失败，移除会话
-            sessionManager.closeSession(newSession.id)
-            throw Exception("Session initialization timeout")
+            if (System.currentTimeMillis() > deadline) {
+                Log.e(TAG, "Session initialization timeout for session: ${newSession.id}")
+                val tail = sessionStartupLog[newSession.id]?.toString()?.trim().orEmpty()
+                sessionManager.closeSession(newSession.id)
+                sessionFailures.remove(newSession.id)
+                sessionStartupLog.remove(newSession.id)
+                throw Exception(
+                    "Session initialization timeout" +
+                        if (tail.isNotBlank()) " (last output: ${tail.takeLast(600)})" else ""
+                )
+            }
+            kotlinx.coroutines.delay(50)
         }
 
         Log.d(TAG, "Session ${newSession.id} initialized successfully")
+        sessionStartupLog.remove(newSession.id)
         return sessionManager.getSession(newSession.id) ?: newSession
     }
 
@@ -498,6 +519,9 @@ class TerminalManager private constructor(
                             while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                                 val chunk = String(buffer, 0, bytesRead)
                                 Log.d(TAG, "Read chunk: '$chunk'")
+                                sessionStartupLog.getOrPut(sessionId) { StringBuilder() }.let { sb ->
+                                    if (sb.length < STARTUP_LOG_LIMIT) sb.append(chunk)
+                                }
                                 outputProcessor.processOutput(sessionId, chunk, sessionManager)
                             }
                             reachedEof = true
@@ -506,11 +530,22 @@ class TerminalManager private constructor(
                         Log.i(TAG, "Read job interrupted for session $sessionId.")
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in read job for session $sessionId", e)
+                        sessionFailures[sessionId] = "read failed: ${e.message}"
                     } finally {
                         if (closingSessions.remove(sessionId)) {
                             return@launch
                         }
                         if (reachedEof || !terminalSession.process.isAlive) {
+                            // 进程在 READY 前退出：把 PTY 最后输出（bash/proot 的报错）当作失败原因带出去。
+                            val exitCode = runCatching { terminalSession.process.exitValue() }.getOrDefault(-1)
+                            val tail = sessionStartupLog[sessionId]?.toString().orEmpty()
+                                .replace(Regex("\u001B\\[[0-9;?]*[A-Za-z]"), "")
+                                .trim()
+                            if (sessionFailures[sessionId] == null) {
+                                sessionFailures[sessionId] =
+                                    "process exited (code=$exitCode)" +
+                                        if (tail.isNotBlank()) ": ${tail.takeLast(800)}" else ""
+                            }
                             handleTerminalSessionExit(sessionId, terminalSession)
                         }
                     }
@@ -527,6 +562,7 @@ class TerminalManager private constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error starting session", e)
+                sessionFailures[sessionId] = "start failed: ${e.message ?: e::class.java.simpleName}"
             }
         }
     }
@@ -709,7 +745,7 @@ class TerminalManager private constructor(
         val libraries = mapOf(
             "liboperit_proot.so" to "proot",
             "liboperit_loader.so" to "loader",
-            "libbash.so" to "bash",
+            "liboperit_terminal_bash.so" to "bash",
             "libsudo.so" to "sudo"
         )
 
@@ -1339,6 +1375,8 @@ $prootBindSetup
 
     fun closeTerminalSession(sessionId: String) {
         closingSessions.add(sessionId)
+        sessionFailures.remove(sessionId)
+        sessionStartupLog.remove(sessionId)
         // Delegate to provider to ensure underlying process is killed
         coroutineScope.launch {
             try {

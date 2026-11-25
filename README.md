@@ -137,8 +137,8 @@
 
 > **Node 运行时（0.3.7 起）**：`app/src/main/assets/node/runtime.zip`（约 358MB，解压约 1.2GB）
 > 超过 GitHub 单文件 100MB 限制，**不在本仓库里**。构建前从
-> [v0.3.7 Release](https://github.com/yimengbuzizhi/dsh-native/releases/tag/v0.3.7)
-> 的 `node-runtime-0.3.7.zip` 附件下载并放到该路径；重新打包方法见仓库 `docs/194`。
+> [v0.3.8 Release](https://github.com/yimengbuzizhi/dsh-native/releases/tag/v0.3.8)
+> 的 `node-runtime-0.3.8.zip` 附件下载并放到该路径；重新打包方法见仓库 `docs/194`。
 > 缺这个文件时 `./gradlew :app:assembleDebug` 仍能出包，但 APK 不带 Node 运行时；
 > JVM 测试 `NodeRuntimeInstallerEntryCountTest` 也需要它。
 
