@@ -88,7 +88,7 @@
   原语层：`docs/186-原语层-单一定义与三面接口-能力映射.md`；Node 自治：`docs/190-下一轮任务书-返回栈-提示词-Node自治.md`
 - 插件作者指南（随 App 以内置技能提供，共 3 个）：`dsh-plugin-authoring`（原生/QuickJS）、
   `dsh-node-plugin-authoring`（真 Node/cordis 插件）、`dsh-plugin-adapter`（DSH/社区插件适配）
-- 各版本发布记录与已知限制：`docs/191-发布-v0.3.6.md`、[Releases](https://github.com/yimengbuzizhi/dsh-native/releases)
+- 各版本发布记录与已知限制：`docs/197-发布-v0.3.8.md`（更早见 `docs/195`、`docs/191`）、[Releases](https://github.com/yimengbuzizhi/dsh-native/releases)
 
 ## 功能
 
