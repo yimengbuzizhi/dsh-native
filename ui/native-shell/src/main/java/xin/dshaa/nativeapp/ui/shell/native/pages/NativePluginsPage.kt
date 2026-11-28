@@ -83,6 +83,10 @@ internal fun NativePluginsPage(
         nodeHostLogs = host.nodeHostLogs,
         onReloadNodeHost = host::reloadNodeHost,
         onImportNodePlugin = host::importNodePlugin,
+        nodePluginConfig = host::nodePluginConfig,
+        onSaveNodePluginConfig = host::saveNodePluginConfig,
+        onUninstallNodePlugin = host::uninstallNodePlugin,
+        onOpenNodePluginClient = host::openNodePluginClient,
         onRefreshExtensions = host::refreshPluginExtensions,
         // docs/188 P4：统一导入（识别归属 + 可改 + 迁移）。
         pluginImportDraft = host.pluginImportDraft,

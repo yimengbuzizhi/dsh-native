@@ -64,15 +64,20 @@ fun Modifier.inkReveal(
         progress.animateTo(1f, tween(durationMs, easing = InkEase))
     }
     return this
-        // DstIn 必须在**离屏图层**内合成，否则它会按窗口底色去 blend，
-        // 结果是文字区域出现一条黑→透明渐变（用户截图：正文被黑块盖住）。
-        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        // DstIn 仅在真正洇出动画期间开启离屏图层；动画完成后回到 Auto，避免每帧分配离屏 FBO
+        .graphicsLayer {
+            compositingStrategy = if (progress.value < 0.999f) {
+                CompositingStrategy.Offscreen
+            } else {
+                CompositingStrategy.Auto
+            }
+        }
         .drawWithContent {
             val p = progress.value
             drawContent()
             if (p >= 0.999f) return@drawWithContent
             val w = size.width.coerceAtLeast(1f)
-            val lead = p * w * 1.08f
+            val lead = (p * w * 1.08f).coerceAtLeast(1f)
             val edge = w * 0.12f
             drawRect(
                 brush = Brush.horizontalGradient(
@@ -101,20 +106,20 @@ fun Modifier.threadEdgeFade(
 ): Modifier = graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
     drawContent()
     val h = size.height.coerceAtLeast(1f)
-    val tSolid = topSolid.toPx().coerceAtMost(h)
-    val bSolid = (h - bottomSolid.toPx()).coerceAtLeast(tSolid)
+    val tSolid = topSolid.toPx().coerceAtMost(h * 0.45f)
     val t0 = fadeIn.toPx().coerceAtMost(tSolid)
-    val b0 = (bSolid - fadeOut.toPx()).coerceAtLeast(tSolid)
-    val stops = arrayListOf(
+    val bSolid = (h - bottomSolid.toPx()).coerceAtLeast(tSolid)
+    val bMid = (h - fadeOut.toPx()).coerceAtLeast(bSolid).coerceAtMost(h)
+    val stops = arrayOf(
         0f to Color.Transparent,
         (t0 / h).coerceIn(0f, 1f) to Color(0x73000000),
         (tSolid / h).coerceIn(0f, 1f) to Color.Black,
         (bSolid / h).coerceIn(0f, 1f) to Color.Black,
-        (b0 / h).coerceIn(0f, 1f) to Color(0x73000000),
+        (bMid / h).coerceIn(0f, 1f) to Color(0x73000000),
         1f to Color.Transparent,
     )
     drawRect(
-        brush = Brush.verticalGradient(colorStops = stops.toTypedArray(), startY = 0f, endY = h),
+        brush = Brush.verticalGradient(colorStops = stops, startY = 0f, endY = h),
         blendMode = BlendMode.DstIn,
     )
 }

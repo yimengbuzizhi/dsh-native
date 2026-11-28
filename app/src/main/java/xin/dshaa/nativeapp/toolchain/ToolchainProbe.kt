@@ -101,12 +101,13 @@ object ToolchainProbe {
                 listOf(bash, "-c", "curl -sSL -o /dev/null -w '%{http_code} %{url_effective} %{num_redirects}\\n' http://example.com"),
                 toolchain,
             )
-            // 6) CA 校验失败必须原样报错（用空 bundle 逼出 77）
+            // 6) CA 校验失败必须原样报错（用空 bundle 逼出非零退出码，绝不能 rc=0）
             recordRun(
                 emit,
                 "curl_ca_fail",
                 listOf(bash, "-c", "curl -sS --cacert /dev/null https://example.com; echo \"[rc=\$?]\""),
                 toolchain,
+                expectOutputPredicate = { out -> out.contains("[rc=") && !out.contains("[rc=0]") },
             )
         } else {
             record("bash_missing", false, "no bundled bash for this abi (${context.applicationInfo.nativeLibraryDir})")
@@ -140,12 +141,13 @@ object ToolchainProbe {
         Log.i(TAG, "probe report: ${target.absolutePath} -> $report")
     }
 
-    /** 跑一条命令并记一行；超时 60s（curl 走网络，别用太短的值假装成功）。 */
+    /** 跑一条命令并记一行；严格执行 60s 超时，防止网络卡住永久挂起。 */
     private fun recordRun(
         record: (String, Boolean, String, Long) -> Unit,
         step: String,
         command: List<String>,
         toolchain: Toolchain?,
+        expectOutputPredicate: ((String) -> Boolean)? = null,
     ) {
         val at = System.currentTimeMillis()
         val result = runCatching {
@@ -153,11 +155,23 @@ object ToolchainProbe {
             toolchain?.environment()?.forEach { (k, v) -> builder.environment()[k] = v }
             val process = builder.start()
             process.outputStream.close()
-            val output = process.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-            val exit = process.waitFor()
+            var output = ""
+            val reader = Thread {
+                output = runCatching {
+                    process.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                }.getOrDefault("")
+            }.apply { isDaemon = true; start() }
+            val finished = process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                reader.join(500)
+                return@runCatching "timeout after 60s\n${output.trim()}"
+            }
+            reader.join(2_000)
+            val exit = process.exitValue()
             "exit=$exit\n" + output.trim()
         }.getOrElse { "spawn failed: ${it.javaClass.simpleName}: ${it.message}" }
-        val ok = result.startsWith("exit=0")
+        val ok = result.startsWith("exit=0") && (expectOutputPredicate?.invoke(result) ?: true)
         record(step, ok, result, System.currentTimeMillis() - at)
     }
 }

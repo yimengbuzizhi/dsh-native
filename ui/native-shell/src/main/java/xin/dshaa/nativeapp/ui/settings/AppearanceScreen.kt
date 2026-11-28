@@ -1,4 +1,5 @@
 package xin.dshaa.nativeapp.ui.settings
+import xin.dshaa.ui.design.component.dshTopBarSurface
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -61,14 +62,14 @@ import xin.dshaa.ui.shellapi.data.SettingsStore
 fun AppearanceScreen(
     settings: SettingsStore,
     onBack: () -> Unit,
+    onSelectShell: ((String) -> Unit)? = null,
 ) {
     val c = DshTheme2.colors
+    val liquidEnabled = DshTheme2.liquidEnabled
 
     Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
-                .liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
-                .statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().dshTopBarSurface().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -147,10 +148,28 @@ fun AppearanceScreen(
                 )
             }
 
+            if (onSelectShell != null) {
+                SettingsGroup(icon = Icons.Rounded.Palette, title = "界面风格") {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ThemeModeRow(
+                            title = "原生界面（简洁省电）",
+                            icon = Icons.Rounded.SettingsBrightness,
+                            selected = !liquidEnabled,
+                            onClick = { onSelectShell("native") },
+                        )
+                        ThemeModeRow(
+                            title = "液态玻璃（厚透镜视觉层）",
+                            icon = Icons.Rounded.Palette,
+                            selected = liquidEnabled,
+                            onClick = { onSelectShell("liquid") },
+                        )
+                    }
+                }
+            }
+
             SettingsGroup(icon = Icons.Rounded.Palette, title = "预览") {
-                // 一块玻璃卡 + 一颗水球：切换深浅/强调色后立刻能看出差别
                 Row(
-                    Modifier.fillMaxWidth().liquidEnter()
+                    Modifier.fillMaxWidth()
                         .liquidGlass(
                             shape = RoundedCornerShape(LiquidRadius.m),
                             level = LiquidLevel.Card,
@@ -158,10 +177,23 @@ fun AppearanceScreen(
                         .padding(horizontal = 14.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    WaterOrb(size = 64.dp, poking = false)
-                    Spacer(Modifier.width(14.dp))
+                    if (liquidEnabled) {
+                        WaterOrb(size = 64.dp, poking = false)
+                        Spacer(Modifier.width(14.dp))
+                    } else {
+                        Box(
+                            Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(c.brand),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Rounded.Palette, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                        }
+                        Spacer(Modifier.width(14.dp))
+                    }
                     Text(
-                        "厚透镜液态玻璃",
+                        if (liquidEnabled) "厚透镜液态玻璃" else "原生界面",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = c.text,

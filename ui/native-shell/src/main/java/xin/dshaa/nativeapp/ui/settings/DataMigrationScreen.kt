@@ -1,4 +1,5 @@
 package xin.dshaa.nativeapp.ui.settings
+import xin.dshaa.ui.design.component.dshTopBarSurface
 
 import xin.dshaa.ui.design.component.liquidGlass
 import xin.dshaa.ui.design.theme.LiquidLevel
@@ -223,7 +224,7 @@ fun DataMigrationScreen(
     Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         // 顶栏
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().dshTopBarSurface().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack() }, contentAlignment = Alignment.Center) {

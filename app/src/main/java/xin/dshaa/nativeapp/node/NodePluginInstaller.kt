@@ -284,22 +284,58 @@ class NodePluginInstaller(
         return top.ifBlank { null }
     }
 
-    /** 入口：`package.json` 的 main 优先，其次 index.*，最后随便挑一个 js。 */
+    /** 读取已安装 Node 插件的 config JSON 文本（默认 "{}"）。 */
+    fun getConfig(idOrModule: String): String {
+        val key = idOrModule.trim()
+        val match = readManifest().firstOrNull { element ->
+            val obj = element as? JsonObject ?: return@firstOrNull false
+            val module = (obj["module"] as? JsonPrimitive)?.content.orEmpty()
+            val dir = moduleDir(module)
+            val declaredId = (obj["id"] as? JsonPrimitive)?.content
+            val meta = dir?.let { metaOf(it) }
+            declaredId == key || module == key || dir?.name == key || meta?.id == key
+        } as? JsonObject ?: return "{}"
+        return (match["config"] as? JsonObject)?.toString() ?: "{}"
+    }
+
+    /** 更新已安装 Node 插件的 config JSON（必须是 JSON 对象）；返回插件显示名。 */
+    fun setConfig(idOrModule: String, configJson: String): Result<String> = runCatching {
+        val parsed = json.parseToJsonElement(configJson.trim().ifEmpty { "{}" }) as? JsonObject
+            ?: error("配置必须是 JSON 对象（例如 {\"apiKey\":\"...\"}）")
+        val list = readManifest().toMutableList()
+        val key = idOrModule.trim()
+        val index = list.indexOfFirst { element ->
+            val obj = element as? JsonObject ?: return@indexOfFirst false
+            val module = (obj["module"] as? JsonPrimitive)?.content.orEmpty()
+            val dir = moduleDir(module)
+            val declaredId = (obj["id"] as? JsonPrimitive)?.content
+            val meta = dir?.let { metaOf(it) }
+            declaredId == key || module == key || dir?.name == key || meta?.id == key
+        }
+        if (index < 0) error("清单里没有这个 Node 插件：$key")
+        val old = list[index] as JsonObject
+        val updated = buildJsonObject {
+            old.forEach { (k, v) -> if (k != "config") put(k, v) }
+            put("config", parsed)
+        }
+        list[index] = updated
+        writeManifest(list)
+        (old["name"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() } ?: key
+    }
+
+    /** 入口：优先 package.json（main / exports["."] / module），其次常见入口，最后跳过 node_modules 找 js。 */
     private fun entryPoint(dir: File): String {
-        // canonical 只用来做「不能逃出插件目录」的校验；返回的相对路径必须相对**同一个**
-        // canonical 根，否则 Android 上 /data/user/0 → /data/data 的软链会让 relativeTo
-        // 造出一串 `../../..`（真机踩过：manifest 里写成 ../../../../data/...）。
         val canonicalDirFile = dir.canonicalFile
         val canonicalDir = canonicalDirFile.path
         val pkg = File(dir, "package.json")
         if (pkg.isFile) {
             runCatching {
                 val obj = json.parseToJsonElement(pkg.readText()).jsonObjectOrNull() ?: return@runCatching
-                val main = (obj["main"] as? JsonPrimitive)?.content
-                if (!main.isNullOrBlank()) {
-                    val mainFile = File(dir, main).canonicalFile
+                val declared = xin.dshaa.core.plugins.PluginPackage.resolveEntryFromJson(obj)
+                if (!declared.isNullOrBlank()) {
+                    val mainFile = File(dir, declared).canonicalFile
                     if (!mainFile.path.startsWith(canonicalDir + File.separator)) {
-                        error("package.json#main 越界：$main")
+                        error("package.json 入口越界：$declared")
                     }
                     if (mainFile.isFile) {
                         return mainFile.relativeTo(canonicalDirFile).invariantSeparatorsPath
@@ -307,13 +343,18 @@ class NodePluginInstaller(
                 }
             }.onFailure { if (it is IllegalStateException) throw it }
         }
-        for (candidate in listOf("index.js", "index.mjs", "index.cjs", "main.js", "plugin.js")) {
+        for (candidate in listOf("lib/index.js", "dist/index.js", "index.js", "index.mjs", "index.cjs", "main.js", "plugin.js")) {
             if (File(dir, candidate).isFile) return candidate
         }
         dir.walkTopDown()
-            .firstOrNull { it.isFile && it.extension in setOf("js", "mjs", "cjs") }
+            .onEnter { it.name != "node_modules" && !it.name.startsWith(".") }
+            .firstOrNull {
+                it.isFile &&
+                    it.extension in setOf("js", "mjs", "cjs") &&
+                    !it.name.equals("client.js", ignoreCase = true)
+            }
             ?.let { return it.relativeTo(dir).invariantSeparatorsPath }
-        error("插件包里找不到入口（index.js 或 package.json 的 main）")
+        error("插件包里找不到入口（index.js 或 package.json 的 main / exports）")
     }
 
     private data class Meta(
@@ -358,12 +399,19 @@ class NodePluginInstaller(
             declared == installed.id || module == installed.module ||
                 moduleDir(module)?.let { metaOf(it)?.id } == installed.id
         }
+        val newDir = moduleDir(installed.module)?.canonicalFile
         sameId.forEach { old ->
             val obj = old as JsonObject
             val module = (obj["module"] as? JsonPrimitive)?.content.orEmpty()
-            val sameModule = module == installed.module
-            if (!resetConfig && sameModule) {
+            if (!resetConfig) {
                 (obj["config"] as? JsonObject)?.let { config = it }
+            }
+            // 同 id 换了目录名重装时清理遗留旧目录，避免磁盘残留孤儿副本
+            val oldDir = moduleDir(module)?.canonicalFile
+            if (oldDir != null && oldDir != newDir && oldDir.exists() &&
+                oldDir.path.startsWith(pluginsDir.canonicalPath + File.separator)
+            ) {
+                runCatching { oldDir.deleteRecursively() }
             }
             list.remove(old)
         }

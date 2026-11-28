@@ -102,7 +102,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -110,6 +113,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import xin.dshaa.ui.design.component.dshTopBarSurface
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
@@ -490,31 +495,46 @@ fun ChatScreen(
     }
 
     val messages = state.messages
-    val visible = messages.filter { it.role != MessageRole.TOOL }
-    val rows = buildRows(visible)
-    val results = messages.filter { it.role == MessageRole.TOOL && it.toolCallId != null }.associateBy { it.toolCallId!! }
-
-    // 消息 id → 行下标（连续 assistant 消息合成一行，所以不能直接用消息下标）
-    val rowIndexByMessage = HashMap<String, Int>()
-    rows.forEachIndexed { index, row ->
-        when (row) {
-            is ChatRow.User -> rowIndexByMessage[row.message.id] = index
-            is ChatRow.Assistant -> row.messages.forEach { rowIndexByMessage[it.id] = index }
-            is ChatRow.Day -> Unit
+    val visible by remember(messages) {
+        derivedStateOf { messages.filter { it.role != MessageRole.TOOL } }
+    }
+    val rows by remember(messages) {
+        derivedStateOf { buildRows(visible) }
+    }
+    val results by remember(messages) {
+        derivedStateOf {
+            messages.filter { it.role == MessageRole.TOOL && it.toolCallId != null }
+                .associateBy { it.toolCallId!! }
         }
     }
-    val matches: List<Pair<ChatMessage, Int>> = if (query.isBlank()) {
-        emptyList()
-    } else {
-        // goal 轮/收尾通知、后台任务完成通知的正文是内部提示词，界面上只显示分隔条，不参与搜索
-        visible.filter { m ->
-            m.sourceKind != "goal" && m.sourceKind != "tool-goal" && m.sourceKind != "tool-jobs" &&
-                m.sourceKind != "subagent-settled" && m.sourceKind != "skill-catalog" &&
-                m.sourceKind != "skill-invocation" && m.sourceKind != "time-context" &&
-                // M43：压缩 checkpoint 是内部注入（摘要正文可能很长），不参与会话内搜索
-                m.sourceKind != "compact-checkpoint" &&
-                m.content.any { it.type == BlockType.TEXT && it.text.contains(query, ignoreCase = true) }
-        }.mapNotNull { m -> rowIndexByMessage[m.id]?.let { m to it } }
+    // 消息 id → 行下标（连续 assistant 消息合成一行，所以不能直接用消息下标）
+    val rowIndexByMessage by remember(messages) {
+        derivedStateOf {
+            HashMap<String, Int>(rows.size).also { map ->
+                rows.forEachIndexed { index, row ->
+                    when (row) {
+                        is ChatRow.User -> map[row.message.id] = index
+                        is ChatRow.Assistant -> row.messages.forEach { map[it.id] = index }
+                        is ChatRow.Day -> Unit
+                    }
+                }
+            }
+        }
+    }
+    val matches: List<Pair<ChatMessage, Int>> = remember(visible, rowIndexByMessage, query) {
+        if (query.isBlank()) {
+            emptyList()
+        } else {
+            // goal 轮/收尾通知、后台任务完成通知的正文是内部提示词，界面上只显示分隔条，不参与搜索
+            visible.filter { m ->
+                m.sourceKind != "goal" && m.sourceKind != "tool-goal" && m.sourceKind != "tool-jobs" &&
+                    m.sourceKind != "subagent-settled" && m.sourceKind != "skill-catalog" &&
+                    m.sourceKind != "skill-invocation" && m.sourceKind != "time-context" &&
+                    // M43：压缩 checkpoint 是内部注入（摘要正文可能很长），不参与会话内搜索
+                    m.sourceKind != "compact-checkpoint" &&
+                    m.content.any { it.type == BlockType.TEXT && it.text.contains(query, ignoreCase = true) }
+            }.mapNotNull { m -> rowIndexByMessage[m.id]?.let { m to it } }
+        }
     }
     val safeMatchIndex = if (matches.isEmpty()) 0 else matchIndex.coerceIn(0, matches.size - 1)
     val currentMatchId = matches.getOrNull(safeMatchIndex)?.first?.id
@@ -578,7 +598,11 @@ fun ChatScreen(
         keyboard?.show()
     }
 
-    val lastText = visible.lastOrNull()?.content?.joinToString("") { it.text }.orEmpty()
+    val lastTextLength by remember(messages) {
+        derivedStateOf {
+            visible.lastOrNull()?.content?.sumOf { it.text.length } ?: 0
+        }
+    }
     /**
      * 生成中要不要自动贴底。
      *
@@ -609,7 +633,7 @@ fun ChatScreen(
             }
         }
     }
-    LaunchedEffect(visible.size, lastText.length, state.statusText, state.streaming) {
+    LaunchedEffect(visible.size, lastTextLength, state.statusText, state.streaming) {
         if (visible.isEmpty() || query.isNotBlank() || !followOutput) return@LaunchedEffect
         // 等一帧让新内容参与测量，再按实际剩余距离贴底（scrollBy 到头会被 clamp，不会越界）
         withFrameNanos { }
@@ -638,18 +662,7 @@ fun ChatScreen(
         Row(
             Modifier
                 .fillMaxWidth()
-                .then(
-                    if (liquid) {
-                        // 设计稿 .topbar：悬浮玻璃条（12/12/6 外边距 + 22dp 圆角）
-                        Modifier
-                            .padding(start = 12.dp, end = 12.dp, top = 6.dp)
-                            .liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
-                    } else {
-                        // 0.3.5 顶栏：整条实底 surface，贴着状态栏
-                        Modifier.background(c.surface)
-                    },
-                )
-                .statusBarsPadding()
+                .dshTopBarSurface()
                 .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -892,24 +905,10 @@ fun ChatScreen(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .then(
-                            if (liquid) {
-                                Modifier
-                                    .padding(horizontal = 14.dp)
-                                    // 设计稿 .thread 的 mask：气泡从悬浮顶栏/输入台背后穿过去，两端渐隐
-                                    .threadEdgeFade(topSolid = 54.dp, bottomSolid = 88.dp)
-                            } else {
-                                // 0.3.5：普通列表留白，没有悬浮层要躲
-                                Modifier.padding(horizontal = 18.dp)
-                            },
-                        )
+                        .padding(horizontal = if (liquid) 14.dp else 18.dp)
                         .nestedScroll(followConnection),
-                    // 设计稿 padding：顶部留出悬浮顶栏（safe+68），底部留出输入台（122）
-                    contentPadding = if (liquid) {
-                        PaddingValues(top = 68.dp, bottom = 118.dp)
-                    } else {
-                        PaddingValues(vertical = 16.dp)
-                    },
+                    // 顶栏与输入条已经在 Column 上下占位，不需要再套额外大留白和离屏 Offscreen 遮罩
+                    contentPadding = PaddingValues(vertical = if (liquid) 12.dp else 16.dp),
                     verticalArrangement = Arrangement.spacedBy(if (liquid) 14.dp else 20.dp),
                 ) {
                     items(rows, key = { row -> rowKey(row) }) { row ->
@@ -1018,10 +1017,9 @@ fun ChatScreen(
             }
         }
 
-        // 待办面板：取最近一次 todo_write 的参数（模型维护的任务清单）
-        latestTodos(visible)?.let { todos ->
-            TodoPanel(todos)
-        }
+        // 待办面板：取最近一次 todo_write 的参数（模型维护的任务清单），按 visible 记忆化
+        val todos by remember(messages) { derivedStateOf { latestTodos(visible) } }
+        todos?.let { TodoPanel(it) }
 
         // M85-D：回合插件（agent/v1）提示 / 安全模式。
         // 安全提示优先：没有可用回合时整条输入被拦下，这里给出原因与一键恢复。
@@ -1049,42 +1047,13 @@ fun ChatScreen(
             )
         }
 
-        // 运行状态条（M76）：流式期间常驻「运行中 · 12s · 正在执行 …」，不再让人以为突然停住。
+        // 运行状态条（M76）：独立 Composable 承载 1s 计时器，避免每秒触发整个 ChatScreen 与 LazyColumn 重组。
         if (state.streaming || state.statusText != null) {
-            var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
-            androidx.compose.runtime.LaunchedEffect(state.streaming, state.turnStartedAt) {
-                while (state.streaming) {
-                    nowMs = System.currentTimeMillis()
-                    kotlinx.coroutines.delay(1000)
-                }
-                nowMs = System.currentTimeMillis()
-            }
-            val elapsed = if (state.turnStartedAt > 0) {
-                ((nowMs - state.turnStartedAt) / 1000).coerceAtLeast(0)
-            } else 0
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                StatusDot(c.brand, pulse = state.streaming, size = 6.dp)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    buildString {
-                        if (state.streaming) {
-                            append("运行中")
-                            if (elapsed > 0) append(" · ${elapsed}s")
-                        }
-                        state.statusText?.takeIf { it.isNotBlank() }?.let { status ->
-                            if (isNotEmpty()) append(" · ")
-                            append(status)
-                        }
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = c.faint,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            RunningStatusBar(
+                streaming = state.streaming,
+                statusText = state.statusText,
+                turnStartedAt = state.turnStartedAt,
+            )
         }
 
         // 计划模式状态条（M18）：active = 已生效，pending = 下一步生效（轮次内切换）
@@ -2711,7 +2680,7 @@ private fun UserMessage(
         ) {
             Column(Modifier.padding(horizontal = if (liquid) 15.dp else 12.dp, vertical = 10.dp)) {
                 images.forEachIndexed { index, (path, _) ->
-                    val bitmap = remember(path) { decodeSampledBitmap(path, 1200) }
+                    val bitmap = rememberSampledBitmap(path, 1200)
                     if (bitmap != null) {
                         androidx.compose.foundation.Image(
                             bitmap = bitmap.asImageBitmap(),
@@ -2759,7 +2728,7 @@ private fun UserMessage(
 internal fun PendingImageChip(pending: PendingImage, onRemove: () -> Unit) {
     val c = DshTheme2.colors
     Box(Modifier.size(58.dp).clip(RoundedCornerShape(10.dp))) {
-        val bitmap = remember(pending.path) { decodeSampledBitmap(pending.path, 320) }
+        val bitmap = rememberSampledBitmap(pending.path, 320)
         if (bitmap != null) {
             androidx.compose.foundation.Image(
                 bitmap = bitmap.asImageBitmap(),
@@ -2851,7 +2820,6 @@ private fun AssistantTurn(
             .then(
                 if (liquid) {
                     Modifier
-                        .liquidEnter()
                         .liquidGlass(
                             shape = RoundedCornerShape(LiquidRadius.l),
                             level = LiquidLevel.Card,
@@ -2966,14 +2934,6 @@ private fun AssistantTurn(
                 // 设计稿三.3：水墨晕染式流式打字——流式时正文做一次从左到右的洇出。
                 MarkdownText(
                     text = text,
-                    modifier = if (liquid) {
-                        Modifier.inkReveal(
-                            trigger = message.id,
-                            enabled = message.streaming,
-                        )
-                    } else {
-                        Modifier
-                    },
                     style = MaterialTheme.typography.bodyLarge,
                     color = c.text,
                 )
@@ -3057,6 +3017,50 @@ private fun AssistantTurn(
  * - 运行中：`正在思考` / `正在执行 read`（品牌色 + 呼吸点），默认折叠；
  * - 已结束：`已完成 · 用时 12 秒`，默认折叠，点开看完整工作步骤。
  */
+/** 运行状态条：隔离每秒一次的 elapsed 计时重组，避免拖累 ChatScreen / LazyColumn。 */
+@Composable
+private fun RunningStatusBar(
+    streaming: Boolean,
+    statusText: String?,
+    turnStartedAt: Long,
+) {
+    val c = DshTheme2.colors
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(streaming, turnStartedAt) {
+        while (streaming) {
+            nowMs = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1000)
+        }
+        nowMs = System.currentTimeMillis()
+    }
+    val elapsed = if (turnStartedAt > 0) {
+        ((nowMs - turnStartedAt) / 1000).coerceAtLeast(0)
+    } else 0
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatusDot(c.brand, pulse = streaming, size = 6.dp)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            buildString {
+                if (streaming) {
+                    append("运行中")
+                    if (elapsed > 0) append(" · ${elapsed}s")
+                }
+                statusText?.takeIf { it.isNotBlank() }?.let { status ->
+                    if (isNotEmpty()) append(" · ")
+                    append(status)
+                }
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = c.faint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 @Composable
 private fun TurnProcessRow(
     expanded: Boolean,
@@ -3139,8 +3143,8 @@ private fun ThinkingBlock(text: String, streaming: Boolean, defaultExpanded: Boo
         }
     }
 
-    // 流式呼吸（Operit：1400ms 线性循环的扫光；这里用同节奏的亮度变化）
-    val shimmer = if (streaming) {
+    // 流式呼吸：保留 State 句柄并在 graphicsLayer/draw 阶段读取，避免 60–120Hz 触发整块 ThinkingBlock 重组
+    val shimmerState: State<Float>? = if (streaming) {
         val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "think")
         transition.animateFloat(
             initialValue = 0f,
@@ -3150,7 +3154,7 @@ private fun ThinkingBlock(text: String, streaming: Boolean, defaultExpanded: Boo
                 RepeatMode.Reverse,
             ),
             label = "pulse",
-        ).value
+        )
     } else {
         null
     }
@@ -3183,13 +3187,14 @@ private fun ThinkingBlock(text: String, streaming: Boolean, defaultExpanded: Boo
                 Box(
                     Modifier
                         .size(6.dp)
+                        .graphicsLayer {
+                            alpha = if (shimmerState == null) 0.55f else 0.45f + 0.55f * shimmerState.value
+                        }
                         .clip(CircleShape)
-                        .background(
-                            c.brand.copy(alpha = if (shimmer == null) 0.55f else 0.45f + 0.55f * shimmer),
-                        ),
+                        .background(c.brand),
                 )
                 Spacer(Modifier.width(8.dp))
-                ThinkingTitle("思考过程", pulse = shimmer)
+                ThinkingTitle("思考过程", pulse = shimmerState)
                 Spacer(Modifier.weight(1f))
                 Text("${text.length} 字", style = MaterialTheme.typography.labelSmall, color = c.faint)
                 Spacer(Modifier.width(6.dp))
@@ -3243,7 +3248,7 @@ private fun ThinkingBlock(text: String, streaming: Boolean, defaultExpanded: Boo
                     modifier = Modifier.size(20.dp).rotate(arrowRotation),
                 )
                 Spacer(Modifier.width(4.dp))
-                ThinkingTitle("思考过程", pulse = shimmer)
+                ThinkingTitle("思考过程", pulse = shimmerState)
                 Spacer(Modifier.width(8.dp))
                 Text("${text.length} 字", style = MaterialTheme.typography.labelSmall, color = c.faint)
             }
@@ -3291,12 +3296,18 @@ private fun ThinkingBlock(text: String, streaming: Boolean, defaultExpanded: Boo
     }
 }
 
-/** 流式中的标题：Operit 是扫光，这里用同节奏的呼吸亮度（渐变文字 API 在 compose 1.7 不可用）。 */
+/** 流式中的标题：Operit 是扫光，这里用同节奏的呼吸亮度（在 graphicsLayer 阶段读动画值，零重组）。 */
 @Composable
-private fun ThinkingTitle(title: String, pulse: Float?) {
+private fun ThinkingTitle(title: String, pulse: State<Float>?) {
     val c = DshTheme2.colors
-    val alpha = if (pulse == null) 0.7f else 0.45f + 0.55f * pulse
-    Text(title, style = MaterialTheme.typography.labelMedium, color = c.text.copy(alpha = alpha))
+    Text(
+        title,
+        style = MaterialTheme.typography.labelMedium,
+        color = c.text,
+        modifier = Modifier.graphicsLayer {
+            alpha = if (pulse == null) 0.7f else 0.45f + 0.55f * pulse.value
+        },
+    )
 }
 
 private fun Int.toDp() = this.dp
@@ -4071,7 +4082,7 @@ private fun imageInfoOf(block: ContentBlock): ImageBlockInfo? {
 @Composable
 private fun AttachmentThumb(path: String, info: ImageBlockInfo, onClick: () -> Unit) {
     val c = DshTheme2.colors
-    val bitmap = remember(path) { decodeSampledBitmap(path, 1400) }
+    val bitmap = rememberSampledBitmap(path, 1400)
     if (bitmap == null) return
     Column(Modifier.fillMaxWidth()) {
         androidx.compose.foundation.Image(
@@ -4099,7 +4110,7 @@ private fun ImagePreviewDialog(path: String, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        val bitmap = remember(path) { decodeSampledBitmap(path, 2400) }
+        val bitmap = rememberSampledBitmap(path, 2400)
         Box(
             Modifier
                 .fillMaxSize()
@@ -4120,6 +4131,14 @@ private fun ImagePreviewDialog(path: String, onDismiss: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun rememberSampledBitmap(path: String, maxDimension: Int): android.graphics.Bitmap? {
+    val state = produceState<android.graphics.Bitmap?>(initialValue = null, path, maxDimension) {
+        value = withContext(Dispatchers.IO) { decodeSampledBitmap(path, maxDimension) }
+    }
+    return state.value
 }
 
 private fun decodeSampledBitmap(path: String, maxDimension: Int): android.graphics.Bitmap? = try {
@@ -4148,12 +4167,31 @@ private fun humanBytes(bytes: Int): String = when {
 /** 工具结果在卡片里最多渲染多少字符（超出只提示，全文走「复制结果」）。 */
 private const val TOOL_RESULT_OPEN_CHARS = 20_000
 
+private val COMPACT_CMD_REGEX = Regex("\"command\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+private val COMPACT_FILE_REGEX = Regex("\"file_path\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+private val COMPACT_DESC_REGEX = Regex("\"description\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+private val COMPACT_AGENT_REGEX = Regex("\"agent_id\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+
 private fun compactArgs(name: String, args: String): String {
-    val raw = when (name) {
-        "bash" -> Regex("\"command\"\\s*:\\s*\"([^\"]*)\"").find(args)?.groupValues?.get(1)
-        "read", "write", "edit" -> Regex("\"file_path\"\\s*:\\s*\"([^\"]*)\"").find(args)?.groupValues?.get(1)
-        "subagent", "subagent_fork" -> Regex("\"description\"\\s*:\\s*\"([^\"]*)\"").find(args)?.groupValues?.get(1)
-        "send_message", "interrupt_agent" -> Regex("\"agent_id\"\\s*:\\s*\"([^\"]*)\"").find(args)?.groupValues?.get(1)
+    val key = when (name) {
+        "bash" -> "command"
+        "read", "write", "edit" -> "file_path"
+        "subagent", "subagent_fork" -> "description"
+        "send_message", "interrupt_agent" -> "agent_id"
+        else -> null
+    }
+    val fromJson = if (key != null) {
+        runCatching {
+            kotlinx.serialization.json.Json.parseToJsonElement(args).jsonObject[key]?.jsonPrimitive?.contentOrNull
+        }.getOrNull()
+    } else {
+        null
+    }
+    val raw = fromJson ?: when (name) {
+        "bash" -> COMPACT_CMD_REGEX.find(args)?.groupValues?.get(1)
+        "read", "write", "edit" -> COMPACT_FILE_REGEX.find(args)?.groupValues?.get(1)
+        "subagent", "subagent_fork" -> COMPACT_DESC_REGEX.find(args)?.groupValues?.get(1)
+        "send_message", "interrupt_agent" -> COMPACT_AGENT_REGEX.find(args)?.groupValues?.get(1)
         else -> null
     } ?: args
     return raw.replace("\n", " ").take(90)

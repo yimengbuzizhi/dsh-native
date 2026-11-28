@@ -532,7 +532,7 @@ class MainActivity : ComponentActivity() {
     private fun handleShellDebugIntent(intent: Intent, applySelection: Boolean) {
         if (applySelection) {
             intent.getStringExtra("dsh_shell")?.takeIf { it.isNotBlank() }?.let { value ->
-                appVm.setActiveShell(appVm.resolveShellTarget(value))
+                appVm.selectShell(value.trim())
             }
         }
         intent.getStringExtra("dsh_shell_list")?.takeIf { it.isNotBlank() }?.let { path ->

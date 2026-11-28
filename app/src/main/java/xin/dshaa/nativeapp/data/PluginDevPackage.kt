@@ -26,14 +26,16 @@ internal object PluginDevPackage {
                     require(!java.nio.file.Files.isSymbolicLink(file.toPath()) && canonical.path == file.absoluteFile.normalize().path) { "插件目录不能包含符号链接：${file.name}" }
                     require(canonical.path.startsWith(source.path + File.separator)) { "插件路径逃逸" }
                     val relative = canonical.relativeTo(source).invariantSeparatorsPath
-                    if (file.name in setOf(".git", "node_modules", ".DS_Store", "__MACOSX")) return@forEach
+                    if (file.name in setOf(".git", ".DS_Store", "__MACOSX", ".gradle", ".idea")) return@forEach
                     if (file.isDirectory) {
                         require(relative.count { it == '/' } < 32) { "插件目录层级超过 32" }
                         visit(file)
                     } else {
                         require(file.isFile) { "不是普通文件：$relative" }
                         require(++count <= PluginPackage.MAX_ENTRIES) { "插件文件数超过 ${PluginPackage.MAX_ENTRIES}" }
-                        require(file.length() <= PluginPackage.MAX_ENTRY_BYTES) { "单个文件超过 4MB：$relative" }
+                        val maxEntryMb = PluginPackage.MAX_ENTRY_BYTES / 1024 / 1024
+                        val maxTotalMb = PluginPackage.MAX_TOTAL_BYTES / 1024 / 1024
+                        require(file.length() <= PluginPackage.MAX_ENTRY_BYTES) { "单个文件超过 ${maxEntryMb}MB：$relative" }
                         zip.putNextEntry(ZipEntry(requireNotNull(PluginPackage.normalizePath(relative))))
                         var size = 0L
                         file.inputStream().buffered().use { input ->
@@ -43,8 +45,8 @@ internal object PluginDevPackage {
                                 if (n < 0) break
                                 size += n
                                 total += n
-                                require(size <= PluginPackage.MAX_ENTRY_BYTES) { "单个文件超过 4MB：$relative" }
-                                require(total <= PluginPackage.MAX_TOTAL_BYTES) { "插件总大小超过 32MB" }
+                                require(size <= PluginPackage.MAX_ENTRY_BYTES) { "单个文件超过 ${maxEntryMb}MB：$relative" }
+                                require(total <= PluginPackage.MAX_TOTAL_BYTES) { "插件总大小超过 ${maxTotalMb}MB" }
                                 zip.write(buffer, 0, n)
                             }
                         }

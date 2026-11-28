@@ -63,19 +63,41 @@ class NodeHostProcess(
         val builder = ProcessBuilder(binary.absolutePath, installer.hostScript.absolutePath)
             .directory(installer.dshDir)
             .redirectErrorStream(true)
-        // 干净环境：不继承 app 进程的 Android 变量，免得 TMPDIR/HOME 指到不可写的地方。
+        // 干净环境：在干净基线上补齐工具链 PATH、CA 证书、NODE_PATH 与编码，提高真实社区插件适配度。
         val env = builder.environment()
+        val inheritedPath = env["PATH"].orEmpty()
         env.clear()
-        env["PATH"] = "/system/bin:/system/xbin"
+        val filesRoot = installer.dataDir.parentFile?.parentFile
+        val toolchainBin = filesRoot?.let { File(it, "toolchain/bin") }?.takeIf { it.isDirectory }
+        val toolchainBusybox = filesRoot?.let { File(it, "toolchain/busybox-bin") }?.takeIf { it.isDirectory }
+        val caBundle = filesRoot?.let { File(it, "toolchain/cacert.pem") }?.takeIf { it.isFile }
+        val pathParts = buildList {
+            toolchainBin?.let { add(it.absolutePath) }
+            if (inheritedPath.isNotBlank()) {
+                inheritedPath.split(':').filter { it.isNotBlank() }.forEach { if (it !in this) add(it) }
+            }
+            for (sys in listOf("/system/bin", "/system/xbin", "/product/bin")) {
+                if (sys !in this) add(sys)
+            }
+            toolchainBusybox?.let { if (it.absolutePath !in this) add(it.absolutePath) }
+        }
+        env["PATH"] = pathParts.joinToString(":")
         env["LD_LIBRARY_PATH"] = "${installer.libDir.absolutePath}:${installer.nativeLibraryDir}"
         env["HOME"] = installer.homeDir.absolutePath
         env["TMPDIR"] = installer.tmpDir.absolutePath
+        env["LANG"] = "C.UTF-8"
         env["OPENSSL_CONF"] = "/dev/null"
         env["NODE_NO_WARNINGS"] = "1"
+        env["NODE_PATH"] = File(installer.dshDir, "node_modules").absolutePath
+        caBundle?.let {
+            env["SSL_CERT_FILE"] = it.absolutePath
+            env["NODE_EXTRA_CA_CERTS"] = it.absolutePath
+        }
         // docs/187 §九 第 2 项：WS 鉴权 token 只经环境变量进宿主，不落盘、不进日志。
         env["DSH_NODE_TOKEN"] = token
         // 插件/清单在 files/node/data/，运行时在 runtime/<version>/：host.mjs 用这个找用户插件。
         env["DSH_NODE_DATA"] = installer.dataDir.absolutePath
+        filesRoot?.let { env["DSH_HOME"] = it.absolutePath }
 
         val proc = runCatching { builder.start() }.getOrElse { error("spawn 失败：${it.message}") }
         process = proc

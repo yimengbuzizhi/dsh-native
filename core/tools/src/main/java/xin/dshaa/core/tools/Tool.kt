@@ -88,6 +88,12 @@ data class ToolContext(
  * 超时、后台、截断、stdin 仍由 `BashTool` 自己管，不在这里重复。
  */
 interface ShellHost {
+    /** 确保工具链已解压就绪（冷启动首调时挂起等待，避免竞态）；默认空实现。 */
+    suspend fun prepare() {}
+
+    /** 工具链是否已经成功就绪；false 时 BashTool 自动退回 `/system/bin/sh`。 */
+    fun isReady(): Boolean = true
+
     /** bundled bash 的绝对路径；null = 没有（Android 退回 `/system/bin/sh`，桌面退回 `sh`/`cmd`）。 */
     fun bashPath(): String?
 

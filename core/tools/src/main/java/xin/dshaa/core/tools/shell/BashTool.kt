@@ -10,6 +10,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import xin.dshaa.core.jobs.JobOutcome
@@ -19,19 +20,31 @@ import xin.dshaa.core.tools.ToolContext
 import xin.dshaa.core.tools.ToolResult
 import xin.dshaa.core.tools.resolvePath
 import java.io.File
+import java.io.InputStream
 import java.io.Reader
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 private fun JsonObject.str(key: String): String? = runCatching { this[key]?.jsonPrimitive?.contentOrNull }.getOrNull()
-private fun JsonObject.int(key: String): Int? = runCatching { this[key]?.jsonPrimitive?.intOrNull }.getOrNull()
+private fun JsonObject.longNum(key: String): Long? = runCatching {
+    val p = this[key]?.jsonPrimitive ?: return@runCatching null
+    p.intOrNull?.toLong()
+        ?: p.doubleOrNull?.toLong()
+        ?: p.contentOrNull?.trim()?.toDoubleOrNull()?.toLong()
+}.getOrNull()
 private fun JsonObject.bool(key: String): Boolean? = runCatching { this[key]?.jsonPrimitive?.booleanOrNull }.getOrNull()
 
 /** 结果最大字符数（超出取尾部；完整输出落盘，路径写在结果第一行）。 */
 private const val MAX_OUTPUT_CHARS = 30_000
 
-/** 落盘的完整输出最多保留多少字节（再大就只留尾部，避免把手机存储写满）。 */
+/** 落盘/内存缓冲的完整输出最多保留多少字节（环形尾缓冲，防止大输出 OOM）。 */
 private const val MAX_LOG_BYTES = 4 * 1024 * 1024
 
-/** 工作区里的「自有工具箱」目录：存在就前置进 PATH（用户/模型往里丢静态 busybox、curl 等）。 */
+/** 日志目录最多保留的历史日志数，防止越积越多。 */
+private const val MAX_LOG_FILES = 20
+
+/** 工作区里的「自有工具箱」目录：存在就前置进 PATH。 */
 private const val WORKSPACE_BIN_DIR = ".dsh/bin"
 
 /**
@@ -59,10 +72,15 @@ class BashTool : DshTool {
         // `description` 是模型侧的必填人话说明（工具卡副行显示），执行端不参与，这里读一次只为
         // 不被误当成未知参数丢掉（null 也允许：老会话/子代理可能不带）。
         args.str("description")
-        val timeoutMs = (args.int("timeoutMs")?.toLong() ?: ctx.timeoutMs).coerceIn(1_000, 600_000)
+        val timeoutMs = (args.longNum("timeoutMs") ?: ctx.timeoutMs).coerceIn(1_000, 600_000)
         val workdir = args.str("workdir")?.let { resolvePath(it, ctx) } ?: ctx.cwd
+        if (!workdir.isDirectory) {
+            return ToolResult.err("workdir is not an existing directory: ${workdir.absolutePath}")
+        }
         val extraEnv = envArgs(args) ?: return ToolResult.err("env must be an object of string values")
         val stdin = args.str("stdin")
+        // 冷启动竞态防护：等待工具链准备完成；失败则静默退回 /system/bin/sh
+        runCatching { ctx.shell?.prepare() }
         val shell = shellFor(command, ctx)
         if (args.bool("run_in_background") == true) {
             if (stdin != null) {
@@ -80,20 +98,29 @@ class BashTool : DshTool {
         // 不给 stdin 也要把管道关上：否则 `cat` / `grep` 这类命令会一直等输入直到超时。
         if (stdin != null) feedStdin(process, stdin) else runCatching { process.outputStream.close() }
 
-        val bytes = try {
-            withTimeoutOrNull(timeoutMs) { readCancellable(process) }
+        val tailBuffer = TailByteBuffer(MAX_LOG_BYTES)
+        val outcome = try {
+            withTimeoutOrNull(timeoutMs) {
+                readAndWaitCancellable(process, tailBuffer)
+            }
         } catch (e: CancellationException) {
-            // 中断（用户 stop / 子代理 interrupt / 切会话）：先杀进程，别让长命令把取消拖到它自己退出
-            runCatching { process.destroyForcibly() }
+            killProcessTree(process)
             throw e
         }
-        if (bytes == null) {
-            process.destroyForcibly()
-            return ToolResult.err("command timed out after ${timeoutMs}ms")
+        if (outcome == null) {
+            killProcessTree(process)
+            val partial = decodeUtf8Safely(tailBuffer.snapshot()).trimEnd()
+            val msg = if (partial.isEmpty()) {
+                "command timed out after ${timeoutMs}ms"
+            } else {
+                val snippet = if (partial.length > 4_000) "…\n" + partial.takeLast(4_000) else partial
+                "command timed out after ${timeoutMs}ms\n[partial output before timeout]\n$snippet"
+            }
+            return ToolResult.err(msg)
         }
-        val exit = runCatching { process.waitFor() }.getOrDefault(-1)
-        var text = bytes.toString(Charsets.UTF_8)
-        if (text.length > MAX_OUTPUT_CHARS) {
+        val (bytes, exit) = outcome
+        var text = decodeUtf8Safely(bytes)
+        if (text.length > MAX_OUTPUT_CHARS || tailBuffer.truncated) {
             val logPath = saveFullOutput(ctx, bytes)
             val note = if (logPath != null) "full output: $logPath" else "full output not saved"
             text = "…(output truncated to tail; $note)\n" + text.takeLast(MAX_OUTPUT_CHARS)
@@ -162,28 +189,56 @@ class BashTool : DshTool {
     }
 
     /**
-     * 完整输出落盘：优先系统临时目录（App 缓存），不可写退到 `<workspace>/.dsh/bash-logs/`。
-     * 超过 [MAX_LOG_BYTES] 只留尾部（与「truncated to tail」的语义一致）。
+     * 完整输出落盘：优先写 `<workspace>/.dsh/bash-logs/`（确保模型随后用 `read` 工具可读，不会触发
+     * `path escapes workspace`），不可写再退回系统临时目录；带 UUID 防并发冲突并滚动清理旧日志。
      */
     private fun saveFullOutput(ctx: ToolContext, bytes: ByteArray): String? {
         val dirs = listOfNotNull(
-            System.getProperty("java.io.tmpdir")?.takeIf { it.isNotBlank() }?.let { File(it, "dsh-bash-logs") },
             runCatching { File(ctx.workspace, ".dsh/bash-logs") }.getOrNull(),
+            System.getProperty("java.io.tmpdir")?.takeIf { it.isNotBlank() }?.let { File(it, "dsh-bash-logs") },
         )
-        val payload = if (bytes.size > MAX_LOG_BYTES) {
-            bytes.copyOfRange(bytes.size - MAX_LOG_BYTES, bytes.size)
-        } else {
-            bytes
-        }
-        val fileName = "bash-${System.currentTimeMillis()}.log"
+        val payload = utf8SafeTail(bytes, MAX_LOG_BYTES)
+        val suffix = UUID.randomUUID().toString().take(8)
+        val fileName = "bash-${System.currentTimeMillis()}-$suffix.log"
         for (dir in dirs) {
             val target = runCatching {
                 if (!dir.isDirectory && !dir.mkdirs()) null else File(dir, fileName)
             }.getOrNull() ?: continue
             val written = runCatching { target.writeBytes(payload) }.isSuccess
-            if (written) return runCatching { target.absolutePath }.getOrNull()
+            if (written) {
+                pruneOldLogs(dir)
+                return runCatching { target.absolutePath }.getOrNull()
+            }
         }
         return null
+    }
+
+    private fun pruneOldLogs(dir: File) {
+        runCatching {
+            val logs = dir.listFiles { f -> f.isFile && f.name.startsWith("bash-") && f.name.endsWith(".log") }
+                ?: return
+            if (logs.size > MAX_LOG_FILES) {
+                logs.sortedBy { it.lastModified() }
+                    .take(logs.size - MAX_LOG_FILES)
+                    .forEach { it.delete() }
+            }
+        }
+    }
+
+    /** 截断字节尾部时跳过开头残留的 UTF-8 continuation bytes (10xxxxxx)，避免首字符乱码。 */
+    private fun utf8SafeTail(bytes: ByteArray, limit: Int): ByteArray {
+        if (bytes.size <= limit) return bytes
+        var start = bytes.size - limit
+        while (start < bytes.size && (bytes[start].toInt() and 0xC0) == 0x80) {
+            start++
+        }
+        return bytes.copyOfRange(start, bytes.size)
+    }
+
+    private fun decodeUtf8Safely(bytes: ByteArray): String {
+        var start = 0
+        while (start < bytes.size && (bytes[start].toInt() and 0xC0) == 0x80) start++
+        return if (start == 0) bytes.toString(Charsets.UTF_8) else String(bytes, start, bytes.size - start, Charsets.UTF_8)
     }
 
     /** 后台执行：登记 job 后立刻返回 id（无超时；取消走 job_kill）。 */
@@ -212,8 +267,8 @@ class BashTool : DshTool {
             }
             // 后台没有 stdin：立刻 EOF，别让命令挂在等输入。
             runCatching { process.outputStream.close() }
-            control.onCancel { runCatching { process.destroyForcibly() } }
-            if (control.isCancelled()) process.destroyForcibly()
+            control.onCancel { killProcessTree(process) }
+            if (control.isCancelled()) killProcessTree(process)
             val exit = coroutineScope {
                 val out = launch { pump(process.inputStream.reader(Charsets.UTF_8), { control.isCancelled() }) { control.stdout(it) } }
                 val err = launch { pump(process.errorStream.reader(Charsets.UTF_8), { control.isCancelled() }) { control.stderr(it) } }
@@ -232,17 +287,68 @@ class BashTool : DshTool {
     }
 
     /**
-     * 读进程 stdout 直到 EOF；协程被取消时**立刻** destroy 进程。
-     *
-     * 为什么不用 `withContext(Dispatchers.IO) { readBytes() }`：阻塞读不响应协程取消，
-     * 前台 `bash sleep 180` 会把 stop/interrupt 拖到命令自己结束（契约 5 的中断语义就废了）。
-     * 这里用可取消挂起 + 看门线程，取消时 destroyForcibly → 读端 EOF → 立刻抛 CancellationException。
+     * 有界环形尾字节缓冲：流式吸收进程输出，最多占 [capacity] 字节内存，彻底消除大输出 OOM，
+     * 并允许超时后读取已经收集到的部分输出。
      */
-    private suspend fun readCancellable(process: Process): ByteArray =
+    private class TailByteBuffer(private val capacity: Int) {
+        private val chunks = ArrayDeque<ByteArray>()
+        private var total = 0
+        @Volatile
+        var truncated: Boolean = false
+            private set
+
+        @Synchronized
+        fun append(data: ByteArray, len: Int) {
+            if (len <= 0) return
+            val copy = data.copyOf(len)
+            chunks.addLast(copy)
+            total += len
+            while (total > capacity && chunks.size > 1) {
+                val dropped = chunks.removeFirst()
+                total -= dropped.size
+                truncated = true
+            }
+            if (total > capacity && chunks.size == 1) {
+                val only = chunks.removeFirst()
+                val kept = only.copyOfRange(only.size - capacity, only.size)
+                chunks.addLast(kept)
+                total = kept.size
+                truncated = true
+            }
+        }
+
+        @Synchronized
+        fun snapshot(): ByteArray {
+            val out = ByteArray(total)
+            var pos = 0
+            for (chunk in chunks) {
+                System.arraycopy(chunk, 0, out, pos, chunk.size)
+                pos += chunk.size
+            }
+            return out
+        }
+    }
+
+    /**
+     * 流式读进程输出 + 等待进程退出（两者同在超时与取消保护之内，防止早关 stdout 导致 waitFor 永久挂起）。
+     */
+    private suspend fun readAndWaitCancellable(
+        process: Process,
+        tailBuffer: TailByteBuffer,
+    ): Pair<ByteArray, Int> =
         suspendCancellableCoroutine { cont ->
             val reader = Thread({
                 try {
-                    cont.resumeWith(Result.success(process.inputStream.use { it.readBytes() }))
+                    process.inputStream.use { input ->
+                        val buf = ByteArray(16 * 1024)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            if (n > 0) tailBuffer.append(buf, n)
+                        }
+                    }
+                    val exit = process.waitFor()
+                    cont.resumeWith(Result.success(tailBuffer.snapshot() to exit))
                 } catch (t: Throwable) {
                     cont.resumeWith(Result.failure(t))
                 }
@@ -251,10 +357,68 @@ class BashTool : DshTool {
                 start()
             }
             cont.invokeOnCancellation { _ ->
-                runCatching { process.destroyForcibly() }
+                killProcessTree(process)
                 reader.interrupt()
             }
         }
+
+    /** 清理子进程及其后代进程树，防止超时/取消后留下孤儿 sleep/curl 进程或占住管道。 */
+    private fun killProcessTree(process: Process) {
+        val pid = processPid(process)
+        val descendants = if (pid > 0) findProcDescendants(pid) else emptyList()
+        runCatching { process.destroyForcibly() }
+        // Linux/Android 上通过 /proc 扫出的后代进程逐个 SIGKILL
+        if (descendants.isNotEmpty() && File("/proc").isDirectory) {
+            descendants.reversed().forEach { childPid ->
+                runCatching {
+                    ProcessBuilder("/system/bin/kill", "-9", childPid.toString()).start()
+                        .waitFor(200, TimeUnit.MILLISECONDS)
+                }.onFailure {
+                    runCatching {
+                        ProcessBuilder("kill", "-9", childPid.toString()).start()
+                            .waitFor(200, TimeUnit.MILLISECONDS)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun processPid(proc: Process): Int {
+        runCatching {
+            val field = proc.javaClass.getDeclaredField("pid").apply { isAccessible = true }
+            val v = field.getInt(proc)
+            if (v > 0) return v
+        }
+        runCatching {
+            val method = Process::class.java.getMethod("pid").apply { isAccessible = true }
+            val v = (method.invoke(proc) as? Number)?.toInt() ?: -1
+            if (v > 0) return v
+        }
+        return -1
+    }
+
+    private fun findProcDescendants(rootPid: Int): List<Int> {
+        val procDir = File("/proc")
+        if (!procDir.isDirectory) return emptyList()
+        val children = HashMap<Int, MutableList<Int>>()
+        procDir.listFiles()?.forEach { dir ->
+            val pid = dir.name.toIntOrNull() ?: return@forEach
+            val stat = runCatching { File(dir, "stat").readText() }.getOrNull() ?: return@forEach
+            val close = stat.lastIndexOf(')')
+            if (close < 0 || close + 2 >= stat.length) return@forEach
+            val fields = stat.substring(close + 2).split(' ')
+            val ppid = fields.getOrNull(1)?.toIntOrNull() ?: return@forEach
+            children.getOrPut(ppid) { ArrayList() } += pid
+        }
+        val out = ArrayList<Int>()
+        val queue = ArrayDeque(children[rootPid].orEmpty())
+        while (queue.isNotEmpty()) {
+            val pid = queue.removeFirst()
+            out += pid
+            children[pid]?.let { queue.addAll(it) }
+        }
+        return out
+    }
 
     private suspend fun pump(
         reader: Reader,
@@ -271,16 +435,17 @@ class BashTool : DshTool {
                 }
             }
         } catch (e: java.io.IOException) {
-            // destroyForcibly 后管道读可能抛 "Stream closed" 而不是 EOF；取消语义下按 EOF 处理，
-            // 否则 job 会以 failed 结算（M20 任务面板验收时抓到）。
             if (!isCancelled()) throw e
         }
     }
 
     private fun shellFor(command: String, ctx: ToolContext): List<String> {
-        // 打包的命令行工具箱优先（`docs/187` §6.4）：真 bash + 真 curl + CA + PATH 桥。
-        ctx.shell?.bashPath()?.let { bashPath ->
-            return listOf(bashPath, "--noprofile", "--norc", "-c", command)
+        // 仅在打包工具箱确实就绪时使用 bundled bash，否则回退 /system/bin/sh，避免冷启动/损坏时报 CANNOT LINK EXECUTABLE
+        val host = ctx.shell
+        if (host != null && host.isReady()) {
+            host.bashPath()?.let { bashPath ->
+                return listOf(bashPath, "--noprofile", "--norc", "-c", command)
+            }
         }
         return when {
             System.getProperty("os.name").orEmpty().lowercase().contains("win") -> listOf("cmd.exe", "/c", command)

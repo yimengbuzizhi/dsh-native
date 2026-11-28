@@ -29,10 +29,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -41,11 +44,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -155,6 +157,12 @@ fun Modifier.liquidGlass(
     } else {
         this
     }
+    val baseFill = when {
+        tint != null -> fillTop
+        level == LiquidLevel.Pill -> tokens.pillFill
+        level == LiquidLevel.Panel || level == LiquidLevel.Hero -> lerp(tokens.glassTint, tokens.glassStrongTop, 0.25f)
+        else -> tokens.glassTint
+    }
     return withShadow
         .clip(shape)
         .then(
@@ -164,99 +172,157 @@ fun Modifier.liquidGlass(
                 Modifier
             },
         )
-        .drawBehind {
+        .drawWithCache {
             val w = size.width
             val h = size.height
-            // 0) 实底（弹窗 / 二级面板 / 抽屉）：先铺一层几乎不透明的墙色，断开与下一级窗口的透视
-            solidBase?.let { drawRect(color = it) }
-            // 1) 等价于设计稿的 backdrop-filter: blur(3px) saturate(195%)
-            //    把背后的墙按本组件的位置重画并稍微放大 —— 玻璃这才真的"透"出流体，而不是糊一层白
-            if (lensOn && solidBase == null && rootOrigin != Offset.Unspecified) {
-                drawWallIntoLens(
-                    lens = wallLens!!,
-                    cardOrigin = rootOrigin,
-                    cardSize = size,
-                    magnify = if (tokens.isDark) 1.16f else 1.10f,
-                )
-            }
-            val outline = shape.createOutline(size, layoutDirection, this)
-            val ring = Path().apply { addOutline(outline) }
-            // 2) background-color: var(--glass-tint)（小胶囊用更实的 --pill-fill，不上背景采样）
-            val base = when {
-                tint != null -> lerp(tint, Color.White, (if (tokens.isDark) 0.10f else 0.22f) * tintGradient)
-                level == LiquidLevel.Pill -> tokens.pillFill
-                else -> tokens.glassTint
-            }
-            drawRect(color = base)
-            // 3) background-image ①：顶面受光带
-            //    linear-gradient(168deg, --glass-white-10 0%, --glass-white-low 40%, transparent 68%, --glass-white-low 100%)
-            drawRect(
-                brush = Brush.linearGradient(
-                    0f to tokens.glassTop,
-                    0.40f to tokens.glassBottom,
-                    0.68f to Color.Transparent,
-                    1f to tokens.glassBottom,
-                    start = Offset(w * 0.04f, 0f),
-                    end = Offset(w * 0.36f, h),
-                ),
-            )
-            // 4) background-image ②：内壁聚光（越靠边越亮，这是"厚度"的来源）
-            //    radial-gradient(130% 90% at 50% -12%, --wall-a 0%, transparent 62%)
-            drawRect(
-                brush = Brush.radialGradient(
-                    0f to tokens.wallSide,
-                    0.62f to Color.Transparent,
-                    center = Offset(w * 0.5f, -h * 0.12f),
-                    radius = w * 1.30f,
-                ),
-            )
-            // 5) CSS ::after —— 3dp 侧壁浓边（--rim-width: 3px），小件跳过
+            val hairPx = 1.dp.toPx()
             val rimW = 3.dp.toPx()
-            if (w > rimW * 6f && h > rimW * 6f) {
-                translate(left = rimW * 0.5f, top = rimW * 0.5f) {
-                    drawPath(
-                        path = ring,
-                        brush = Brush.radialGradient(
-                            0f to Color.Transparent,
-                            0.50f to Color.Transparent,
-                            0.88f to tokens.wallSide,
-                            1f to tokens.rimBottom,
-                            center = Offset(w * 0.5f, h * 0.5f),
-                            radius = maxOf(w, h) * 0.62f,
-                        ),
-                        style = Stroke(width = rimW),
+            val hasRim = w > rimW * 6f && h > rimW * 6f
+            val hairPath = insetOutlinePath(shape, size, layoutDirection, this, hairPx * 0.5f)
+            val rimPath = if (hasRim) insetOutlinePath(shape, size, layoutDirection, this, rimW * 0.5f) else null
+
+            val topSheenBrush = Brush.linearGradient(
+                0f to fillTop,
+                0.40f to fillBottom,
+                0.68f to Color.Transparent,
+                1f to fillBottom,
+                start = Offset(w * 0.04f, 0f),
+                end = Offset(w * 0.36f, h.coerceAtLeast(1f)),
+            )
+            val wallBrush = Brush.radialGradient(
+                0f to tokens.wallSide,
+                0.62f to Color.Transparent,
+                center = Offset(w * 0.5f, -h * 0.12f),
+                radius = (w * 1.30f).coerceAtLeast(1f),
+            )
+            val rimBrush = if (hasRim) {
+                Brush.radialGradient(
+                    0f to Color.Transparent,
+                    0.50f to Color.Transparent,
+                    0.88f to tokens.wallSide,
+                    1f to tokens.rimBottom,
+                    center = Offset(w * 0.5f, h * 0.5f),
+                    radius = (maxOf(w, h) * 0.62f).coerceAtLeast(1f),
+                )
+            } else {
+                null
+            }
+            val specBrush = Brush.linearGradient(
+                0f to tokens.rimTop,
+                0.30f to Color.White.copy(alpha = 0.12f),
+                0.56f to Color.White.copy(alpha = 0.02f),
+                1f to tokens.rimBottom,
+                start = Offset(0f, 0f),
+                end = Offset(w * 0.34f, h.coerceAtLeast(1f)),
+            )
+            val rimStroke = Stroke(width = rimW)
+            val hairStroke = Stroke(width = hairPx)
+
+            onDrawBehind {
+                // 0) 实底（弹窗 / 二级面板 / 抽屉）
+                solidBase?.let { drawRect(color = it) }
+                // 1) 可选厚透镜折射（默认关）
+                if (lensOn && solidBase == null && rootOrigin != Offset.Unspecified) {
+                    drawWallIntoLens(
+                        lens = wallLens!!,
+                        cardOrigin = rootOrigin,
+                        cardSize = size,
+                        magnify = if (tokens.isDark) 1.16f else 1.10f,
                     )
                 }
-            }
-            // 6) inset 0 1px --spec-top / inset 0 -1px --spec-bottom / inset 0 0 0 .5px --edge-line
-            val hairPx = 1.dp.toPx()
-            clipPath(ring) {
+                // 2) 基础雾面填充
+                drawRect(color = baseFill)
+                // 3) 顶面受光带
+                drawRect(brush = topSheenBrush)
+                // 4) 内壁聚光
+                drawRect(brush = wallBrush)
+                // 5) 3dp 侧壁浓边（内缩 rimW/2，四边对称不裁切）
+                if (rimPath != null && rimBrush != null) {
+                    drawPath(path = rimPath, brush = rimBrush, style = rimStroke)
+                }
+                // 6) 顶部/底部反光带 + 贴合圆角的发丝线（已由 Modifier.clip(shape) 裁切，免 clipPath 开销）
                 drawRect(color = tokens.rimTop, topLeft = Offset(0f, 0f), size = Size(w, hairPx))
                 drawRect(color = tokens.rimBottom, topLeft = Offset(0f, h - hairPx), size = Size(w, hairPx))
-                drawRect(
-                    color = tokens.hairline,
-                    topLeft = Offset(hairPx * 0.5f, hairPx * 0.5f),
-                    size = Size(w - hairPx, h - hairPx),
-                    style = Stroke(width = hairPx),
-                )
-            }
-            // 7) CSS ::before —— 1px 镜面环
-            //    linear-gradient(160deg, --spec-top 0%, rgba(255,255,255,.12) 30%, rgba(255,255,255,.02) 56%, --spec-bottom 100%)
-            translate(left = hairPx * 0.5f, top = hairPx * 0.5f) {
-                drawPath(
-                    path = ring,
-                    brush = Brush.linearGradient(
-                        0f to tokens.rimTop,
-                        0.30f to Color.White.copy(alpha = 0.12f),
-                        0.56f to Color.White.copy(alpha = 0.02f),
-                        1f to tokens.rimBottom,
-                        start = Offset(0f, 0f),
-                        end = Offset(w * 0.34f, h),
-                    ),
-                    style = Stroke(width = hairPx),
-                )
+                drawPath(path = hairPath, color = tokens.hairline, style = hairStroke)
+                // 7) 1px 镜面环（内缩 hairPx/2，四边完整闭合）
+                drawPath(path = hairPath, brush = specBrush, style = hairStroke)
             }
         }
+}
+
+/** 生成向内收缩 [inset] 像素的轮廓路径，避免 Stroke 在右/下边被裁切且圆角保持同心。 */
+private fun insetOutlinePath(
+    shape: Shape,
+    size: Size,
+    layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+    density: androidx.compose.ui.unit.Density,
+    inset: Float,
+): Path {
+    val outline = shape.createOutline(size, layoutDirection, density)
+    return Path().apply {
+        when (outline) {
+            is Outline.Rectangle -> {
+                val r = outline.rect
+                if (r.width > inset * 2f && r.height > inset * 2f) {
+                    addRect(r.deflate(inset))
+                } else {
+                    addRect(r)
+                }
+            }
+            is Outline.Rounded -> {
+                val rr = outline.roundRect
+                if (rr.width > inset * 2f && rr.height > inset * 2f) {
+                    addRoundRect(
+                        RoundRect(
+                            left = rr.left + inset,
+                            top = rr.top + inset,
+                            right = rr.right - inset,
+                            bottom = rr.bottom - inset,
+                            topLeftCornerRadius = CornerRadius(
+                                (rr.topLeftCornerRadius.x - inset).coerceAtLeast(0f),
+                                (rr.topLeftCornerRadius.y - inset).coerceAtLeast(0f),
+                            ),
+                            topRightCornerRadius = CornerRadius(
+                                (rr.topRightCornerRadius.x - inset).coerceAtLeast(0f),
+                                (rr.topRightCornerRadius.y - inset).coerceAtLeast(0f),
+                            ),
+                            bottomRightCornerRadius = CornerRadius(
+                                (rr.bottomRightCornerRadius.x - inset).coerceAtLeast(0f),
+                                (rr.bottomRightCornerRadius.y - inset).coerceAtLeast(0f),
+                            ),
+                            bottomLeftCornerRadius = CornerRadius(
+                                (rr.bottomLeftCornerRadius.x - inset).coerceAtLeast(0f),
+                                (rr.bottomLeftCornerRadius.y - inset).coerceAtLeast(0f),
+                            ),
+                        ),
+                    )
+                } else {
+                    addRoundRect(rr)
+                }
+            }
+            is Outline.Generic -> addPath(outline.path)
+        }
+    }
+}
+
+/**
+ * 统一顶栏表面：
+ * - 液态玻璃模式：先 `statusBarsPadding()` 让开系统状态栏，再套悬浮圆角玻璃条（避免状态栏图标压进圆角玻璃）；
+ * - 原生模式：贴边通栏 `c.surface` + 内部 `statusBarsPadding()`，保持 0.3.5 原生观感。
+ */
+@Composable
+fun Modifier.dshTopBarSurface(): Modifier {
+    val liquid = LocalLiquidUi.current
+    return if (liquid) {
+        this
+            .statusBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
+    } else {
+        this
+            .background(DshTheme2.colors.surface)
+            .statusBarsPadding()
+    }
 }
 
 /**
@@ -316,21 +382,23 @@ fun Modifier.liquidClickable(
     scale: Float = 0.976f,
     onClick: () -> Unit,
 ): Modifier {
+    val isDark = DshTheme2.colors.isDark
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val current by animateFloatAsState(
+    val current = animateFloatAsState(
         targetValue = if (pressed && enabled) scale else 1f,
         animationSpec = LiquidMotion.press,
         label = "liquid-click",
     )
     return this
         .graphicsLayer {
-            scaleX = current
-            scaleY = current
+            val s = current.value
+            scaleX = s
+            scaleY = s
         }
         .clickable(
             interactionSource = interaction,
-            indication = ripple(bounded = true, color = Color.White),
+            indication = ripple(bounded = true, color = if (isDark) Color.White else Color.Black),
             enabled = enabled,
             onClickLabel = onClickLabel,
             onClick = onClick,
@@ -351,18 +419,31 @@ fun GlassSurface(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val tokens = LocalLiquidTokens.current
+    val glassMod = modifier.liquidGlass(
+        shape = shape,
+        level = level,
+        tokens = tokens,
+        tint = tint,
+        tintGradient = tintGradient,
+        elevated = elevated,
+    )
+    if (onClick == null) {
+        Box(modifier = glassMod, content = content)
+        return
+    }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed && enabled && onClick != null) 0.978f else 1f,
+    val scale = animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.978f else 1f,
         animationSpec = LiquidMotion.press,
         label = "glass-press",
     )
     Box(
         modifier = modifier
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                val s = scale.value
+                scaleX = s
+                scaleY = s
             }
             .liquidGlass(
                 shape = shape,
@@ -372,20 +453,14 @@ fun GlassSurface(
                 tintGradient = tintGradient,
                 elevated = elevated,
             )
-            .then(
-                if (onClick != null) {
-                    Modifier.clickable(
-                        interactionSource = interaction,
-                        indication = ripple(
-                            bounded = true,
-                            color = if (tokens.isDark) Color.White else Color.Black,
-                        ),
-                        enabled = enabled,
-                        onClick = onClick,
-                    )
-                } else {
-                    Modifier
-                },
+            .clickable(
+                interactionSource = interaction,
+                indication = ripple(
+                    bounded = true,
+                    color = if (tokens.isDark) Color.White else Color.Black,
+                ),
+                enabled = enabled,
+                onClick = onClick,
             ),
         content = content,
     )

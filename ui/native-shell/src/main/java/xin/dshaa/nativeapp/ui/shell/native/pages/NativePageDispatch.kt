@@ -372,6 +372,7 @@ fun NativePageDispatch(
                 BuiltinPageIds.Appearance -> AppearanceScreen(
                     settings = vm.settings,
                     onBack = nav.closeSub,
+                    onSelectShell = { vm.selectShell(it) },
                 )
                 BuiltinPageIds.Privacy -> PrivacyScreen(
                     settings = vm.settings,

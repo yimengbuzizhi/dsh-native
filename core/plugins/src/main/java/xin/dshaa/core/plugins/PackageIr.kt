@@ -466,6 +466,7 @@ object PackageImporter {
     fun importFiles(files: List<PluginFile>): PackageImport {
         if (files.isEmpty()) return PackageImport.Failed("空包")
         // 1) 鲸歌轻格式：dsh.package.json（可能在单层顶层目录里）。
+        // 支持纯声明式包，也支持混合多脚本 + 多资源/数据目录 + 客户端 UI 的复合包。
         val manifestFiles = files.filter { it.path == MANIFEST_NAME || it.path.endsWith("/$MANIFEST_NAME") }
         if (manifestFiles.isNotEmpty()) {
             val root = shallowestRoot(manifestFiles.map { it.path }, MANIFEST_NAME)
@@ -479,6 +480,62 @@ object PackageImporter {
             val ir = (read as IrRead.Ok).ir
             val packageFiles = stripped.filter { it.path != MANIFEST_NAME }
             validateFiles(ir, packageFiles)?.let { return PackageImport.Failed(it) }
+            val scriptEntries = buildList {
+                ir.contributions
+                    .filter { it.kind == ContributionKind.SCRIPT }
+                    .mapNotNull { it.entry?.let { e -> PluginPackage.normalizePath(e) } }
+                    .forEach { if (it !in this) add(it) }
+                ir.main?.let { PluginPackage.normalizePath(it) }?.let { if (it !in this) add(it) }
+            }
+            if (scriptEntries.isNotEmpty()) {
+                val finalFiles = ArrayList(stripped)
+                val entryMain = if (scriptEntries.size == 1) {
+                    scriptEntries.first()
+                } else {
+                    // 多脚本贡献物自动生成统一引导入口，按声明顺序加载各子模块并执行 apply(ctx, config)
+                    val synthPath = "__dsh_multi_entry.js"
+                    val synthCode = buildString {
+                        append("// Auto-generated multi-script entry for dsh.package.json\n")
+                        append("export function apply(ctx, config) {\n")
+                        append("  const __pending = [];\n")
+                        scriptEntries.forEachIndexed { idx, entry ->
+                            val reqLit = kotlinx.serialization.json.JsonPrimitive("./$entry").toString()
+                            append("  (function() {\n")
+                            append("    const __m = require($reqLit);\n")
+                            append("    const __fn = (typeof __m === 'function') ? __m : (__m && (typeof __m.apply === 'function' ? __m.apply : (__m.default && typeof __m.default.apply === 'function' ? __m.default.apply : (typeof __m.default === 'function' ? __m.default : null))));\n")
+                            append("    if (typeof __fn === 'function') {\n")
+                            append("      const __r = __fn(ctx, config);\n")
+                            append("      if (__r && typeof __r.then === 'function') { __pending.push(__r); }\n")
+                            append("    }\n")
+                            append("  })();\n")
+                        }
+                        append("  return __pending.length ? Promise.all(__pending).then(function(){}) : undefined;\n")
+                        append("}\n")
+                    }
+                    finalFiles.removeAll { it.path == synthPath }
+                    finalFiles += PluginFile(synthPath, synthCode.toByteArray(Charsets.UTF_8))
+                    synthPath
+                }
+                val synthesizedManifest = PluginManifest(
+                    id = ir.id,
+                    name = ir.name,
+                    version = ir.version,
+                    description = ir.description,
+                    main = entryMain,
+                    format = PluginFormat.DSH,
+                    permissions = ir.permissions,
+                    clientUi = ir.contributions.any { it.kind == ContributionKind.CLIENT },
+                    bundlePatch = ir.bundlePatch,
+                    enginesDsh = ir.enginesDsh,
+                    ownership = PluginOwnership.NATIVE,
+                )
+                return PackageImport.Ok(
+                    ir = ir.copy(main = entryMain),
+                    files = finalFiles,
+                    source = ImportSource.DSH_PACKAGE,
+                    manifest = synthesizedManifest,
+                )
+            }
             return PackageImport.Ok(ir, stripped, ImportSource.DSH_PACKAGE)
         }
 
@@ -510,12 +567,119 @@ object PackageImporter {
         }
     }
 
-    /** 单文件导入：`.md`（frontmatter → skill/prompt）或 `.json`（顶层 kind）。 */
+    /** 单文件导入：`.js`/`.mjs`/`.cjs`（自动识别 ToolPkg 或 DSH 脚本）、`.yaml`/`.yml`、`.md`、`.json`。 */
     fun importText(text: String, sourceName: String? = null): PackageImport {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return PackageImport.Failed("文件是空的")
+        val lowerName = sourceName?.lowercase().orEmpty()
+        if (lowerName.endsWith(".js") || lowerName.endsWith(".mjs") || lowerName.endsWith(".cjs") || ToolPkg.isToolPkg(text)) {
+            return importSingleJs(text, sourceName)
+        }
+        if (lowerName.endsWith(".yaml") || lowerName.endsWith(".yml")) {
+            return importYaml(trimmed, sourceName)
+        }
         if (trimmed.startsWith("{")) return importJsonText(trimmed, sourceName)
         return importMarkdown(trimmed, sourceName)
+    }
+
+    /** 单文件 JS 插件导入：支持 Operit ToolPkg 与单文件 DSH apply(ctx) 脚本。 */
+    private fun importSingleJs(text: String, sourceName: String?): PackageImport {
+        val rawStem = sourceName?.substringAfterLast('/')?.substringBeforeLast('.')?.trim().orEmpty()
+        val isToolPkg = ToolPkg.isToolPkg(text)
+        val parsedMeta = if (isToolPkg) ToolPkg.metadata(text) else null
+        val metaName = (parsedMeta?.get("name") as? JsonPrimitive)?.content?.trim()
+        val name = metaName?.takeIf { it.isNotBlank() }
+            ?: rawStem.takeIf { it.isNotBlank() }
+            ?: "js-plugin"
+        val id = derivedId(ContributionKind.SCRIPT, name)
+        validateId(id)?.let { return PackageImport.Failed(it) }
+        val description = when (val desc = parsedMeta?.get("description")) {
+            is JsonPrimitive -> desc.content.trim()
+            is JsonObject -> (desc["zh"] as? JsonPrimitive)?.content?.trim()
+                ?: (desc["en"] as? JsonPrimitive)?.content?.trim()
+                ?: ""
+            else -> ""
+        }
+        val format = if (isToolPkg) PluginFormat.OPERIT else PluginFormat.DSH
+        val entryName = sourceName?.substringAfterLast('/')?.takeIf {
+            it.endsWith(".js", true) || it.endsWith(".mjs", true) || it.endsWith(".cjs", true)
+        } ?: "index.js"
+        val manifest = PluginManifest(
+            id = id,
+            name = name,
+            version = "0.1.0",
+            description = description,
+            main = entryName,
+            format = format,
+            permissions = emptyList(),
+            ownership = PluginOwnership.NATIVE,
+        )
+        val pkgJson = buildJsonObject {
+            put("id", id)
+            put("name", name)
+            put("version", "0.1.0")
+            put("description", description)
+            put("main", entryName)
+        }.toString()
+        val manifestFileName = if (format == PluginFormat.DSH) "package.json" else "manifest.json"
+        val files = listOf(
+            PluginFile(manifestFileName, pkgJson.toByteArray(Charsets.UTF_8)),
+            PluginFile(entryName, text.toByteArray(Charsets.UTF_8)),
+        )
+        val ir = legacyIr(manifest, files)
+        return PackageImport.Ok(
+            ir = ir,
+            files = files,
+            source = if (isToolPkg) ImportSource.LEGACY_MANIFEST else ImportSource.DSH_MANIFEST,
+            manifest = manifest,
+            generatedManifest = true,
+        )
+    }
+
+    /** 轻量 YAML 声明式单文件（键值格式，支持 kind / name / id / description / permissions / content）。 */
+    private fun importYaml(text: String, sourceName: String?): PackageImport {
+        val wrapped = if (text.startsWith("---")) text else "---\n$text\n---\n"
+        val (meta, body) = splitFrontmatter(wrapped)
+        val content = meta["content"]?.takeIf { it.isNotBlank() } ?: body.ifBlank { text }
+        val kindRaw = meta["kind"] ?: "prompt"
+        val kind = ContributionKind.fromId(kindRaw)
+            ?: return PackageImport.Failed("认不出 YAML 里的 kind=$kindRaw")
+        val title = meta["name"]?.takeIf { it.isNotBlank() }
+            ?: sourceName?.substringBeforeLast('.')?.takeIf { it.isNotBlank() }
+            ?: return PackageImport.Failed("YAML 里没有 name，无法生成插件名")
+        val id = meta["id"]?.takeIf { it.isNotBlank() } ?: derivedId(kind, title)
+        validateId(id)?.let { return PackageImport.Failed(it) }
+        val permissions = metaPermissions(meta)
+        val fileName = sourceName?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "plugin.yaml"
+        val contribution = PluginContribution(
+            kind = kind,
+            id = id,
+            config = buildJsonObject {
+                put("name", title)
+                meta["description"]?.let { put("description", it) }
+                put("content", content)
+            },
+            entry = fileName,
+        )
+        val ir = PackageIr(
+            id = id,
+            name = title,
+            version = meta["version"]?.takeIf { it.isNotBlank() } ?: "0.1.0",
+            description = meta["description"].orEmpty(),
+            format = PackageFormat.WHALE_LITE,
+            permissions = permissions,
+            contributions = listOf(contribution),
+        )
+        val manifestBytes = PackageIrCodec.encode(ir).toByteArray(Charsets.UTF_8)
+        return PackageImport.Ok(
+            ir = ir,
+            files = listOf(
+                PluginFile(MANIFEST_NAME, manifestBytes),
+                PluginFile(fileName, text.toByteArray(Charsets.UTF_8)),
+            ),
+            source = ImportSource.JSON,
+            generatedManifest = true,
+        )
     }
 
     /** 旧清单 → IR：id/权限不变，脚本 + 客户端 + cordis 预设收成贡献物。 */
@@ -780,7 +944,14 @@ object PackageImporter {
 
     private fun isTextPackageName(name: String): Boolean {
         val lower = name.lowercase()
-        return lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".json")
+        return lower.endsWith(".md") ||
+            lower.endsWith(".markdown") ||
+            lower.endsWith(".json") ||
+            lower.endsWith(".yaml") ||
+            lower.endsWith(".yml") ||
+            lower.endsWith(".js") ||
+            lower.endsWith(".mjs") ||
+            lower.endsWith(".cjs")
     }
 
     private fun shallowestRoot(paths: List<String>, marker: String): String? {

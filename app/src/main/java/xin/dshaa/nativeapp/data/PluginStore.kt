@@ -278,6 +278,8 @@ class PluginStore(private val context: Context) {
             manifestSchema = manifest?.configSchema?.let { PluginSchema.normalize(it)?.toString() } ?: record.configSchema,
             // 重载时能看到别的插件提供的服务；自己旧快照不算（避免自己 inject 自己）。
             services = xin.dshaa.core.plugins.PluginServices.snapshot(registry.list(), excludingOwner = id),
+            pluginDir = dir,
+            dataDir = pluginDataDir(record.id),
         )
         val updated = if (manifest != null) {
             PluginReload.apply(record, manifest, run)
@@ -379,10 +381,6 @@ class PluginStore(private val context: Context) {
             val dir = File(scratch, "package").apply { check(mkdir()) }
             val manifest = imported.manifest
             if (manifest == null) {
-                // M87-G：声明式包没有 JS 入口，试运行只做 IR 校验/落盘；带 script/client 的同 install 一样拒绝。
-                if (imported.ir.hasRuntimeScript()) {
-                    return@withContext TestResult(false, "声明式包里的 script/client 贡献物本版还不能执行（用 DSH package.json + main）", imported.ir.id)
-                }
                 writeFiles(dir, imported.files)
                 val kinds = imported.ir.contributions.groupingBy { it.kind.id }.eachCount()
                     .entries.joinToString("、") { "${it.key}×${it.value}" }
@@ -393,6 +391,8 @@ class PluginStore(private val context: Context) {
                 File(dir, manifest.main), manifest.main, manifest.format.label, dir.absolutePath,
                 "{}", manifest.configDefaults?.toString() ?: "{}",
                 manifestSchema = manifest.configSchema?.let { PluginSchema.normalize(it)?.toString() },
+                pluginDir = dir,
+                dataDir = File(scratch, "data"),
             )
             TestResult(run.error == null && run.configError == null,
                 run.error ?: run.configError ?: "试运行通过：${manifest.name}", manifest.id, run)
@@ -468,6 +468,8 @@ class PluginStore(private val context: Context) {
             manifest.configDefaults?.toString() ?: "{}",
             manifestSchema = manifest.configSchema?.let { PluginSchema.normalize(it)?.toString() },
             services = xin.dshaa.core.plugins.PluginServices.snapshot(registry.list(), excludingOwner = manifest.id),
+            pluginDir = dir,
+            dataDir = pluginDataDir(manifest.id),
         )
         if (run.error != null || run.configError != null) {
             return Result(false, "${manifest.name}：试运行失败：${run.error ?: run.configError}")
@@ -584,15 +586,6 @@ class PluginStore(private val context: Context) {
      */
     private fun installDeclarative(imported: PackageImport.Ok, enabled: Boolean?, ownership: String?): Result {
         val ir = imported.ir
-        // 鲸歌轻格式里也能声明 script/client，但本版没有「无 package.json 的 JS 安装」链路；
-        // 与其半装（记录里有脚本、实际不执行 apply），不如如实拒绝并指向旧格式。
-        if (ir.hasRuntimeScript()) {
-            return Result(
-                false,
-                "${ir.name}：声明式包里的 script/client 贡献物本版还不能执行；" +
-                    "请用 DSH package.json + main 的格式导入脚本插件",
-            )
-        }
         val target = File(root, dirName(ir.id))
         val previous = registry.find(ir.id)
         require(registry.list().none { it.id != ir.id && File(it.path).canonicalFile == target.canonicalFile }) {
@@ -767,6 +760,9 @@ class PluginStore(private val context: Context) {
      * 为什么要两次：apply 可能按 config 决定注册什么工具（例如开关型插件），第一次用 `{}` 只能
      * 拿到 Config 形状；第二次才是用户实际会看到的行为。安装/重新加载多跑一次 QuickJS 可接受。
      */
+    /** 插件私有持久化数据目录（升级插件不清空，也不污染用户工作区）。 */
+    fun pluginDataDir(id: String): File = File(File(context.filesDir, "plugin-data"), dirName(id))
+
     private fun dryRunForConfig(
         main: File,
         mainPath: String,
@@ -776,8 +772,10 @@ class PluginStore(private val context: Context) {
         defaultsJson: String = "{}",
         manifestSchema: String? = null,
         services: Map<String, String> = emptyMap(),
+        pluginDir: File? = main.parentFile,
+        dataDir: File? = null,
     ): PluginDryRun = configuredDryRun(configJson, defaultsJson, manifestSchema) { effective ->
-        dryRun(main, mainPath, format, cwd, effective, services)
+        dryRun(main, mainPath, format, cwd, effective, services, pluginDir, dataDir)
     }
 
     /** 在 QuickJS 里跑一次插件模块；任何失败都归一成 [PluginDryRun.error]。 */
@@ -788,6 +786,8 @@ class PluginStore(private val context: Context) {
         cwd: String? = null,
         configJson: String = "{}",
         services: Map<String, String> = emptyMap(),
+        pluginDir: File? = main.parentFile,
+        dataDir: File? = null,
     ): PluginDryRun {
         if (!main.isFile) return PluginDryRun(error = "入口文件不存在：$mainPath")
         val source = runCatching { main.readText(Charsets.UTF_8) }
@@ -797,10 +797,26 @@ class PluginStore(private val context: Context) {
         val warnings = module.warnings
         // M83：把「其他已启用插件提供的服务快照」交给这一次 apply，ctx.inject 才有值可用。
         val serviceHost = xin.dshaa.core.plugins.PluginServiceHost(initial = services)
+        // 试运行开放只读插件目录与多文件模块解析，支持相对 import / JSON / 包内资源读取（不授予网络/shell/工作区写权限）。
+        val dryRunSandbox = xin.dshaa.core.plugins.PluginSandbox(
+            pluginId = "dry-run",
+            workspace = pluginDir ?: main.parentFile ?: context.cacheDir,
+            permissions = emptyList(),
+            grantedPermissions = emptyList(),
+            pluginDir = pluginDir,
+            dataDir = dataDir,
+        )
         val js = runCatching {
             QuickJs(object : JsHost {
-                override fun callSync(method: String, payloadJson: String): String? =
-                    serviceHost.callSync(method, payloadJson)
+                override fun callSync(method: String, payloadJson: String): String? {
+                    if (method.startsWith("plugin.services.")) {
+                        return serviceHost.callSync(method, payloadJson)
+                    }
+                    if (method == "module.resolve" || method.startsWith("fs.")) {
+                        return dryRunSandbox.call(method, payloadJson).payloadJson
+                    }
+                    return null
+                }
 
                 override fun callAsync(method: String, payloadJson: String, callId: Int) = Unit
             })
@@ -825,7 +841,17 @@ class PluginStore(private val context: Context) {
                 start()
             }
             val outcome: JsOutcome = try {
-                js.evaluate(PluginModule.dryRunScript(module, cwd, configJson), mainPath)
+                js.evaluate(
+                    PluginModule.dryRunScript(
+                        module = module,
+                        cwd = cwd,
+                        configJson = configJson,
+                        pluginDir = pluginDir?.absolutePath,
+                        dataDir = dataDir?.absolutePath,
+                        entryPath = mainPath,
+                    ),
+                    mainPath,
+                )
             } finally {
                 watchdog.interrupt()
             }
@@ -840,7 +866,7 @@ class PluginStore(private val context: Context) {
                             run.error != null -> run
                             warnings.isNotEmpty() -> run.copy(error = "警告：" + warnings.joinToString("；"))
                             run.relativeImports.isNotEmpty() ->
-                                run.copy(error = "相对依赖没有加载：" + run.relativeImports.joinToString("、") + "（插件要打包成单文件）")
+                                run.copy(error = "找不到相对模块：" + run.relativeImports.joinToString("、") + "（请确认对应文件已打包在插件目录中）")
                             else -> run
                         }
                         withWarnings

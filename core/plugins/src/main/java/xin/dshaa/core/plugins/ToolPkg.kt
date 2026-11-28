@@ -399,10 +399,10 @@ function __loadToolPkg() {
   const complete = function (value) { completed = value; };
   const Tools = __operitTools();
   const execute = new Function(
-    'exports', 'module', 'complete', 'OkHttp', 'Tools', 'console', 'toolCall', 'getEnv',
+    'exports', 'module', 'require', 'complete', 'OkHttp', 'Tools', 'console', 'toolCall', 'getEnv',
     __toolPkgSource + '\n//# sourceURL=toolpkg.js'
   );
-  execute(exports, module, complete, __okhttp(), Tools, console, __operitToolCall, __envValue);
+  execute(exports, module, require, complete, __okhttp(), Tools, console, __operitToolCall, __envValue);
   return {
     exports: exports,
     moduleExports: module.exports,

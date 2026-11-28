@@ -314,6 +314,64 @@ class PackageIrTest {
         }
     }
 
+    @Test
+    fun importsMultiScriptWhaleLiteZipWithSyntheticEntry() {
+        val manifest = """
+            {"id":"local.demo.multi","name":"多脚本插件","version":"1.0.0","format":"whale-lite",
+             "permissions":["fs:workspace"],
+             "contributions":[
+               {"kind":"script","id":"alpha","entry":"scripts/alpha.js"},
+               {"kind":"script","id":"beta","entry":"scripts/beta.js"},
+               {"kind":"asset","id":"docs","assets":["data/ref.txt"]}
+             ]}
+        """.trimIndent()
+        val zip = zipOf(
+            "dsh.package.json" to manifest,
+            "scripts/alpha.js" to "export function apply(ctx) {}",
+            "scripts/beta.js" to "export function apply(ctx) {}",
+            "data/ref.txt" to "reference content",
+        )
+        val imported = ok(PackageImporter.importFile(zip))
+        assertEquals(ImportSource.DSH_PACKAGE, imported.source)
+        val syntheticManifest = imported.manifest
+        assertTrue(syntheticManifest != null, "多脚本 dsh.package.json 应生成运行清单")
+        assertEquals("__dsh_multi_entry.js", syntheticManifest!!.main)
+        val bootstrap = imported.files.firstOrNull { it.path == "__dsh_multi_entry.js" }
+            ?.bytes?.toString(Charsets.UTF_8).orEmpty()
+        assertTrue(bootstrap.contains("./scripts/alpha.js"), bootstrap)
+        assertTrue(bootstrap.contains("./scripts/beta.js"), bootstrap)
+    }
+
+    @Test
+    fun importsStandaloneJsAndYamlFiles() {
+        val js = ok(PackageImporter.importText("export function apply(ctx) {}", "quick-tool.js"))
+        assertTrue(js.manifest != null)
+        assertEquals("quick-tool.js", js.manifest!!.main)
+
+        val yaml = ok(
+            PackageImporter.importText(
+                "kind: prompt\nid: local.demo.yaml\nname: YAML 提示\ncontent: 你好\n",
+                "demo.yaml",
+            ),
+        )
+        assertEquals("local.demo.yaml", yaml.ir.id)
+        assertEquals(ContributionKind.PROMPT, yaml.ir.contributions.single().kind)
+    }
+
+    @Test
+    fun summarizeZipSkipsNodeModulesAndDetectsDshPackage() {
+        val zip = zipOf(
+            "pkg/dsh.package.json" to """{"id":"a","name":"A","format":"whale-lite","contributions":[]}""",
+            "pkg/index.js" to "export function apply() {}",
+            "pkg/node_modules/foo/index.js" to "module.exports = 1;",
+        )
+        val summary = PluginPackage.summarizeZip(zip)
+        assertTrue(summary != null)
+        assertEquals("pkg/dsh.package.json", summary!!.manifestName)
+        assertEquals("a", summary.id)
+        assertFalse(summary.hasClient)
+    }
+
     private fun ok(result: PackageImport): PackageImport.Ok {
         assertTrue(result is PackageImport.Ok, "导入失败：${(result as? PackageImport.Failed)?.error}")
         return result as PackageImport.Ok

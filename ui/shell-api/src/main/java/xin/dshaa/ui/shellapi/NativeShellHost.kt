@@ -573,4 +573,14 @@ interface NativeShellHost {
     suspend fun fetchModels(): Result<List<String>>
 
     suspend fun testConnection(): String
+
+    // ── Node 插件管理操作（配置 / 卸载 / 混合插件打开客户端容器） ─────────────────────
+
+    fun nodePluginConfig(idOrModule: String): String = "{}"
+
+    fun saveNodePluginConfig(idOrModule: String, configJson: String) {}
+
+    fun uninstallNodePlugin(idOrModule: String) {}
+
+    fun openNodePluginClient(idOrModule: String) {}
 }

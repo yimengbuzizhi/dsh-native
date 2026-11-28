@@ -84,7 +84,9 @@ private fun VirtualHomeScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val view = LocalView.current
-    val displayId = remember { view.display?.displayId ?: 0 }
+    val displayId = remember {
+        VirtualScreenSession.controller.getDisplayId() ?: view.display?.displayId ?: 0
+    }
     var apps by remember { mutableStateOf<List<VirtualScreenManager.LaunchableApp>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var lastError by remember { mutableStateOf<String?>(null) }
@@ -174,7 +176,10 @@ private fun VirtualHomeScreen(onClose: () -> Unit) {
                                     VirtualScreenSession.controller.getVideoSize(),
                                     app.label,
                                     VirtualScreenSession.spec,
+                                    app.packageName,
                                 )
+                                xin.dshaa.nativeapp.device.shower.VirtualScreenOverlay
+                                    .updateCurrentAppPackageName(app.packageName)
                                 onClose()
                             } else {
                                 lastError = "启动 ${app.label} 失败"

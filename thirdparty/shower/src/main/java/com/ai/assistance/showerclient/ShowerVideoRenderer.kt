@@ -58,6 +58,8 @@ class ShowerVideoRenderer {
             this.height = videoHeight
             warnedNoSurface = false
             releaseDecoderLocked()
+            csd0 = null
+            csd1 = null
             pendingFrames.clear()
         }
     }
@@ -66,6 +68,8 @@ class ShowerVideoRenderer {
         synchronized(lock) {
             releaseDecoderLocked()
             surface = null
+            csd0 = null
+            csd1 = null
             pendingFrames.clear()
             warnedNoSurface = false
         }
@@ -100,17 +104,17 @@ class ShowerVideoRenderer {
             val packet = maybeAvccToAnnexb(data)
 
             if (decoder == null) {
-                val nalType = findNalUnitType(packet)
-                if (nalType == 7) { // SPS
-                    if (csd0 == null) {
-                        csd0 = packet
-                    }
-                } else if (nalType == 8) { // PPS
-                    if (csd1 == null) {
-                        csd1 = packet
-                    }
-                } else {
+                val nals = extractAnnexBNals(packet)
+                if (nals.isEmpty()) {
                     pendingFrames.add(packet)
+                } else {
+                    for ((nalType, nalBytes) in nals) {
+                        when (nalType) {
+                            7 -> csd0 = nalBytes // SPS（新分辨率覆盖旧参数集）
+                            8 -> csd1 = nalBytes // PPS
+                            else -> pendingFrames.add(nalBytes)
+                        }
+                    }
                 }
 
                 if (csd0 != null && csd1 != null) {
@@ -126,23 +130,35 @@ class ShowerVideoRenderer {
         }
     }
 
-    private fun findNalUnitType(packet: ByteArray): Int {
-        var offset = -1
-        for (i in 0 until packet.size - 3) {
-            if (packet[i] == 0.toByte() && packet[i + 1] == 0.toByte()) {
-                if (packet[i + 2] == 1.toByte()) {
-                    offset = i + 3
-                    break
-                } else if (i + 3 < packet.size && packet[i + 2] == 0.toByte() && packet[i + 3] == 1.toByte()) {
-                    offset = i + 4
-                    break
+    private fun extractAnnexBNals(annexb: ByteArray): List<Pair<Int, ByteArray>> {
+        val starts = ArrayList<Pair<Int, Int>>(4)
+        var i = 0
+        val n = annexb.size
+        while (i + 3 < n) {
+            if (annexb[i] == 0.toByte() && annexb[i + 1] == 0.toByte()) {
+                if (annexb[i + 2] == 1.toByte()) {
+                    starts += i to (i + 3)
+                    i += 3
+                    continue
+                } else if (i + 3 < n && annexb[i + 2] == 0.toByte() && annexb[i + 3] == 1.toByte()) {
+                    starts += i to (i + 4)
+                    i += 4
+                    continue
                 }
             }
+            i++
         }
-        if (offset != -1 && offset < packet.size) {
-            return (packet[offset].toInt() and 0x1F)
+        if (starts.isEmpty()) return emptyList()
+        val out = ArrayList<Pair<Int, ByteArray>>(starts.size)
+        for (idx in starts.indices) {
+            val (codePos, headerPos) = starts[idx]
+            val endPos = if (idx + 1 < starts.size) starts[idx + 1].first else n
+            if (headerPos < endPos) {
+                val nalType = annexb[headerPos].toInt() and 0x1F
+                out += nalType to annexb.copyOfRange(codePos, endPos)
+            }
         }
-        return -1
+        return out
     }
 
     private fun queueFrameToDecoder(packet: ByteArray) {

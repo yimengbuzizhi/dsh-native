@@ -29,10 +29,27 @@ object PluginClientEntry {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     fun resolve(pluginDir: File): Result {
-        val manifest = File(pluginDir, "package.json")
-        if (!manifest.isFile) return Result.Unsupported("没有 package.json")
+        // 优先支持 dsh.package.json（鲸歌轻格式）里的 client 贡献物
+        val whaleManifest = File(pluginDir, PackageImporter.MANIFEST_NAME)
+        if (whaleManifest.isFile) {
+            val irRead = runCatching { PackageIrCodec.decode(whaleManifest.readText(Charsets.UTF_8), PackageImporter.MANIFEST_NAME) }
+                .getOrNull()
+            if (irRead is IrRead.Ok) {
+                val clientContrib = irRead.ir.contributions.firstOrNull { it.kind == ContributionKind.CLIENT }
+                val entry = clientContrib?.entry?.trim()?.removePrefix("./")?.takeIf { it.isNotEmpty() }
+                if (entry != null) {
+                    return if (File(pluginDir, entry).isFile) {
+                        Result.Resolved(entry)
+                    } else {
+                        Result.Unsupported("dsh.package.json 声明的 client 入口不存在：$entry")
+                    }
+                }
+            }
+        }
+        val manifest = listOf("package.json", "manifest.json").map { File(pluginDir, it) }.firstOrNull { it.isFile }
+            ?: return Result.Unsupported("没有 package.json / manifest.json")
         val root = runCatching { json.parseToJsonElement(manifest.readText(Charsets.UTF_8)).jsonObject }
-            .getOrNull() ?: return Result.Unsupported("package.json 不是合法 JSON")
+            .getOrNull() ?: return Result.Unsupported("${manifest.name} 不是合法 JSON")
         val dsh = root["dsh"] as? JsonObject
             ?: return Result.Unsupported("清单没有 dsh 段")
         val client = dsh["client"] as? JsonObject

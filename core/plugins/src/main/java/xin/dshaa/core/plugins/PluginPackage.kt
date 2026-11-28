@@ -40,6 +40,8 @@ object PluginPackage {
 
     private val ID_PATTERN = Regex("""^[A-Za-z0-9@][A-Za-z0-9._@/-]{0,119}$""")
     private val MANIFEST_NAMES = setOf("package.json", "manifest.json")
+    private val SUMMARY_MANIFEST_NAMES = setOf("package.json", "manifest.json", PackageImporter.MANIFEST_NAME)
+    private val FALLBACK_ENTRIES = listOf("index.js", "index.mjs", "index.cjs", "lib/index.js", "dist/index.js", "src/index.js")
 
     /** 读 zip（含安全校验）。返回的路径已归一化，但还没剥公共顶层目录。 */
     fun read(file: File): ArchiveRead {
@@ -110,20 +112,52 @@ object PluginPackage {
         val main: String?,
     )
 
+    /**
+     * 流式预读 zip 清单摘要：只读浅层 package.json / manifest.json / dsh.package.json（跳过 node_modules），
+     * 不把整包解压进堆内存，也不受原生 64MB/5000 条目上限拦截——让大体积 Node 插件能正常进入归属选择框。
+     */
+    fun summarizeZip(file: File): PackageSummary? {
+        if (!file.isFile) return null
+        val manifests = ArrayList<PluginFile>(4)
+        runCatching {
+            ZipInputStream(file.inputStream().buffered()).use { zip ->
+                var scanned = 0
+                while (scanned < 50_000) {
+                    val entry = zip.nextEntry ?: break
+                    scanned++
+                    if (entry.isDirectory) continue
+                    val path = normalizePath(entry.name) ?: continue
+                    if (isJunk(path)) continue
+                    val base = path.substringAfterLast('/')
+                    if (base !in SUMMARY_MANIFEST_NAMES) continue
+                    // 跳过依赖树里的 package.json，只看包本身顶层或一层根目录下的清单
+                    if (path.contains("node_modules/") || path.count { it == '/' } > 1) continue
+                    val bytes = readLimited(zip, 1024L * 1024) ?: continue
+                    manifests += PluginFile(path, bytes)
+                }
+            }
+        }
+        return summarize(manifests)
+    }
+
     fun summarize(files: List<PluginFile>): PackageSummary? {
         if (files.isEmpty()) return null
-        val candidates = files.filter { it.path.substringAfterLast('/') in MANIFEST_NAMES }
+        val candidates = files.filter { it.path.substringAfterLast('/') in SUMMARY_MANIFEST_NAMES }
         if (candidates.isEmpty()) return null
         val minDepth = candidates.minOf { it.path.count { ch -> ch == '/' } }
         val shallowest = candidates.filter { it.path.count { ch -> ch == '/' } == minDepth }
-        val manifestFile = shallowest.firstOrNull { it.path.endsWith("package.json") } ?: shallowest.first()
+        val manifestFile = shallowest.firstOrNull { it.path.endsWith(PackageImporter.MANIFEST_NAME) }
+            ?: shallowest.firstOrNull { it.path.endsWith("package.json") }
+            ?: shallowest.first()
         val json = runCatching {
             Json.parseToJsonElement(manifestFile.bytes.toString(Charsets.UTF_8)).jsonObject
         }.getOrNull() ?: return null
-        val isDsh = manifestFile.path.endsWith("package.json")
+        val isWhaleLite = manifestFile.path.endsWith(PackageImporter.MANIFEST_NAME)
+        val isDsh = manifestFile.path.endsWith("package.json") && !isWhaleLite
         val detection = if (isDsh) PluginOwnership.detect(json) else PluginOwnership.Detection(PluginOwnership.NATIVE)
         val name = json.string("name")?.trim().orEmpty().ifEmpty { json.string("id")?.trim().orEmpty() }
         val id = json.string("id")?.trim().orEmpty().ifEmpty { name }
+        val mainEntry = resolveEntryFromJson(json)
         return PackageSummary(
             id = id,
             name = name.ifBlank { id },
@@ -132,8 +166,8 @@ object PluginPackage {
             manifestName = manifestFile.path,
             ownership = detection.ownership,
             signals = detection.signals,
-            hasClient = detection.hasClient,
-            main = json.string("main")?.trim()?.takeIf { it.isNotBlank() },
+            hasClient = detection.hasClient || (isWhaleLite && json["contributions"]?.toString()?.contains("\"client\"") == true),
+            main = mainEntry,
         )
     }
 
@@ -170,13 +204,24 @@ object PluginPackage {
         }.getOrNull() ?: return PackageParse.Failed("${manifestFile.path} 不是合法 JSON")
 
         val format = if (manifestFile.path.endsWith("package.json")) PluginFormat.DSH else PluginFormat.OPERIT
-        val manifest = when (val read = manifestFrom(json, format)) {
+        val explicitEntry = resolveEntryFromJson(json)
+        var manifest = when (val read = manifestFrom(json, format)) {
             is ManifestRead.Ok -> read.manifest
             is ManifestRead.Failed -> return PackageParse.Failed(read.error)
             ManifestRead.Missing -> return PackageParse.Failed("清单解析失败")
         }
         if (stripped.none { it.path == manifest.main }) {
-            return PackageParse.Failed("清单里的入口 main=${manifest.main} 在包里找不到")
+            // 没显式声明 main/exports 时，按常见入口自动探测（支持 index.js / lib/index.js / dist/index.js 等）
+            val fallback = if (explicitEntry == null) {
+                FALLBACK_ENTRIES.firstOrNull { cand -> stripped.any { it.path == cand } }
+            } else {
+                null
+            }
+            if (fallback != null) {
+                manifest = manifest.copy(main = fallback)
+            } else {
+                return PackageParse.Failed("清单里的入口 main=${manifest.main} 在包里找不到")
+            }
         }
         return PackageParse.Ok(manifest, root, stripped)
     }
@@ -218,7 +263,7 @@ object PluginPackage {
             return ManifestRead.Failed("插件 id 不合法：$id（只允许字母数字 @ . _ / -）")
         }
         val defaultMain = if (format == PluginFormat.DSH) "lib/index.js" else "index.js"
-        val mainRaw = json.string("main")?.trim().orEmpty().ifEmpty { defaultMain }
+        val mainRaw = resolveEntryFromJson(json).orEmpty().ifEmpty { defaultMain }
         val main = normalizePath(mainRaw) ?: return ManifestRead.Failed("main 路径不合法：$mainRaw")
         // 权限：顶层 `permissions` 为准；DSH 的 package.json 也允许写在 `dsh.permissions`。
         val permissionRaw = json.stringList("permissions").ifEmpty {
@@ -297,6 +342,34 @@ object PluginPackage {
             out.write(buffer, 0, read)
         }
         return out.toByteArray()
+    }
+
+    /** 解析 package.json / manifest.json 入口：优先 main，再看 exports["."]（字符串或 import/default/require/node）与 module。 */
+    fun resolveEntryFromJson(json: JsonObject): String? {
+        json.string("main")?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        when (val exports = json["exports"]) {
+            is kotlinx.serialization.json.JsonPrimitive -> exports.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+            is JsonObject -> {
+                val rootExport = exports["."] ?: exports
+                val candidate = when (rootExport) {
+                    is kotlinx.serialization.json.JsonPrimitive -> rootExport.contentOrNull
+                    is JsonObject -> listOf("import", "default", "require", "node")
+                        .firstNotNullOfOrNull { key ->
+                            val v = rootExport[key]
+                            when (v) {
+                                is kotlinx.serialization.json.JsonPrimitive -> v.contentOrNull
+                                is JsonObject -> (v["default"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+                                else -> null
+                            }
+                        }
+                    else -> null
+                }
+                candidate?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+            }
+            else -> Unit
+        }
+        json.string("module")?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        return null
     }
 
     private fun kotlinx.serialization.json.JsonObject.string(key: String): String? =

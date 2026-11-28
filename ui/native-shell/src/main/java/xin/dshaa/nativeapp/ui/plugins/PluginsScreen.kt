@@ -1,4 +1,5 @@
 package xin.dshaa.nativeapp.ui.plugins
+import xin.dshaa.ui.design.component.dshTopBarSurface
 
 import xin.dshaa.ui.design.component.liquidGlass
 import xin.dshaa.ui.design.theme.LiquidLevel
@@ -196,6 +197,10 @@ fun PluginsScreen(
     nodeHostLogs: List<String> = emptyList(),
     onReloadNodeHost: () -> Unit = {},
     onImportNodePlugin: (Uri) -> Unit = {},
+    nodePluginConfig: (String) -> String = { "{}" },
+    onSaveNodePluginConfig: (String, String) -> Unit = { _, _ -> },
+    onUninstallNodePlugin: (String) -> Unit = {},
+    onOpenNodePluginClient: (String) -> Unit = {},
     onRefreshExtensions: () -> Unit = {},
     /** docs/188 P4：统一导入（识别归属 + 可改 + 迁移）。 */
     pluginImportDraft: PluginImportDraftUi? = null,
@@ -269,8 +274,7 @@ fun PluginsScreen(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
-                .statusBarsPadding()
+                .dshTopBarSurface()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -373,6 +377,10 @@ fun PluginsScreen(
                             onImport = {
                                 picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
                             },
+                            nodePluginConfig = nodePluginConfig,
+                            onSaveNodePluginConfig = onSaveNodePluginConfig,
+                            onUninstallNodePlugin = onUninstallNodePlugin,
+                            onOpenNodePluginClient = onOpenNodePluginClient,
                             logsOpen = nodeLogsOpen,
                             onToggleLogs = { nodeLogsOpen = !nodeLogsOpen },
                         )
@@ -781,10 +789,17 @@ private fun NodeHostSection(
     onToggle: (Boolean) -> Unit,
     onReload: () -> Unit,
     onImport: () -> Unit,
+    nodePluginConfig: (String) -> String,
+    onSaveNodePluginConfig: (String, String) -> Unit,
+    onUninstallNodePlugin: (String) -> Unit,
+    onOpenNodePluginClient: (String) -> Unit,
     logsOpen: Boolean,
     onToggleLogs: () -> Unit,
 ) {
     val c = DshTheme2.colors
+    var editingConfigTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var editingConfigText by remember { mutableStateOf("{}") }
+    var pendingUninstall by remember { mutableStateOf<Pair<String, String>?>(null) }
     val statusColor = when (status.code) {
         "ready" -> c.success
         "failed" -> c.danger
@@ -880,10 +895,83 @@ private fun NodeHostSection(
             }
         }
         plugins.forEach { plugin ->
-            NodePluginCard(plugin, loaded = true)
+            val key = plugin.id.ifBlank { plugin.module }
+            val label = plugin.name.ifBlank { key }
+            NodePluginCard(
+                plugin = plugin,
+                loaded = true,
+                busy = busy,
+                onOpenClient = if (plugin.hasClient) ({ onOpenNodePluginClient(key) }) else null,
+                onEditConfig = {
+                    editingConfigTarget = key to label
+                    editingConfigText = nodePluginConfig(key)
+                },
+                onUninstall = { pendingUninstall = key to label },
+            )
         }
         unloaded.forEach { entry ->
-            NodeManifestCard(entry, status.code)
+            val key = entry.id.ifBlank { entry.module }
+            val label = entry.name.ifBlank { key }
+            NodeManifestCard(
+                entry = entry,
+                statusCode = status.code,
+                busy = busy,
+                onEditConfig = {
+                    editingConfigTarget = key to label
+                    editingConfigText = nodePluginConfig(key)
+                },
+                onUninstall = { pendingUninstall = key to label },
+            )
+        }
+        editingConfigTarget?.let { (key, label) ->
+            AlertDialog(
+                onDismissRequest = { editingConfigTarget = null },
+                title = { Text("配置：$label") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "输入 JSON 对象（将写入 node-host-plugins.json 并重启 Node 宿主生效）",
+                            color = c.sub,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                        OutlinedTextField(
+                            value = editingConfigText,
+                            onValueChange = { editingConfigText = it },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 260.dp),
+                            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onSaveNodePluginConfig(key, editingConfigText)
+                            editingConfigTarget = null
+                        },
+                    ) { Text("保存并重载") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { editingConfigTarget = null }) { Text("取消") }
+                },
+            )
+        }
+        pendingUninstall?.let { (key, label) ->
+            AlertDialog(
+                onDismissRequest = { pendingUninstall = null },
+                title = { Text("卸载 Node 插件") },
+                text = { Text("确定删除「$label」及其插件目录？") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onUninstallNodePlugin(key)
+                            pendingUninstall = null
+                        },
+                    ) { Text("卸载", color = c.danger) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingUninstall = null }) { Text("取消") }
+                },
+            )
         }
         DshCard(Modifier.fillMaxWidth()) {
             Column {
@@ -919,7 +1007,14 @@ private fun NodeHostSection(
 }
 
 @Composable
-private fun NodePluginCard(plugin: NodeHostPluginUi, loaded: Boolean) {
+private fun NodePluginCard(
+    plugin: NodeHostPluginUi,
+    loaded: Boolean,
+    busy: Boolean,
+    onOpenClient: (() -> Unit)?,
+    onEditConfig: () -> Unit,
+    onUninstall: () -> Unit,
+) {
     val c = DshTheme2.colors
     DshCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
@@ -976,8 +1071,8 @@ private fun NodePluginCard(plugin: NodeHostPluginUi, loaded: Boolean) {
                     style = MaterialTheme.typography.labelSmall,
                 )
                 plugin.ok -> Text(
-                    if (plugin.hasClient) "没有宿主工具（界面类插件：可在原生插件里用容器打开）"
-                    else "没有注册工具（可能只注册提示词段/供应商/命令）",
+                    if (plugin.hasClient) "含 Web Client 界面（可直接点击下方「打开界面」）"
+                    else "没有注册工具（可能只注册提示词段/供应商/命令，或等待未提供的 Cordis 服务）",
                     color = c.faint,
                     style = MaterialTheme.typography.labelSmall,
                 )
@@ -991,12 +1086,41 @@ private fun NodePluginCard(plugin: NodeHostPluginUi, loaded: Boolean) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (onOpenClient != null) {
+                    Text(
+                        "打开界面",
+                        color = c.brand,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.clickable(enabled = !busy) { onOpenClient() },
+                    )
+                }
+                Text(
+                    "配置",
+                    color = c.brand,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.clickable(enabled = !busy) { onEditConfig() },
+                )
+                Text(
+                    "卸载",
+                    color = c.danger,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.clickable(enabled = !busy) { onUninstall() },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun NodeManifestCard(entry: NodeHostManifestUi, statusCode: String) {
+private fun NodeManifestCard(
+    entry: NodeHostManifestUi,
+    statusCode: String,
+    busy: Boolean,
+    onEditConfig: () -> Unit,
+    onUninstall: () -> Unit,
+) {
     val c = DshTheme2.colors
     DshCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
@@ -1034,6 +1158,21 @@ private fun NodeManifestCard(entry: NodeHostManifestUi, statusCode: String) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "配置",
+                    color = c.brand,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.clickable(enabled = !busy) { onEditConfig() },
+                )
+                Text(
+                    "卸载",
+                    color = c.danger,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.clickable(enabled = !busy) { onUninstall() },
+                )
+            }
         }
     }
 }

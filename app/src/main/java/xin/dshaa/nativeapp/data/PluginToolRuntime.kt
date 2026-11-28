@@ -62,6 +62,9 @@ class PluginToolRuntime(
         val description: String,
         val schema: JsonObject,
         val entry: File,
+        val pluginDir: File = entry.parentFile ?: entry,
+        val entryRelPath: String = entry.name,
+        val dataDir: File? = null,
         val permissions: List<PluginPermission>,
         val grantedPermissions: List<String>,
         val workspace: File,
@@ -81,8 +84,10 @@ class PluginToolRuntime(
         // M83：服务快照每次刷新重建一次（相当于一次「依赖解析」），工具执行时 ctx.inject 拿到同一份。
         val services = xin.dshaa.core.plugins.PluginServices.snapshot(records)
         records.filter { it.enabled }.forEach { record ->
-            val entry = File(record.path, record.main)
+            val pluginDir = File(record.path)
+            val entry = File(pluginDir, record.main)
             if (!entry.isFile) return@forEach
+            val dataDir = pluginDataDirFor(pluginDir)
             val permissions = PluginPermissions.parseAll(record.permissions)
             val configJson = PluginSchema.effectiveText(record.configSchema, record.config, record.configDefaults)
             record.tools.forEach { toolName ->
@@ -100,6 +105,9 @@ class PluginToolRuntime(
                         .ifBlank { "Tool registered by plugin \"${record.name}\"" },
                     schema = schema,
                     entry = entry,
+                    pluginDir = pluginDir,
+                    entryRelPath = record.main,
+                    dataDir = dataDir,
                     permissions = permissions,
                     grantedPermissions = record.grantedPermissions,
                     workspace = workspace,
@@ -144,6 +152,11 @@ class PluginToolRuntime(
         }
     }
 
+    private fun pluginDataDirFor(pluginDir: File): File {
+        val base = pluginDir.parentFile?.parentFile ?: pluginDir.parentFile ?: pluginDir
+        return File(File(base, "plugin-data"), pluginDir.name)
+    }
+
     /** 跑一次插件工具。任何异常都归一成 [PluginInvokeResult]，不让插件把整轮对话弄崩。 */
     private fun run(binding: Binding, argsJson: String, timeoutMs: Long): PluginInvokeResult =
         runWithScript(binding, timeoutMs) { module ->
@@ -153,6 +166,9 @@ class PluginToolRuntime(
                 argsJson,
                 binding.workspace.absolutePath,
                 binding.configJson,
+                pluginDir = binding.pluginDir.absolutePath,
+                dataDir = binding.dataDir?.absolutePath,
+                entryPath = binding.entryRelPath,
             )
         }
 
@@ -167,8 +183,10 @@ class PluginToolRuntime(
         workspace: File,
         timeoutMs: Long = 30_000,
     ): PluginInvokeResult {
-        val entry = File(record.path, record.main)
+        val pluginDir = File(record.path)
+        val entry = File(pluginDir, record.main)
         if (!entry.isFile) return PluginInvokeResult(false, error = "Plugin entry file is missing: ${record.main}")
+        val dataDir = pluginDataDirFor(pluginDir)
         val configJson = PluginSchema.effectiveText(record.configSchema, record.config, record.configDefaults)
         val binding = Binding(
             pluginId = record.id,
@@ -177,6 +195,9 @@ class PluginToolRuntime(
             description = "",
             schema = JsonObject(emptyMap()),
             entry = entry,
+            pluginDir = pluginDir,
+            entryRelPath = record.main,
+            dataDir = dataDir,
             permissions = PluginPermissions.parseAll(record.permissions),
             grantedPermissions = record.grantedPermissions,
             workspace = workspace,
@@ -189,6 +210,9 @@ class PluginToolRuntime(
                 rawInput,
                 workspace.absolutePath,
                 configJson,
+                pluginDir = pluginDir.absolutePath,
+                dataDir = dataDir.absolutePath,
+                entryPath = record.main,
             )
         }
     }
@@ -208,6 +232,8 @@ class PluginToolRuntime(
             permissions = binding.permissions,
             grantedPermissions = binding.grantedPermissions,
             bridge = hostBridge,
+            pluginDir = binding.pluginDir,
+            dataDir = binding.dataDir,
         )
         val script = runCatching { scriptFor(module) }
             .getOrElse { return PluginInvokeResult(false, error = "Failed to generate plugin invocation script: ${it.message}") }

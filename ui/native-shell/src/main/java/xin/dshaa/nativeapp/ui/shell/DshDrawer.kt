@@ -154,7 +154,7 @@ fun DshDrawer(
     var renameFor by remember { mutableStateOf<ConversationSessionUi?>(null) }
     var deleteFor by remember { mutableStateOf<ConversationSessionUi?>(null) }
     var purgeFor by remember { mutableStateOf<ConversationSessionUi?>(null) }
-    val grouped = sessions.groupBy { drawerDayLabel(it.updatedAt) }
+    val grouped = remember(sessions) { sessions.groupBy { drawerDayLabel(it.updatedAt) } }
     // 设计稿 .drawer: width: min(85vw, 336px)
     val drawerWidth = minOf(336.dp, (LocalConfiguration.current.screenWidthDp * 0.85f).dp)
 
@@ -417,17 +417,11 @@ fun DshDrawer(
     }
 
     if (permanent) {
-        // 宽屏常驻面板：玻璃由 NativeShellRoot 的 Row 那一层画（整条 304dp 竖玻璃），这里只铺内容。
+        // 宽屏常驻面板：玻璃由 NativeShellRoot 的 Row 那一层画（整条 304dp 竖玻璃），这里不再二次套玻璃避免双层过绘与圆角裁切冲突。
         Box(
             Modifier
                 .fillMaxHeight()
-                .width(drawerWidth)
-                .liquidGlass(
-                    shape = RectangleShape,
-                    level = LiquidLevel.Panel,
-                    elevated = false,
-                    solidBase = LocalLiquidTokens.current.panelBase,
-                ),
+                .width(drawerWidth),
         ) { panel() }
     } else {
         // 窄屏滑出抽屉：容器色透明，玻璃自己画，透出背后的水族箱墙面。

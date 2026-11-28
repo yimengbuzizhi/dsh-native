@@ -93,31 +93,45 @@ object PluginModule {
                 }
 
                 line.startsWith("export *") -> {
-                    val match = exportStar.find(line)
+                    var statement = line
+                    var last = i
+                    while (!exportStar.containsMatchIn(statement) && last + 1 < lines.size && last - i < 10) {
+                        last += 1
+                        statement += " " + lines[last].trim()
+                    }
+                    val match = exportStar.find(statement)
                     if (match == null) {
                         warnings += "第 ${i + 1} 行的 export * 没识别，原样保留"
                         out += raw
+                        i += 1
                     } else {
                         val alias = match.groupValues[1]
                         val module = match.groupValues[2]
                         imports += module
                         val v = newModuleVar()
-                        out += "const $v = __require(${quote(module)});"
+                        out += "const $v = require(${quote(module)});"
                         if (alias.isEmpty()) {
                             out += "for (const __k in $v) { if (__k !== 'default' && __k !== '__esModule') { exports[__k] = $v[__k]; } }"
                         } else {
                             out += "const $alias = $v;"
                             exports += ModuleExport(alias, alias)
                         }
+                        i = last + 1
                     }
-                    i += 1
                 }
 
                 line.startsWith("export {") -> {
-                    val match = exportList.find(line)
+                    var statement = line
+                    var last = i
+                    while (!exportList.containsMatchIn(statement) && last + 1 < lines.size && last - i < 20) {
+                        last += 1
+                        statement += " " + lines[last].trim()
+                    }
+                    val match = exportList.find(statement)
                     if (match == null) {
                         warnings += "第 ${i + 1} 行的 export {} 没识别，原样保留"
                         out += raw
+                        i += 1
                     } else {
                         val specs = match.groupValues[1]
                             .split(',')
@@ -134,7 +148,7 @@ object PluginModule {
                         } else {
                             imports += module
                             val v = newModuleVar()
-                            out += "const $v = __require(${quote(module)});"
+                            out += "const $v = require(${quote(module)});"
                             specs.forEach { spec ->
                                 val parts = spec.split(Regex("""\s+as\s+""")).map { it.trim() }
                                 val sourceName = parts[0]
@@ -145,8 +159,8 @@ object PluginModule {
                                 }
                             }
                         }
+                        i = last + 1
                     }
-                    i += 1
                 }
 
                 line.startsWith("export ") -> {
@@ -167,6 +181,8 @@ object PluginModule {
 
                 else -> {
                     out += raw
+                        .replace("import.meta.url", "('file://' + __filename)")
+                        .replace("import.meta.dirname", "__dirname")
                     i += 1
                 }
             }
@@ -180,16 +196,19 @@ object PluginModule {
     }
 
     /** 生成可直接交给 `QuickJs.evaluate` 的试运行脚本；返回值是 JSON 字符串。 */
-    fun dryRunScript(module: TransformedModule, cwd: String? = null, configJson: String = "{}"): String =
-        moduleScript(module, cwd, configJson) + EXPORTS_APPLY +
+    fun dryRunScript(
+        module: TransformedModule,
+        cwd: String? = null,
+        configJson: String = "{}",
+        pluginDir: String? = null,
+        dataDir: String? = null,
+        entryPath: String? = null,
+    ): String =
+        moduleScript(module, cwd, configJson, pluginDir, dataDir, entryPath) + EXPORTS_APPLY +
             "\n  return Promise.resolve(__dshApply).then(function () { return JSON.stringify(__dsh); });\n"
 
     /**
      * 生成「执行插件里某个工具」的脚本（M27）。
-     *
-     * 每次工具调用都是一个独立 QuickJS 实例：重新跑模块、重新 `apply(ctx)`，再调
-     * `__dshDefs[tool].execute(args, exec)`。这样插件**注册逻辑和真正执行永远一致**，
-     * 不会出现「试运行注册了、真正跑却换了闭包」；代价是每次调用重跑一次模块（工具调用低频，可接受）。
      *
      * [argsJson] 是模型给的参数 JSON 文本；[toolName] 是注册时的工具名。
      * 返回值仍是 JSON 字符串：`{ok:true,text}` 或 `{ok:false,error}`。
@@ -200,10 +219,13 @@ object PluginModule {
         argsJson: String,
         cwd: String? = null,
         configJson: String = "{}",
+        pluginDir: String? = null,
+        dataDir: String? = null,
+        entryPath: String? = null,
     ): String {
         val name = kotlinx.serialization.json.JsonPrimitive(toolName).toString()
         val args = kotlinx.serialization.json.JsonPrimitive(argsJson).toString()
-        return moduleScript(module, cwd, configJson) + EXPORTS_APPLY + """
+        return moduleScript(module, cwd, configJson, pluginDir, dataDir, entryPath) + EXPORTS_APPLY + """
   const __toolName = $name;
   const __toolArgs = $args;
   function __dshFailure(err) {
@@ -268,10 +290,13 @@ object PluginModule {
         rawInput: String,
         cwd: String? = null,
         configJson: String = "{}",
+        pluginDir: String? = null,
+        dataDir: String? = null,
+        entryPath: String? = null,
     ): String {
         val name = kotlinx.serialization.json.JsonPrimitive(commandName).toString()
         val input = kotlinx.serialization.json.JsonPrimitive(rawInput).toString()
-        return moduleScript(module, cwd, configJson) + EXPORTS_APPLY + """
+        return moduleScript(module, cwd, configJson, pluginDir, dataDir, entryPath) + EXPORTS_APPLY + """
   const __cmdName = $name;
   const __cmdInput = $input;
   function __dshCommandFailure(err) {
@@ -324,8 +349,15 @@ object PluginModule {
      *
      * 返回值是 JSON 字符串：`{ok, keys, projections, errors}`。
      */
-    fun residentScript(module: TransformedModule, cwd: String? = null, configJson: String = "{}"): String =
-        moduleScript(module, cwd, configJson) + EXPORTS_APPLY + RESIDENT_DISPATCH + """
+    fun residentScript(
+        module: TransformedModule,
+        cwd: String? = null,
+        configJson: String = "{}",
+        pluginDir: String? = null,
+        dataDir: String? = null,
+        entryPath: String? = null,
+    ): String =
+        moduleScript(module, cwd, configJson, pluginDir, dataDir, entryPath) + EXPORTS_APPLY + RESIDENT_DISPATCH + """
   return Promise.resolve(__dshApply).then(function () {
     return JSON.stringify({
       ok: true,
@@ -1055,10 +1087,20 @@ object PluginModule {
 """
 
     /** QuickJS 跑插件模块的公共前半段：注入宿主符号 → 执行模块 → 收集 exports。 */
-    private fun moduleScript(module: TransformedModule, cwd: String?, configJson: String): String {
+    private fun moduleScript(
+        module: TransformedModule,
+        cwd: String?,
+        configJson: String,
+        pluginDir: String? = null,
+        dataDir: String? = null,
+        entryPath: String? = null,
+    ): String {
         val sb = StringBuilder()
         // 插件里的 `process.cwd()` / 相对路径都按当前工作区解析（和宿主 fs 的根保持一致）。
         sb.append("  const __dshCwd = ").append(quote(cwd ?: "/")).append(";\n")
+        sb.append("  const __dshPluginDir = ").append(if (pluginDir != null) quote(pluginDir) else "null").append(";\n")
+        sb.append("  const __dshDataDir = ").append(if (dataDir != null) quote(dataDir) else "null").append(";\n")
+        sb.append("  const __dshEntryPath = ").append(if (entryPath != null) quote(entryPath) else "''").append(";\n")
         // apply(ctx, config) 的 config：宿主已经把配置 schema 的默认值和用户值合并好，
         // 这里只负责安全地注进 JS（JSON.parse 避免字符串拼接产生非法表达式）。
         sb.append("  const __dshConfigRaw = JSON.parse(")
@@ -1066,7 +1108,10 @@ object PluginModule {
             .append(");\n")
         sb.append(PRELUDE)
         sb.append(HOST_BRIDGE)
-        sb.append("  const __ret = (function(exports, module, require){\n")
+        sb.append("  const __entryRequire = __dshMakeRequire(__dshEntryPath);\n")
+        sb.append("  const __entryFilename = __dshPluginDir ? (__dshEntryPath ? __dshPath.join(__dshPluginDir, __dshEntryPath) : __dshPluginDir) : (__dshEntryPath || 'index.js');\n")
+        sb.append("  const __entryDirname = __dshPath.dirname(__entryFilename);\n")
+        sb.append("  const __ret = (function(exports, module, require, __filename, __dirname, __require){\n")
         sb.append(module.code)
         sb.append("\nreturn {")
         module.exports.forEachIndexed { index, export ->
@@ -1076,7 +1121,7 @@ object PluginModule {
                 .append(export.local).append(" === 'undefined' ? undefined : ").append(export.local).append(")")
         }
         sb.append("};\n")
-        sb.append("  })(__exports, __module, __require);\n")
+        sb.append("  })(__exports, __module, __entryRequire, __entryFilename, __entryDirname, __entryRequire);\n")
         return sb.toString()
     }
 
@@ -2869,21 +2914,125 @@ object PluginModule {
     agent: undefined,
     session: undefined
   });
+  const __dshPath = (function() {
+    function normalize(p) {
+      const s = String(p === undefined || p === null ? '' : p).replace(/\\/g, '/');
+      if (!s) return '.';
+      const isAbs = s.charAt(0) === '/';
+      const trailing = s.length > 1 && s.charAt(s.length - 1) === '/';
+      const parts = s.split('/');
+      const out = [];
+      for (let i = 0; i < parts.length; i++) {
+        const seg = parts[i];
+        if (!seg || seg === '.') continue;
+        if (seg === '..') {
+          if (out.length > 0 && out[out.length - 1] !== '..') out.pop();
+          else if (!isAbs) out.push('..');
+        } else {
+          out.push(seg);
+        }
+      }
+      let res = (isAbs ? '/' : '') + out.join('/');
+      if (!res) res = isAbs ? '/' : '.';
+      else if (trailing && res !== '/') res += '/';
+      return res;
+    }
+    function join() {
+      const parts = [];
+      for (let i = 0; i < arguments.length; i++) {
+        const a = arguments[i];
+        if (a !== undefined && a !== null && String(a).length > 0) parts.push(String(a));
+      }
+      return parts.length === 0 ? '.' : normalize(parts.join('/'));
+    }
+    function resolve() {
+      let resolved = '';
+      let abs = false;
+      for (let i = arguments.length - 1; i >= 0 && !abs; i--) {
+        const a = arguments[i];
+        if (a === undefined || a === null) continue;
+        const s = String(a).replace(/\\/g, '/');
+        if (!s) continue;
+        resolved = resolved ? (s + '/' + resolved) : s;
+        if (s.charAt(0) === '/') abs = true;
+      }
+      if (!abs) {
+        const base = (typeof __dshCwd === 'string' && __dshCwd) ? __dshCwd : '/';
+        resolved = resolved ? (base + '/' + resolved) : base;
+      }
+      const n = normalize(resolved);
+      return (n.length > 1 && n.charAt(n.length - 1) === '/') ? n.slice(0, -1) : n;
+    }
+    function dirname(p) {
+      const s = String(p === undefined || p === null ? '' : p).replace(/\\/g, '/');
+      if (!s) return '.';
+      let end = s.length;
+      while (end > 1 && s.charAt(end - 1) === '/') end--;
+      const i = s.lastIndexOf('/', end - 1);
+      if (i < 0) return '.';
+      if (i === 0) return '/';
+      return s.slice(0, i);
+    }
+    function basename(p, ext) {
+      const s = String(p === undefined || p === null ? '' : p).replace(/\\/g, '/');
+      let end = s.length;
+      while (end > 1 && s.charAt(end - 1) === '/') end--;
+      const start = s.lastIndexOf('/', end - 1) + 1;
+      let base = s.slice(start, end);
+      if (ext && base.length >= ext.length && base.slice(base.length - ext.length) === ext) {
+        base = base.slice(0, base.length - ext.length);
+      }
+      return base;
+    }
+    function extname(p) {
+      const b = basename(p);
+      const i = b.lastIndexOf('.');
+      return (i <= 0) ? '' : b.slice(i);
+    }
+    function isAbsolute(p) {
+      const s = String(p === undefined || p === null ? '' : p).replace(/\\/g, '/');
+      return s.charAt(0) === '/';
+    }
+    function relative(from, to) {
+      const f = resolve(from).split('/').filter(Boolean);
+      const t = resolve(to).split('/').filter(Boolean);
+      let same = 0;
+      while (same < f.length && same < t.length && f[same] === t[same]) same++;
+      const out = [];
+      for (let i = same; i < f.length; i++) out.push('..');
+      for (let i = same; i < t.length; i++) out.push(t[i]);
+      return out.join('/') || '.';
+    }
+    function parse(p) {
+      const dir = dirname(p);
+      const base = basename(p);
+      const ext = extname(p);
+      const name = ext ? base.slice(0, base.length - ext.length) : base;
+      return { root: isAbsolute(p) ? '/' : '', dir: dir, base: base, ext: ext, name: name };
+    }
+    const api = {
+      normalize: normalize,
+      join: join,
+      resolve: resolve,
+      dirname: dirname,
+      basename: basename,
+      extname: extname,
+      isAbsolute: isAbsolute,
+      relative: relative,
+      parse: parse,
+      sep: '/',
+      delimiter: ':'
+    };
+    api.posix = api;
+    return api;
+  })();
   function __require(id) {
     const name = String(id);
     __dsh.imports.push(name);
     if (name.charAt(0) === '.') { __dsh.relativeImports.push(name); return {}; }
     if (name === '@deepseek-ai/dsh-tools') { return { defineTool: __defineTool, default: { defineTool: __defineTool } }; }
     if (name === '@deepseek-ai/schemastery') { return { z: __zExpose, default: __zExpose, Schema: __zExpose }; }
-    if (name === 'node:path' || name === 'path') {
-      return {
-        join: function() { return Array.prototype.slice.call(arguments).join('/'); },
-        resolve: function() { return Array.prototype.slice.call(arguments).join('/'); },
-        dirname: function(p) { const s = String(p); const i = s.lastIndexOf('/'); return i < 0 ? '.' : s.slice(0, i); },
-        basename: function(p) { const s = String(p); const i = s.lastIndexOf('/'); return i < 0 ? s : s.slice(i + 1); },
-        sep: '/'
-      };
-    }
+    if (name === 'node:path' || name === 'path') { return __dshPath; }
     if (name === 'node:fs' || name === 'fs') {
       // 真给沙箱 fs（不是空实现）：DSH 工具插件里 import fs 是很常见的写法。
       return __dshFs;
@@ -3054,10 +3203,23 @@ object PluginModule {
   }
   const __dshFs = {
     readFileSync: function(p, options) {
+      const enc = (typeof options === 'string') ? options : (options && options.encoding);
+      if (enc === 'buffer' || enc === 'binary') {
+        const rb = __dshHostOk('fs.readBinary', { path: String(p) });
+        return DshBuffer.from(String(rb.base64 || ''), 'base64');
+      }
       const r = __dshHostOk('fs.read', { path: String(p) });
       return (r.text === undefined || r.text === null) ? '' : String(r.text);
     },
+    readSliceSync: function(p, offset, length) {
+      return __dshHostOk('fs.read', { path: String(p), offset: Number(offset || 0), length: Number(length || 65536) });
+    },
     writeFileSync: function(p, data, options) {
+      if (data && typeof data === 'object' && typeof data.toString === 'function' && (data instanceof Uint8Array || data instanceof DshBuffer)) {
+        const b64 = (data instanceof DshBuffer) ? data.toString('base64') : DshBuffer.from(data).toString('base64');
+        __dshHostOk('fs.writeBinary', { path: String(p), base64: b64 });
+        return;
+      }
       __dshHostOk('fs.write', { path: String(p), text: (data === undefined || data === null) ? '' : String(data) });
     },
     appendFileSync: function(p, data, options) {
@@ -3069,6 +3231,16 @@ object PluginModule {
     },
     readdirSync: function(p, options) {
       const r = __dshHostOk('fs.list', { path: String(p === undefined || p === null ? '.' : p) });
+      if (options && options.withFileTypes && Array.isArray(r.entries)) {
+        return r.entries.map(function(e) {
+          return {
+            name: e.name,
+            isFile: function() { return !!e.isFile; },
+            isDirectory: function() { return !!e.isDirectory; },
+            isSymbolicLink: function() { return false; }
+          };
+        });
+      }
       return r.names || [];
     },
     statSync: function(p) { return __dshStat(__dshHostOk('fs.stat', { path: String(p) })); },
@@ -3246,6 +3418,59 @@ object PluginModule {
   __ctx.http = __dshHttpApi;
   __ctx.fs = __dshFs;
   __ctx.shell = __dshShellApi;
+  __ctx.pluginDir = __dshPluginDir || '';
+  __ctx.dataDir = __dshDataDir || '';
+  // 插件自带资源只读访问（无需 fs:any；适合知识库/词表/模板/数据集/配置等任意多文件插件）
+  function __dshPrefixPath(prefix, rel) {
+    const clean = String(rel === undefined || rel === null ? '' : rel).replace(/^\/+/, '');
+    return prefix + clean;
+  }
+  __ctx.assets = {
+    resolve: function(rel) {
+      return __dshPluginDir ? __dshPath.join(__dshPluginDir, String(rel || '')) : __dshPrefixPath('plugin://', rel);
+    },
+    exists: function(rel) { return __dshFs.existsSync(__dshPrefixPath('plugin://', rel)); },
+    readText: function(rel) { return __dshFs.readFileSync(__dshPrefixPath('plugin://', rel), 'utf8'); },
+    readJson: function(rel) { return JSON.parse(__dshFs.readFileSync(__dshPrefixPath('plugin://', rel), 'utf8')); },
+    readBytes: function(rel) { return __dshFs.readFileSync(__dshPrefixPath('plugin://', rel), 'buffer'); },
+    readSlice: function(rel, offset, length) { return __dshFs.readSliceSync(__dshPrefixPath('plugin://', rel), offset, length); },
+    list: function(rel, opts) { return __dshFs.readdirSync(__dshPrefixPath('plugin://', rel || ''), opts); },
+    stat: function(rel) { return __dshFs.statSync(__dshPrefixPath('plugin://', rel)); }
+  };
+  // 插件私有持久化数据目录（读写自由、跨升级保留、不污染用户工作区）
+  __ctx.data = {
+    resolve: function(rel) {
+      return __dshDataDir ? __dshPath.join(__dshDataDir, String(rel || '')) : __dshPrefixPath('data://', rel);
+    },
+    exists: function(rel) { return __dshFs.existsSync(__dshPrefixPath('data://', rel)); },
+    readText: function(rel) { return __dshFs.readFileSync(__dshPrefixPath('data://', rel), 'utf8'); },
+    writeText: function(rel, text) { __dshFs.writeFileSync(__dshPrefixPath('data://', rel), String(text === undefined || text === null ? '' : text)); },
+    readJson: function(rel, fallback) {
+      const p = __dshPrefixPath('data://', rel);
+      if (!__dshFs.existsSync(p)) return fallback;
+      return JSON.parse(__dshFs.readFileSync(p, 'utf8'));
+    },
+    writeJson: function(rel, obj) { __dshFs.writeFileSync(__dshPrefixPath('data://', rel), JSON.stringify(obj, null, 2)); },
+    list: function(rel, opts) { return __dshFs.readdirSync(__dshPrefixPath('data://', rel || ''), opts); },
+    mkdir: function(rel) { __dshFs.mkdirSync(__dshPrefixPath('data://', rel), { recursive: true }); },
+    remove: function(rel) { __dshFs.rmSync(__dshPrefixPath('data://', rel), { recursive: true, force: true }); }
+  };
+  if (typeof globalThis !== 'undefined') {
+    if (typeof globalThis.TextEncoder === 'undefined') {
+      globalThis.TextEncoder = function TextEncoder() {};
+      globalThis.TextEncoder.prototype.encode = function(str) { return new Uint8Array(DshBuffer.from(String(str || ''), 'utf8')); };
+    }
+    if (typeof globalThis.TextDecoder === 'undefined') {
+      globalThis.TextDecoder = function TextDecoder() {};
+      globalThis.TextDecoder.prototype.decode = function(buf) { return DshBuffer.from(buf || []).toString('utf8'); };
+    }
+    if (typeof globalThis.btoa === 'undefined') {
+      globalThis.btoa = function(s) { return DshBuffer.from(String(s), 'utf8').toString('base64'); };
+    }
+    if (typeof globalThis.atob === 'undefined') {
+      globalThis.atob = function(s) { return DshBuffer.from(String(s), 'base64').toString('utf8'); };
+    }
+  }
   const __dshConsole = {
     log: function() { __dshBridgeLog('info', arguments); },
     info: function() { __dshBridgeLog('info', arguments); },
@@ -3277,23 +3502,79 @@ object PluginModule {
     globalThis.Buffer = DshBuffer;
   }
   const __dshBaseRequire = __require;
-  __require = function(id) {
-    const name = String(id);
-    if (name === 'node:fs' || name === 'fs') { __dsh.imports.push(name); return __dshFs; }
-    if (name === 'node:child_process' || name === 'child_process') { __dsh.imports.push(name); return __dshChildProcess; }
-    if (name === 'node:https' || name === 'https') { __dsh.imports.push(name); return __dshNodeHttps; }
-    if (name === 'node:http' || name === 'http') { __dsh.imports.push(name); return __dshNodeHttps; }
-    if (name === 'node:os' || name === 'os') {
-      __dsh.imports.push(name);
-      return {
-        platform: function() { return 'android'; },
-        homedir: function() { return __dshCwd; },
-        tmpdir: function() { return __dshCwd; },
-        cpus: function() { return []; },
-        EOL: '\n'
-      };
+  const __dshModuleCache = Object.create(null);
+  function __dshResolveFromHost(fromPath, spec) {
+    if (!__dshPluginDir) return null;
+    const reply = __dshHostJson('module.resolve', { from: String(fromPath || ''), id: String(spec) });
+    if (!reply || reply.ok !== true || !reply.path) return null;
+    const resolvedPath = String(reply.path);
+    if (Object.prototype.hasOwnProperty.call(__dshModuleCache, resolvedPath)) {
+      return { ok: true, exports: __dshModuleCache[resolvedPath].exports };
     }
-    return __dshBaseRequire(id);
-  };
+    if (reply.kind === 'json') {
+      const parsed = JSON.parse(String(reply.code || 'null'));
+      __dshModuleCache[resolvedPath] = { exports: parsed };
+      return { ok: true, exports: parsed };
+    }
+    const mod = { exports: {} };
+    __dshModuleCache[resolvedPath] = mod;
+    const childReq = __dshMakeRequire(resolvedPath);
+    const childFile = __dshPath.join(__dshPluginDir, resolvedPath);
+    const childDir = __dshPath.dirname(childFile);
+    const fn = new Function('exports', 'module', 'require', '__filename', '__dirname', '__require', String(reply.code || ''));
+    const ret = fn(mod.exports, mod, childReq, childFile, childDir, childReq);
+    if (ret && typeof ret === 'object') {
+      const keys = Object.keys(ret);
+      if (keys.length > 0) {
+        if (typeof mod.exports !== 'object' || mod.exports === null) mod.exports = {};
+        for (let i = 0; i < keys.length; i++) {
+          const k = keys[i];
+          if (ret[k] !== undefined) mod.exports[k] = ret[k];
+        }
+        mod.exports.__esModule = true;
+      }
+    }
+    return { ok: true, exports: mod.exports };
+  }
+  function __dshMakeRequire(fromPath) {
+    return function __localRequire(id) {
+      const name = String(id);
+      if (name === 'node:fs' || name === 'fs') { __dsh.imports.push(name); return __dshFs; }
+      if (name === 'node:fs/promises' || name === 'fs/promises') { __dsh.imports.push(name); return __dshFs.promises; }
+      if (name === 'node:path' || name === 'path') { __dsh.imports.push(name); return __dshPath; }
+      if (name === 'node:child_process' || name === 'child_process') { __dsh.imports.push(name); return __dshChildProcess; }
+      if (name === 'node:https' || name === 'https') { __dsh.imports.push(name); return __dshNodeHttps; }
+      if (name === 'node:http' || name === 'http') { __dsh.imports.push(name); return __dshNodeHttps; }
+      if (name === 'node:os' || name === 'os') {
+        __dsh.imports.push(name);
+        return {
+          platform: function() { return 'android'; },
+          homedir: function() { return __dshCwd; },
+          tmpdir: function() { return __dshCwd; },
+          cpus: function() { return []; },
+          EOL: '\n'
+        };
+      }
+      if (name.charAt(0) === '.') {
+        __dsh.imports.push(name);
+        const loaded = __dshResolveFromHost(fromPath, name);
+        if (loaded && loaded.ok) return loaded.exports;
+        __dsh.relativeImports.push(name);
+        return {};
+      }
+      if (name !== '@deepseek-ai/dsh-tools' && name !== '@deepseek-ai/schemastery' &&
+          name !== 'node:buffer' && name !== 'buffer' &&
+          name !== 'node:events' && name !== 'events' &&
+          name !== 'node:timers' && name !== 'timers') {
+        const bundled = __dshResolveFromHost(fromPath, name);
+        if (bundled && bundled.ok) {
+          __dsh.imports.push(name);
+          return bundled.exports;
+        }
+      }
+      return __dshBaseRequire(id);
+    };
+  }
+  __require = __dshMakeRequire(__dshEntryPath);
 """
 }

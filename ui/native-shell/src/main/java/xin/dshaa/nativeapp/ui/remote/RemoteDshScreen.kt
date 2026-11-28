@@ -1,4 +1,5 @@
 package xin.dshaa.nativeapp.ui.remote
+import xin.dshaa.ui.design.component.dshTopBarSurface
 
 import xin.dshaa.ui.design.component.liquidGlass
 import xin.dshaa.ui.design.theme.LiquidLevel
@@ -71,7 +72,7 @@ fun RemoteDshScreen(
         notice = null
     }
     Column(Modifier.fillMaxSize().background(Color.Transparent)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 6.dp, vertical = 6.dp),
+        Row(Modifier.fillMaxWidth().dshTopBarSurface().padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "返回", tint = c.text) }
             Text("远程电脑", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,

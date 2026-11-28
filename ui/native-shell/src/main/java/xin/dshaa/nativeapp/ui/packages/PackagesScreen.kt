@@ -1,4 +1,5 @@
 package xin.dshaa.nativeapp.ui.packages
+import xin.dshaa.ui.design.component.dshTopBarSurface
 
 import xin.dshaa.ui.design.component.liquidGlass
 import xin.dshaa.ui.design.theme.LiquidLevel
@@ -278,8 +279,7 @@ fun PackagesScreen(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
-                    .statusBarsPadding()
+                    .dshTopBarSurface()
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

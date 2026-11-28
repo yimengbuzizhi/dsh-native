@@ -7,11 +7,17 @@ package xin.dshaa.ui.shellapi.chat
  * 规则集中在这里，避免新增一种失败文案时又漏掉（0.3.5 真机验收：max_tokens 截断的
  * tool_result 正文是英文，旧规则没覆盖，卡片误显示绿色对勾）。
  */
+private val NON_ZERO_EXIT_CODE = Regex("""\[exit code:\s*(?!0\s*\])-?\d+\]""")
+
 fun toolResultLooksFailed(text: String): Boolean =
     text.startsWith("User denied") ||
         text.contains("not found", ignoreCase = true) ||
         text.startsWith("<error>") ||
         text.contains("error:", ignoreCase = true) ||
+        text.contains("command timed out after ", ignoreCase = true) ||
+        text.startsWith("spawn failed:", ignoreCase = true) ||
+        text.contains("path escapes workspace", ignoreCase = true) ||
+        NON_ZERO_EXIT_CODE.containsMatchIn(text) ||
         // M87-A：插件 guard / restrict 的拒绝（docs/190-G：模型可见文案已英文化，旧会话仍可能是中文）。
         text.contains("拒绝]") ||
         text.contains("restrict 规则禁用") ||
