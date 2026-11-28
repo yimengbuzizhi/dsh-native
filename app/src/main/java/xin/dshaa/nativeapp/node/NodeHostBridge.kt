@@ -91,8 +91,13 @@ class NodeHostBridge(
 
     fun tail(max: Int = 20): List<String> = core.tail(max)
 
-    suspend fun invoke(name: String, args: JsonObject, timeoutMs: Long, callId: String): NodeCall =
-        core.invoke(name, args, timeoutMs, callId)
+    suspend fun invoke(
+        name: String,
+        args: JsonObject,
+        timeoutMs: Long,
+        callId: String,
+        context: JsonObject? = null,
+    ): NodeCall = core.invoke(name, args, timeoutMs, callId, context)
 
     fun nextCallId(): String = core.nextCallId()
 

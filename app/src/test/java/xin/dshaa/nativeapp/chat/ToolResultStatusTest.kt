@@ -72,6 +72,17 @@ class ToolResultStatusTest {
     }
 
     @Test
+    fun `bash exit codes timeouts and spawn errors are failures`() {
+        assertTrue(toolResultLooksFailed("something broke\n[exit code: 1]"))
+        assertTrue(toolResultLooksFailed("[exit code: 127]"))
+        assertTrue(toolResultLooksFailed("command timed out after 5000ms"))
+        assertTrue(toolResultLooksFailed("partial output\ncommand timed out after 5000ms"))
+        assertTrue(toolResultLooksFailed("spawn failed: Permission denied"))
+        assertTrue(toolResultLooksFailed("path escapes workspace: /etc/passwd"))
+        assertFalse(toolResultLooksFailed("all good\n[exit code: 0]"))
+    }
+
+    @Test
     fun `normal results are not failures`() {
         assertFalse(toolResultLooksFailed("hi"))
         assertFalse(toolResultLooksFailed("工具跑完了（debug.tool 验收）"))

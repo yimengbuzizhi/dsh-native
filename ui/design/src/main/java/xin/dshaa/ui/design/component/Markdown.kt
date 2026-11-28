@@ -47,6 +47,11 @@ private sealed interface MdBlock {
     data class Table(val header: List<String>, val rows: List<List<String>>) : MdBlock
 }
 
+private val HEADING_REGEX = Regex("^(#{1,6})\\s+(.*)$")
+private val TABLE_SEP_REGEX = Regex("^\\s*\\|?[\\s:|-]+\\|\\s*$")
+private val BULLET_REGEX = Regex("^\\s*([-*+]|\\d+[.)])\\s+(.*)$")
+private val LINK_REGEX = Regex("\\[([^\\]]+)]\\(([^)\\s]+)\\)")
+
 private fun parseMarkdown(src: String): List<MdBlock> {
     val lines = src.replace("\r\n", "\n").split('\n')
     val out = ArrayList<MdBlock>()
@@ -75,7 +80,7 @@ private fun parseMarkdown(src: String): List<MdBlock> {
             out += MdBlock.Code(lang, code.toString().trimEnd('\n'))
             continue
         }
-        val heading = Regex("^(#{1,6})\\s+(.*)$").find(line)
+        val heading = HEADING_REGEX.find(line)
         if (heading != null) {
             flushPara()
             out += MdBlock.Heading(heading.groupValues[1].length, heading.groupValues[2].trim())
@@ -90,8 +95,7 @@ private fun parseMarkdown(src: String): List<MdBlock> {
                 raw += lines[j]
                 j++
             }
-            val separator = Regex("^\\s*\\|?[\\s:|-]+\\|\\s*$")
-            if (raw.size >= 2 && separator.matches(raw[1])) {
+            if (raw.size >= 2 && TABLE_SEP_REGEX.matches(raw[1])) {
                 flushPara()
                 val header = splitTableRow(raw[0])
                 val rows = raw.drop(2).map { splitTableRow(it) }
@@ -110,13 +114,13 @@ private fun parseMarkdown(src: String): List<MdBlock> {
             out += MdBlock.Quote(q.toString().trimEnd())
             continue
         }
-        val bullet = Regex("^\\s*([-*+]|\\d+[.)])\\s+(.*)$").find(line)
+        val bullet = BULLET_REGEX.find(line)
         if (bullet != null) {
             flushPara()
             val ordered = bullet.groupValues[1].first().isDigit()
             val items = ArrayList<String>()
             while (i < lines.size) {
-                val m = Regex("^\\s*([-*+]|\\d+[.)])\\s+(.*)$").find(lines[i]) ?: break
+                val m = BULLET_REGEX.find(lines[i]) ?: break
                 items += m.groupValues[2]
                 i++
             }
@@ -277,19 +281,26 @@ private fun InlineText(
     val c = DshTheme2.colors
     // H6（docs/182）：**不要**在这里再包 SelectionContainer——Compose 以最内层容器为选区边界，
     // 段内各包一层会让「一条消息只能选一段、往下拖不动」。整列的外层容器在 MarkdownText 里。
+    val parsed = remember(text, color, c.isDark, c.brandBright) {
+        annotated(text, color, c)
+    }
     Text(
-        annotated(text, style, color, c),
+        parsed,
         style = style,
         color = color,
         modifier = modifier,
     )
 }
 
-private fun annotated(text: String, style: TextStyle, color: Color, c: xin.dshaa.ui.design.theme.DshColors): AnnotatedString =
+private fun annotated(text: String, color: Color, c: xin.dshaa.ui.design.theme.DshColors): AnnotatedString =
     buildAnnotatedString {
         var i = 0
+        val hasBracket = text.indexOf('[') >= 0
+        var nextLink: MatchResult? = if (hasBracket) LINK_REGEX.find(text, 0) else null
         while (i < text.length) {
-            val link = Regex("\\[([^\\]]+)]\\(([^)\\s]+)\\)").find(text, i)
+            if (nextLink != null && nextLink.range.first < i) {
+                nextLink = LINK_REGEX.find(text, i)
+            }
             when {
                 text.startsWith("**", i) -> {
                     val end = text.indexOf("**", i + 2)
@@ -302,9 +313,9 @@ private fun annotated(text: String, style: TextStyle, color: Color, c: xin.dshaa
                         i = end + 2
                     }
                 }
-                link != null && link.range.first == i -> {
+                nextLink != null && nextLink.range.first == i -> {
                     // [label](url)：Compose 1.7 的 LinkAnnotation，点按由 Text 自己处理
-                    val url = link.groupValues[2]
+                    val url = nextLink.groupValues[2]
                     withLink(
                         androidx.compose.ui.text.LinkAnnotation.Url(
                             url = url,
@@ -312,8 +323,8 @@ private fun annotated(text: String, style: TextStyle, color: Color, c: xin.dshaa
                                 style = SpanStyle(color = c.brandBright, fontWeight = FontWeight.Medium),
                             ),
                         ),
-                    ) { append(link.groupValues[1]) }
-                    i = link.range.last + 1
+                    ) { append(nextLink.groupValues[1]) }
+                    i = nextLink.range.last + 1
                 }
                 text[i] == '`' -> {
                     val end = text.indexOf('`', i + 1)
@@ -333,13 +344,13 @@ private fun annotated(text: String, style: TextStyle, color: Color, c: xin.dshaa
                     }
                 }
                 else -> {
-                    val next = listOf(
-                        text.indexOf("**", i + 1),
-                        text.indexOf('`', i + 1),
-                        if (link != null && link.range.first > i) link.range.first else -1,
-                    )
-                        .filter { it > i }
-                        .minOrNull() ?: text.length
+                    val boldIdx = text.indexOf("**", i + 1)
+                    val codeIdx = text.indexOf('`', i + 1)
+                    val linkIdx = if (nextLink != null && nextLink.range.first > i) nextLink.range.first else -1
+                    var next = text.length
+                    if (boldIdx > i && boldIdx < next) next = boldIdx
+                    if (codeIdx > i && codeIdx < next) next = codeIdx
+                    if (linkIdx > i && linkIdx < next) next = linkIdx
                     append(text.substring(i, next))
                     i = next
                 }

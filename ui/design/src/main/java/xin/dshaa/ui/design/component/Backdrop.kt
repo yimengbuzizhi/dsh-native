@@ -20,6 +20,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -57,18 +58,16 @@ import kotlin.math.sin
 @Composable
 fun LiquidBackdrop(
     modifier: Modifier = Modifier,
-    animated: Boolean = true,
-    withSheen: Boolean = true,
+    animated: Boolean = false,
+    withSheen: Boolean = false,
     withGrain: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val tokens = LocalLiquidTokens.current
-    // 模拟器（goldfish/ranchu + 软件栅格）扛不住每帧全屏重绘，会把 guest 的 GPU 线程拖死；
-    // 真机照常动画。截图验证也不需要动画，所以这里直接按设备类型降级。
-    val drift = rememberDriftStates(animated && !isEmulator())
-    val grain = if (withGrain) rememberGrain() else null
-    val grainBrush = remember(grain) { grain?.let { ShaderBrush(ImageShader(it, TileMode.Repeated, TileMode.Repeated)) } }
-    // 跟手光源：目标点由指针写入，帧循环里指数逼近，收敛即退出循环
+    val useAnimated = animated && !isEmulator()
+    val drift = rememberDriftStates(useAnimated)
+    val grainBrush = if (withGrain) rememberGrainBrush() else null
+    // 跟手光源：仅在显式开启时运行，收敛即退出循环
     val sheenTarget = remember { mutableStateOf(Offset(0.5f, 0.22f)) }
     val sheenNow = remember { mutableStateOf(Offset(0.5f, 0.22f)) }
     val sheenMoving = remember { mutableStateOf(false) }
@@ -80,7 +79,6 @@ fun LiquidBackdrop(
                 withFrameNanos { now ->
                     val dtMs = if (last == 0L) 16f else ((now - last) / 1_000_000f).coerceIn(1f, 64f)
                     last = now
-                    // 与设计稿 13.B 同一套指数逼近：k = 1 - 0.0016^(dt/1000)
                     val k = 1f - Math.pow(0.0016, (dtMs / 1000f).toDouble()).toFloat()
                     val target = sheenTarget.value
                     val current = sheenNow.value
@@ -96,18 +94,20 @@ fun LiquidBackdrop(
             }
         }
     }
-    // 背景自己的窗口位置：玻璃要用它把「墙」重画到自己身上（厚透镜折射）
     val wallOrigin = remember { mutableStateOf(Offset.Zero) }
     val wallSize = remember { mutableStateOf(Size.Zero) }
     val lens = remember(tokens, drift, sheenNow) {
         WallLens(tokens = tokens, drift = drift, sheen = sheenNow, origin = wallOrigin, size = wallSize)
     }
+    val blobs = remember(tokens) { sceneryBlobs(tokens) }
     Box(
         modifier = modifier
             .fillMaxSize()
             .onGloballyPositioned {
-                wallOrigin.value = it.positionInRoot()
-                wallSize.value = Size(it.size.width.toFloat(), it.size.height.toFloat())
+                val pos = it.positionInRoot()
+                if (wallOrigin.value != pos) wallOrigin.value = pos
+                val sz = Size(it.size.width.toFloat(), it.size.height.toFloat())
+                if (wallSize.value != sz) wallSize.value = sz
             }
             .then(
                 if (withSheen) {
@@ -131,11 +131,34 @@ fun LiquidBackdrop(
                     Modifier
                 },
             )
-            .drawBehind {
-                drawWall(tokens, drift, size.width, size.height)
-                if (withSheen) drawSheen(tokens, sheenNow.value, size.width, size.height)
-                grainBrush?.let { drawRect(brush = it, alpha = tokens.grainAlpha) }
-            },
+            .then(
+                if (!useAnimated && !withSheen) {
+                    // 静态液态背景：按尺寸与主题缓存全部径向渐变，避免每帧分配对象与 60/120fps 全屏重绘
+                    Modifier.drawWithCache {
+                        val w = size.width
+                        val h = size.height
+                        val vmax = maxOf(w, h) / 100f
+                        val cachedBlobs = blobs.mapIndexed { i, b ->
+                            buildCachedBlob(b, drift[i].value, vmax)
+                        }
+                        onDrawBehind {
+                            drawRect(color = tokens.wallTop)
+                            for (cb in cachedBlobs) {
+                                withTransform({ scale(scaleX = cb.scaleX, scaleY = 1f, pivot = cb.center) }) {
+                                    drawCircle(brush = cb.brush, radius = cb.ry, center = cb.center)
+                                }
+                            }
+                            grainBrush?.let { drawRect(brush = it, alpha = tokens.grainAlpha) }
+                        }
+                    }
+                } else {
+                    Modifier.drawBehind {
+                        drawWall(tokens, blobs, drift, size.width, size.height)
+                        if (withSheen) drawSheen(tokens, sheenNow.value, size.width, size.height)
+                        grainBrush?.let { drawRect(brush = it, alpha = tokens.grainAlpha) }
+                    }
+                },
+            ),
         content = {
             CompositionLocalProvider(LocalWallLens provides lens) { content() }
         },
@@ -234,11 +257,42 @@ private fun DrawScope.drawSceneryBlob(
     }
 }
 
-private fun DrawScope.drawWall(tokens: LiquidTokens, drift: List<State<Float>>, w: Float, h: Float) {
+private data class CachedBlob(
+    val center: Offset,
+    val ry: Float,
+    val scaleX: Float,
+    val brush: Brush,
+)
+
+private fun buildCachedBlob(blob: SceneryBlob, t: Float, vmax: Float): CachedBlob {
+    val a = t * 2f * PI.toFloat()
+    val gx = (blob.cx + blob.dx * sin(a)) * vmax
+    val gy = (blob.cy + blob.dy * (1f - cos(a)) * 0.5f) * vmax
+    val s = 1f + 0.05f * sin(a * 0.8f)
+    val rx = (blob.rx * vmax * s).coerceAtLeast(1f)
+    val ry = (blob.ry * vmax * s).coerceAtLeast(1f)
+    val c = Offset(gx, gy)
+    val brush = Brush.radialGradient(
+        0f to blob.color,
+        0.48f to blob.color.copy(alpha = blob.color.alpha * 0.40f),
+        0.74f to Color.Transparent,
+        center = c,
+        radius = ry,
+    )
+    return CachedBlob(center = c, ry = ry, scaleX = rx / ry, brush = brush)
+}
+
+private fun DrawScope.drawWall(
+    tokens: LiquidTokens,
+    blobs: List<SceneryBlob>,
+    drift: List<State<Float>>,
+    w: Float,
+    h: Float,
+) {
     // 设计稿 .scenery__layer：一层底色 + 三团流动色斑。背景是"水"，厚玻璃才有东西可折射。
     drawRect(color = tokens.wallTop)
     val vmax = maxOf(w, h) / 100f
-    sceneryBlobs(tokens).forEachIndexed { i, b ->
+    blobs.forEachIndexed { i, b ->
         drawSceneryBlob(blob = b, t = drift[i].value, vmax = vmax)
     }
 }
@@ -280,22 +334,34 @@ private fun isEmulator(): Boolean {
         product.contains("sdk", ignoreCase = true)
 }
 
-/** 噪点图：96×96 灰度随机，生成一次全局复用；打散 AMOLED 暗部的色带。 */
-@Composable
-fun rememberGrain(): ImageBitmap? = remember {
-    runCatching {
-        val n = 96
-        val bmp = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
-        val rnd = java.util.Random(20261119L)
-        val px = IntArray(n * n)
-        for (i in px.indices) {
-            val v = rnd.nextInt(256)
-            px[i] = (0xFF shl 24) or (v shl 16) or (v shl 8) or v
-        }
-        bmp.setPixels(px, 0, n, 0, 0, n, n)
-        bmp.asImageBitmap()
-    }.getOrNull()
+/** 进程级噪点单例：96×96 灰度随机只生成一次，全局复用 ImageBitmap 与 ShaderBrush。 */
+private object GrainCache {
+    val bitmap: ImageBitmap? by lazy {
+        runCatching {
+            val n = 96
+            val bmp = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+            val rnd = java.util.Random(20261119L)
+            val px = IntArray(n * n)
+            for (i in px.indices) {
+                val v = rnd.nextInt(256)
+                px[i] = (0xFF shl 24) or (v shl 16) or (v shl 8) or v
+            }
+            bmp.setPixels(px, 0, n, 0, 0, n, n)
+            bmp.asImageBitmap()
+        }.getOrNull()
+    }
+
+    val brush: ShaderBrush? by lazy {
+        bitmap?.let { ShaderBrush(ImageShader(it, TileMode.Repeated, TileMode.Repeated)) }
+    }
 }
+
+/** 噪点图：96×96 灰度随机，进程级单例复用；打散 AMOLED 暗部的色带。 */
+@Composable
+fun rememberGrain(): ImageBitmap? = GrainCache.bitmap
+
+@Composable
+private fun rememberGrainBrush(): ShaderBrush? = GrainCache.brush
 
 /** 只要背景不要内容的简写（全屏弹层 / 独立 Activity 用）。 */
 @Composable

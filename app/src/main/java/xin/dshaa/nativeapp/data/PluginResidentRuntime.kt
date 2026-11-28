@@ -699,7 +699,10 @@ class PluginResidentRuntime(
 
     private fun start(record: PluginRecord, workspace: File, services: Map<String, String>) {
         scope.launch(Dispatchers.IO) {
-            val entry = File(record.path, record.main)
+            val pluginDir = File(record.path)
+            val entry = File(pluginDir, record.main)
+            val dataBase = pluginDir.parentFile?.parentFile ?: pluginDir.parentFile ?: pluginDir
+            val dataDir = File(File(dataBase, "plugin-data"), pluginDir.name)
             val source = runCatching { entry.readText(Charsets.UTF_8) }.getOrElse {
                 addError(record.id, "读不了插件入口：${it.message}")
                 starting.remove(record.id)
@@ -712,7 +715,14 @@ class PluginResidentRuntime(
             }
             val configJson = PluginSchema.effectiveText(record.configSchema, record.config, record.configDefaults)
             val script = runCatching {
-                PluginModule.residentScript(module, workspace.absolutePath, configJson)
+                PluginModule.residentScript(
+                    module = module,
+                    cwd = workspace.absolutePath,
+                    configJson = configJson,
+                    pluginDir = pluginDir.absolutePath,
+                    dataDir = dataDir.absolutePath,
+                    entryPath = record.main,
+                )
             }.getOrElse {
                 addError(record.id, "生成常驻脚本失败：${it.message}")
                 starting.remove(record.id)
@@ -725,6 +735,8 @@ class PluginResidentRuntime(
                 grantedPermissions = record.grantedPermissions,
                 bridge = hostBridge,
                 primitiveBridge = primitiveBridge,
+                pluginDir = pluginDir,
+                dataDir = dataDir,
             )
             val serviceHost = PluginServiceHost(initial = services)
             val hostExecutor = Executors.newCachedThreadPool { runnable ->

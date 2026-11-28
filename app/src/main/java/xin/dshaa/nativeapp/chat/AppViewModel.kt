@@ -2732,10 +2732,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
                     "INVALID_ARGUMENTS",
                 )
             }
-            val record = withContext(Dispatchers.IO) { pluginStore.list().firstOrNull { it.id == pluginId } }
-                ?: return PrimitiveResult.error("没有这个插件：$pluginId", "NOT_FOUND")
+            val nativeRecord = withContext(Dispatchers.IO) { pluginStore.list().firstOrNull { it.id == pluginId } }
+            val nodeEntry = if (nativeRecord == null) {
+                withContext(Dispatchers.IO) {
+                    nodePluginHost.manifestEntries().firstOrNull { it.id.equals(pluginId, ignoreCase = true) }
+                }
+            } else {
+                null
+            }
+            val targetDir: File
+            val targetName: String
+            val targetId: String
+            if (nativeRecord != null) {
+                targetDir = File(nativeRecord.path)
+                targetName = nativeRecord.name
+                targetId = nativeRecord.id
+            } else if (nodeEntry != null) {
+                targetDir = nodePluginHost.pluginDir(nodeEntry.module)
+                    ?: return PrimitiveResult.error("Node 插件目录不存在：$pluginId", "NOT_FOUND")
+                targetName = nodeEntry.name
+                targetId = nodeEntry.id
+            } else {
+                return PrimitiveResult.error("没有这个插件：$pluginId", "NOT_FOUND")
+            }
             val resolved = withContext(Dispatchers.IO) {
-                xin.dshaa.nativeapp.pluginui.ClientPluginWindows.resolve(record)
+                xin.dshaa.nativeapp.pluginui.ClientPluginWindows.resolveDir(targetDir)
             }
             if (resolved !is xin.dshaa.core.plugins.PluginClientEntry.Result.Resolved) {
                 return PrimitiveResult.error(
@@ -2745,9 +2766,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
                 )
             }
             val title = (args["title"] as? JsonPrimitive)?.contentOrNull
-            val message = xin.dshaa.nativeapp.pluginui.ClientPluginWindows.open(
+            val message = xin.dshaa.nativeapp.pluginui.ClientPluginWindows.openDir(
                 getApplication(),
-                record,
+                targetId,
+                targetDir,
+                targetName,
                 kind,
                 title,
             )
@@ -2755,10 +2778,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
             val opened = message.startsWith("正在打开")
             return if (opened) {
                 PrimitiveResult.ok(
-                    summary = "已在${xin.dshaa.nativeapp.pluginui.ClientPluginWindows.kindLabel(kind)}容器打开「${record.name}」",
+                    summary = "已在${xin.dshaa.nativeapp.pluginui.ClientPluginWindows.kindLabel(kind)}容器打开「$targetName」",
                     data = buildJsonObject {
                         put("kind", kind.wire)
-                        put("pluginId", record.id)
+                        put("pluginId", targetId)
                         put("entry", resolved.entry)
                         put("capabilities", buildJsonArray { ContainerSpec.capabilities.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } })
                     },
@@ -6709,14 +6732,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
         // docs/187 §4.2：`native` / `liquid` 都是内置壳，只切外观开关，不走插件壳解析。
         if (value == "native") {
             liquidUiEnabled = false
-            prefs.edit().putString("dsh_shell", "native").apply()
-            setActiveShell(null)
+            setActiveShell(null, builtinShellValue = "native")
             return true
         }
         if (value == LIQUID_SHELL_ID) {
             liquidUiEnabled = true
-            prefs.edit().putString("dsh_shell", LIQUID_SHELL_ID).apply()
-            setActiveShell(null)
+            setActiveShell(null, builtinShellValue = LIQUID_SHELL_ID)
             return true
         }
         liquidUiEnabled = false
@@ -6784,14 +6805,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
                 ?.let { shell -> PluginShellHost.Target(record.id, shell.id, shell.label, record.name, shell.backend) }
         }
 
-    /** 选插件壳 / 回原生壳（持久化到 `dsh_shell`；原生 = `native`）。 */
-    fun setActiveShell(target: PluginShellHost.Target?) {
+    /** 选插件壳 / 回原生壳（持久化到 `dsh_shell`；原生 = `native`，液态玻璃 = `liquid`）。 */
+    fun setActiveShell(target: PluginShellHost.Target?, builtinShellValue: String = if (liquidUiEnabled) LIQUID_SHELL_ID else "native") {
+        val value = target?.let { "${it.pluginId}#${it.shellId}" } ?: builtinShellValue
         // 同一个壳重复下发（热启 intent 重投/Activity 重建）不能把已 mount 的壳重置成空白：
         // reset 会让 WebView 保留旧画面、Compose 又回到 loading 层，看起来像壳没起来。
-        if (target == shellActive) return
+        if (target == shellActive) {
+            prefs.edit().putString("dsh_shell", value).apply()
+            return
+        }
         shellHost.reset()
         shellActive = target
-        val value = target?.let { "${it.pluginId}#${it.shellId}" } ?: "native"
         prefs.edit().putString("dsh_shell", value).apply()
         Log.i("DshShell", "set active=$value targets=${shellTargets().map { "${it.pluginId}#${it.shellId}" }}")
     }
@@ -8884,6 +8908,78 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
         return PluginPromptSection(name = name, order = order, text = text)
     }
 
+    override fun nodePluginConfig(idOrModule: String): String =
+        runCatching { nodePluginHost.pluginConfig(idOrModule) }.getOrDefault("{}")
+
+    override fun saveNodePluginConfig(idOrModule: String, configJson: String) {
+        if (pluginsBusy) return
+        pluginsBusy = true
+        pluginNotice = null
+        viewModelScope.launch {
+            val saved = nodePluginHost.savePluginConfig(
+                idOrModule = idOrModule,
+                configJson = configJson,
+                restart = settings.nodePluginHostEnabled,
+            )
+            refreshNodeHostDiagnostics()
+            refreshNodePromptAsync(force = true)
+            refreshNodeRegistrations(force = true)
+            syncPluginTools()
+            pluginNotice = saved.fold(
+                onSuccess = { name -> "已保存 Node 插件「$name」配置并重新加载" },
+                onFailure = { err -> "保存配置失败：${err.message ?: err.javaClass.simpleName}" },
+            )
+            pluginsBusy = false
+        }
+    }
+
+    override fun uninstallNodePlugin(idOrModule: String) {
+        if (pluginsBusy) return
+        pluginsBusy = true
+        pluginNotice = null
+        viewModelScope.launch {
+            val removed = nodePluginHost.uninstallPlugin(
+                idOrModule = idOrModule,
+                restart = settings.nodePluginHostEnabled,
+            )
+            refreshNodeHostDiagnostics()
+            refreshNodePromptAsync(force = true)
+            refreshNodeRegistrations(force = true)
+            syncPluginTools()
+            pluginNotice = removed.fold(
+                onSuccess = { name -> "已卸载 Node 插件「$name」" },
+                onFailure = { err -> "卸载失败：${err.message ?: err.javaClass.simpleName}" },
+            )
+            pluginsBusy = false
+        }
+    }
+
+    override fun openNodePluginClient(idOrModule: String) {
+        viewModelScope.launch {
+            val entry = withContext(Dispatchers.IO) {
+                nodePluginHost.manifestEntries().firstOrNull {
+                    it.id.equals(idOrModule, ignoreCase = true) || it.module == idOrModule
+                }
+            }
+            if (entry == null) {
+                pluginNotice = "清单里没有这个 Node 插件：$idOrModule"
+                return@launch
+            }
+            val dir = nodePluginHost.pluginDir(entry.module)
+            if (dir == null || !dir.isDirectory) {
+                pluginNotice = "Node 插件目录不存在：${entry.module}"
+                return@launch
+            }
+            pluginNotice = xin.dshaa.nativeapp.pluginui.ClientPluginWindows.openDir(
+                context = getApplication(),
+                pluginId = entry.id,
+                pluginDir = dir,
+                pluginName = entry.name,
+                kind = ContainerKind.FLOATING,
+            )
+        }
+    }
+
     override fun reloadNodeHost() {
         // docs/190-B：UI 的「重试启动」也是明确重来，清掉跳过自动启动标记。
         clearNodeHostFailureFlag()
@@ -9226,16 +9322,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app), NativeShellHost {
                 syncPluginTools()
                 return@launch
             }
-            val read = withContext(Dispatchers.IO) { PluginPackage.read(file) }
-            if (read is xin.dshaa.core.plugins.ArchiveRead.Failed) {
-                pluginsBusy = false
-                pluginNotice = "插件包读取失败：${read.error}"
-                file.delete()
-                return@launch
-            }
-            val summary = withContext(Dispatchers.IO) {
-                (read as xin.dshaa.core.plugins.ArchiveRead.Ok).let { PluginPackage.summarize(it.files) }
-            }
+            // 流式预读清单摘要：不把整包解进堆内存，也不受原生 64MB/5000 条目上限拦截，
+            // 让带完整 node_modules（≤256MB / ≤20000 条目）的 Node 插件能顺利进入归属选择框。
+            val summary = withContext(Dispatchers.IO) { PluginPackage.summarizeZip(file) }
             if (summary == null) {
                 // zip 里没有可识别清单：交给原生导入给出原来的错误，不假装能识别。
                 val result = pluginStore.installFile(file)

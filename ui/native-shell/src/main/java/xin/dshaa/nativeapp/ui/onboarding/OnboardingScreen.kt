@@ -158,13 +158,28 @@ private fun WelcomePage() {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(26.dp))
-        // 首屏就是那颗「鲸歌」水球（设计稿 .water-orb）：会呼吸、点一下会颤
-        Box(contentAlignment = Alignment.Center) {
-            WaterOrbShadow(Modifier.offset(y = 62.dp))
-            WaterOrb(size = 152.dp) {
+        // 液态玻璃模式展示水球；原生模式用轻量静态圆徽标，避免无谓的常驻帧动画
+        if (DshTheme2.liquidEnabled) {
+            Box(contentAlignment = Alignment.Center) {
+                WaterOrbShadow(Modifier.offset(y = 62.dp))
+                WaterOrb(size = 152.dp) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.size(11.dp).clip(CircleShape).background(c.text))
+                        Box(Modifier.size(11.dp).clip(CircleShape).background(c.text))
+                    }
+                }
+            }
+        } else {
+            Box(
+                Modifier
+                    .size(96.dp)
+                    .clip(CircleShape)
+                    .background(c.brandSoft),
+                contentAlignment = Alignment.Center,
+            ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.size(11.dp).clip(CircleShape).background(c.text))
-                    Box(Modifier.size(11.dp).clip(CircleShape).background(c.text))
+                    Box(Modifier.size(11.dp).clip(CircleShape).background(c.brand))
+                    Box(Modifier.size(11.dp).clip(CircleShape).background(c.brand))
                 }
             }
         }

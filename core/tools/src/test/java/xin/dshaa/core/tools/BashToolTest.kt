@@ -121,4 +121,32 @@ class BashToolTest {
             "后台任务不能带 stdin：${result.text}",
         )
     }
+
+    @Test
+    fun workdirPointingToRegularFileReturnsClearError() = runBlocking {
+        val ws = workspace()
+        File(ws, "plain.txt").writeText("not a dir")
+        val result = BashTool().execute(
+            args("echo hi") { put("workdir", "plain.txt") },
+            ToolContext(ws),
+        )
+        assertTrue(
+            result.text.contains("not an existing directory"),
+            "把普通文件当 workdir 应给出清晰错误：${result.text}",
+        )
+    }
+
+    @Test
+    fun truncatedLogIsSavedInsideWorkspaceBashLogs() = runBlocking {
+        val ws = workspace()
+        File(ws, "big.txt").writeText("B".repeat(40_000))
+        val command = if (windows) "type big.txt" else "cat big.txt"
+        val result = BashTool().execute(args(command), ToolContext(ws))
+        val firstLine = result.text.lineSequence().first()
+        val path = Regex("full output: (.+?)\\)").find(firstLine)?.groupValues?.get(1)?.trim()
+            ?: error("没有解析到落盘路径：$firstLine")
+        val log = File(path).canonicalFile
+        val expectedDir = File(ws, ".dsh/bash-logs").canonicalFile
+        assertEquals(expectedDir, log.parentFile, "截断日志应落在工作区 .dsh/bash-logs 方便 read 工具读取")
+    }
 }

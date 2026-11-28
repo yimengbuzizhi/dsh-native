@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -56,6 +57,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.ai.assistance.showerclient.ui.ShowerSurfaceView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -155,6 +157,8 @@ fun VirtualScreenPage(onBack: () -> Unit) {
                     spec,
                     app.packageName,
                 )
+                xin.dshaa.nativeapp.device.shower.VirtualScreenOverlay
+                    .updateCurrentAppPackageName(app.packageName)
                 videoSize = controller.getVideoSize()
             } else {
                 Toast.makeText(context, "启动 ${app.label} 失败", Toast.LENGTH_SHORT).show()
@@ -281,35 +285,63 @@ fun VirtualScreenPage(onBack: () -> Unit) {
                 .weight(1f)
                 .fillMaxWidth()
                 .background(Color.Black),
+            contentAlignment = Alignment.Center,
         ) {
             if (running) {
+                val touchQueue = remember { Channel<Triple<Int, Int, Int>>(Channel.UNLIMITED) }
+                LaunchedEffect(touchQueue) {
+                    for ((action, tx, ty) in touchQueue) {
+                        when (action) {
+                            android.view.MotionEvent.ACTION_DOWN -> controller.touchDown(tx, ty)
+                            android.view.MotionEvent.ACTION_MOVE -> controller.touchMove(tx, ty)
+                            android.view.MotionEvent.ACTION_UP -> controller.touchUp(tx, ty)
+                        }
+                    }
+                }
+                val aspect = videoSize?.let { (w, h) ->
+                    if (w > 0 && h > 0) w.toFloat() / h.toFloat() else null
+                } ?: (spec.width.toFloat() / spec.height.coerceAtLeast(1).toFloat())
                 AndroidView(
                     factory = { ctx ->
                         var lastX = 0
                         var lastY = 0
+                        var fingerDown = false
                         ShowerSurfaceView(ctx).apply {
                             bindController(controller)
                             setOnTouchListener { v, event ->
                                 val size = controller.getVideoSize() ?: return@setOnTouchListener false
                                 val x = (event.x / v.width.coerceAtLeast(1) * size.first).toInt()
+                                    .coerceIn(0, size.first - 1)
                                 val y = (event.y / v.height.coerceAtLeast(1) * size.second).toInt()
+                                    .coerceIn(0, size.second - 1)
                                 when (event.actionMasked) {
                                     android.view.MotionEvent.ACTION_DOWN -> {
+                                        fingerDown = true
                                         lastX = x
                                         lastY = y
-                                        scope.launch { controller.touchDown(x, y) }
+                                        touchQueue.trySend(Triple(android.view.MotionEvent.ACTION_DOWN, x, y))
                                         true
                                     }
                                     android.view.MotionEvent.ACTION_MOVE -> {
-                                        if (Math.abs(x - lastX) > 8 || Math.abs(y - lastY) > 8) {
+                                        if (fingerDown && (Math.abs(x - lastX) > 6 || Math.abs(y - lastY) > 6)) {
                                             lastX = x
                                             lastY = y
-                                            scope.launch { controller.touchMove(x, y) }
+                                            touchQueue.trySend(Triple(android.view.MotionEvent.ACTION_MOVE, x, y))
                                         }
                                         true
                                     }
                                     android.view.MotionEvent.ACTION_UP -> {
-                                        scope.launch { controller.touchUp(x, y) }
+                                        if (fingerDown) {
+                                            fingerDown = false
+                                            touchQueue.trySend(Triple(android.view.MotionEvent.ACTION_UP, x, y))
+                                        }
+                                        true
+                                    }
+                                    android.view.MotionEvent.ACTION_CANCEL -> {
+                                        if (fingerDown) {
+                                            fingerDown = false
+                                            touchQueue.trySend(Triple(android.view.MotionEvent.ACTION_UP, lastX, lastY))
+                                        }
                                         true
                                     }
                                     else -> false
@@ -317,7 +349,7 @@ fun VirtualScreenPage(onBack: () -> Unit) {
                             }
                         }
                     },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.aspectRatio(aspect),
                 )
             } else {
                 Column(

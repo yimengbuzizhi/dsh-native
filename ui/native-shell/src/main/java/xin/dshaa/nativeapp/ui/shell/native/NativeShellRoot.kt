@@ -33,7 +33,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -239,12 +239,15 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
         retainSettingsHome = screenName == BuiltinPageIds.Settings
     }
     // 宽屏（平板 / 折叠屏展开）侧边栏常驻：600dp 是 Material 的 compact/expanded 断点
-    val wideLayout = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
-    android.util.Log.i(
-        "DshShell",
-        "native ui config width=${androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp}dp " +
-            "density=${androidx.compose.ui.platform.LocalDensity.current.density} wide=$wideLayout",
-    )
+    val configWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+    val densityVal = androidx.compose.ui.platform.LocalDensity.current.density
+    val wideLayout = configWidthDp >= 600
+    androidx.compose.runtime.LaunchedEffect(configWidthDp, densityVal, wideLayout) {
+        android.util.Log.i(
+            "DshShell",
+            "native ui config width=${configWidthDp}dp density=$densityVal wide=$wideLayout",
+        )
+    }
     // 设置页的滚动位置提到这里：进出二级页不再被重置到顶部（用户 23:00 第 3 条）
     val settingsScroll = androidx.compose.foundation.rememberScrollState()
 
@@ -425,7 +428,7 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
      */
     val PageBackdrop: @Composable (@Composable () -> Unit) -> Unit = { inner ->
         if (DshTheme2.liquidEnabled) {
-            LiquidBackdrop(Modifier.fillMaxSize()) { inner() }
+            LiquidBackdrop(Modifier.fillMaxSize(), animated = false, withSheen = false) { inner() }
         } else {
             Box(Modifier.fillMaxSize().background(DshTheme2.colors.background)) { inner() }
         }
@@ -470,7 +473,7 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                         var prevSub by remember { mutableStateOf<String?>(null) }
                         val subShift = remember { Animatable(0f) }
                         val subContentAlpha = remember { Animatable(1f) }
-                        val subAlpha by animateFloatAsState(
+                        val subAlphaState = animateFloatAsState(
                             targetValue = if (subVisible) 1f else 0f,
                             animationSpec = tween(SubpageShift.durationMs(prevSub, subScreenName)),
                             label = "dsh-sub-alpha",
@@ -505,16 +508,17 @@ private fun NativeShellContent(vm: NativeShellHost, hostUi: NativeShellHostUi) {
                         }
                         val shownSub = subScreenName ?: lastSub
                         if (shownSub != null && (subVisible || retainSettingsHome)) {
+                            val subActive = subVisible || subAlphaState.value > 0.01f
                             Box(
                                 Modifier
                                     .fillMaxSize()
-                                    .offset {
-                                        IntOffset((subShift.value * screenWidthPx).roundToInt(), 0)
+                                    .zIndex(if (subActive) 1f else -1f)
+                                    .graphicsLayer {
+                                        translationX = subShift.value * screenWidthPx
+                                        alpha = subAlphaState.value * subContentAlpha.value
                                     }
-                                    .zIndex(if (subVisible || subAlpha > 0.01f) 1f else -1f)
-                                    .alpha(subAlpha * subContentAlpha.value)
                                     .then(
-                                        if (!subVisible && subAlpha <= 0.01f) {
+                                        if (!subActive) {
                                             Modifier.clearAndSetSemantics {}
                                         } else {
                                             Modifier

@@ -140,4 +140,75 @@ class PluginSandboxTest {
         assertFalse(unknown.ok())
         assertEquals("UNKNOWN_METHOD", unknown.text("code"))
     }
+
+    @Test
+    fun moduleResolveFindsRelativeFilesJsonAndBundledNodeModules() {
+        val workspace = tempDir("dsh-ws")
+        val pluginDir = tempDir("dsh-plugin")
+        val outside = tempDir("dsh-outside")
+        File(outside, "escape.js").writeText("export default 1;")
+        File(pluginDir, "src").mkdirs()
+        File(pluginDir, "src/index.js").writeText("import './helper';")
+        File(pluginDir, "src/helper.js").writeText("export const x = 42;")
+        File(pluginDir, "shared").mkdirs()
+        File(pluginDir, "shared/index.js").writeText("export const s = 1;")
+        File(pluginDir, "data.json").writeText("""{"ok":true}""")
+        File(pluginDir, "node_modules/mini-pkg/dist").mkdirs()
+        File(pluginDir, "node_modules/mini-pkg/package.json").writeText(
+            """{"name":"mini-pkg","exports":{".":{"import":"./dist/entry.mjs"}}}""",
+        )
+        File(pluginDir, "node_modules/mini-pkg/dist/entry.mjs").writeText("export const m = 7;")
+
+        val sandbox = PluginSandbox("demo", workspace, emptyList(), emptyList(), pluginDir = pluginDir)
+
+        val helper = reply(sandbox, "module.resolve", """{"id":"./helper","from":"src/index.js"}""")
+        assertTrue(helper.ok(), helper.toString())
+        assertEquals("src/helper.js", helper.text("path"))
+        assertEquals("js", helper.text("kind"))
+
+        val shared = reply(sandbox, "module.resolve", """{"id":"../shared","from":"src/index.js"}""")
+        assertTrue(shared.ok(), shared.toString())
+        assertEquals("shared/index.js", shared.text("path"))
+
+        val jsonMod = reply(sandbox, "module.resolve", """{"id":"../data.json","from":"src/index.js"}""")
+        assertTrue(jsonMod.ok(), jsonMod.toString())
+        assertEquals("json", jsonMod.text("kind"))
+
+        val pkg = reply(sandbox, "module.resolve", """{"id":"mini-pkg","from":"src/index.js"}""")
+        assertTrue(pkg.ok(), pkg.toString())
+        assertEquals("node_modules/mini-pkg/dist/entry.mjs", pkg.text("path"))
+
+        val escaped = reply(sandbox, "module.resolve", """{"id":"../../escape.js","from":"src/index.js"}""")
+        assertFalse(escaped.ok())
+    }
+
+    @Test
+    fun pluginDirReadOnlyAndDataDirReadWriteWithoutFsAny() {
+        val workspace = tempDir("dsh-ws")
+        val pluginDir = tempDir("dsh-plugin")
+        val dataDir = tempDir("dsh-data")
+        File(pluginDir, "assets").mkdirs()
+        File(pluginDir, "assets/doc.txt").writeText("0123456789abcdef")
+
+        val sandbox = PluginSandbox(
+            pluginId = "demo",
+            workspace = workspace,
+            permissions = emptyList(),
+            grantedPermissions = emptyList(),
+            pluginDir = pluginDir,
+            dataDir = dataDir,
+        )
+
+        val readAsset = reply(sandbox, "fs.read", """{"path":"plugin://assets/doc.txt","offset":4,"length":6}""")
+        assertTrue(readAsset.ok(), readAsset.toString())
+        assertEquals("456789", readAsset.text("text"))
+
+        val writeAsset = reply(sandbox, "fs.write", """{"path":"plugin://assets/doc.txt","text":"nope"}""")
+        assertFalse(writeAsset.ok())
+        assertEquals("PERMISSION_DENIED", writeAsset.text("code"))
+
+        assertTrue(reply(sandbox, "fs.mkdir", """{"path":"data://index","recursive":true}""").ok())
+        assertTrue(reply(sandbox, "fs.write", """{"path":"data://index/state.json","text":"{\"v\":1}"}""").ok())
+        assertEquals("""{"v":1}""", reply(sandbox, "fs.read", """{"path":"data://index/state.json"}""").text("text"))
+    }
 }

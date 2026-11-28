@@ -22,9 +22,13 @@ import java.io.File
  */
 object ClientPluginWindows {
 
+    /** 解析任意插件目录（原生或 Node 插件均可）能不能跑浏览器半侧。 */
+    fun resolveDir(pluginDir: File): PluginClientEntry.Result =
+        PluginClientEntry.resolve(pluginDir)
+
     /** 解析这个插件能不能跑浏览器半侧；不能时给出具体原因。 */
     fun resolve(record: PluginRecord): PluginClientEntry.Result =
-        PluginClientEntry.resolve(File(record.path))
+        resolveDir(File(record.path))
 
     /** 打开插件自己的界面；返回给用户看的结果（成功/失败原因）。老调用方 = 悬浮窗。 */
     fun open(context: Context, record: PluginRecord): String =
@@ -36,16 +40,26 @@ object ClientPluginWindows {
         record: PluginRecord,
         kind: ContainerKind,
         title: String? = null,
+    ): String = openDir(context, record.id, File(record.path), record.name, kind, title)
+
+    /** 打开任意插件目录（支持 Node 混合插件直接打开自带 web client 容器）。 */
+    fun openDir(
+        context: Context,
+        pluginId: String,
+        pluginDir: File,
+        pluginName: String,
+        kind: ContainerKind = ContainerKind.FLOATING,
+        title: String? = null,
     ): String {
         if (!Settings.canDrawOverlays(context)) return "没有悬浮窗权限：请到系统设置里允许「显示在其他应用上层」"
-        val resolved = resolve(record)
+        val resolved = resolveDir(pluginDir)
         if (resolved !is PluginClientEntry.Result.Resolved) {
             return "这个插件没有可运行的浏览器半侧：${(resolved as PluginClientEntry.Result.Unsupported).reason}"
         }
         val intent = Intent(context, ClientPluginWindowService::class.java).apply {
-            putExtra(ClientPluginWindowService.EXTRA_PLUGIN_ID, record.id)
-            putExtra(ClientPluginWindowService.EXTRA_PLUGIN_DIR, record.path)
-            putExtra(ClientPluginWindowService.EXTRA_PLUGIN_NAME, record.name)
+            putExtra(ClientPluginWindowService.EXTRA_PLUGIN_ID, pluginId)
+            putExtra(ClientPluginWindowService.EXTRA_PLUGIN_DIR, pluginDir.absolutePath)
+            putExtra(ClientPluginWindowService.EXTRA_PLUGIN_NAME, pluginName)
             putExtra(ClientPluginWindowService.EXTRA_ENTRY, resolved.entry)
             putExtra(ClientPluginWindowService.EXTRA_KIND, kind.wire)
             title?.takeIf { it.isNotBlank() }?.let {
@@ -55,8 +69,8 @@ object ClientPluginWindows {
         return runCatching {
             context.startForegroundService(intent)
             ClientPluginWindowService.markRunning(true)
-            Log.i(TAG, "open container kind=${kind.wire} id=${record.id} entry=${resolved.entry} title=$title")
-            "正在打开「${record.name}」的插件界面（${kindLabel(kind)}）"
+            Log.i(TAG, "open container kind=${kind.wire} id=$pluginId entry=${resolved.entry} title=$title")
+            "正在打开「$pluginName」的插件界面（${kindLabel(kind)}）"
         }.getOrElse {
             Log.w(TAG, "open plugin container failed: ${it.message}")
             "打开插件容器失败：${it.message}"

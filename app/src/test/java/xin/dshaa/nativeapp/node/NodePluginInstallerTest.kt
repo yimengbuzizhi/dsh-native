@@ -230,4 +230,48 @@ class NodePluginInstallerTest {
         assertFalse(installer.installZip(ByteArray(0), "x.zip").isSuccess)
         assertTrue(installer.modules().isEmpty())
     }
+
+    @Test
+    fun resolvesExportsDotEntryAndSkipsNodeModulesFallback() {
+        val data = dataDir()
+        val installer = NodePluginInstaller(data)
+        val bytes = zip(
+            "package.json" to """{"name":"@acme/exports-pkg","exports":{".":{"import":"./dist/server.mjs"}}}""",
+            "dist/server.mjs" to "export function apply(){}",
+            "node_modules/dep/index.js" to "module.exports = 1;",
+        )
+        val installed = installer.installZip(bytes, "exports-pkg.zip").getOrThrow()
+        assertEquals("./plugins/exports-pkg/dist/server.mjs", installed.specifier)
+        assertEquals("@acme/exports-pkg", installed.id)
+    }
+
+    @Test
+    fun getAndSetConfigPreservesAcrossUpgradeWithDifferentZipName() {
+        val data = dataDir()
+        val installer = NodePluginInstaller(data)
+        installer.installZip(
+            zip(
+                "package.json" to """{"name":"@acme/cfg-plugin","version":"1.0.0","main":"index.js"}""",
+                "index.js" to "export function apply(){}",
+            ),
+            "cfg-v1.zip",
+        ).getOrThrow()
+
+        val saved = installer.setConfig("@acme/cfg-plugin", """{"apiKey":"secret","limit":5}""").getOrThrow()
+        assertEquals("@acme/cfg-plugin", saved)
+        assertTrue(installer.getConfig("@acme/cfg-plugin").contains("secret"))
+
+        installer.installZip(
+            zip(
+                "package.json" to """{"name":"@acme/cfg-plugin","version":"1.1.0","main":"index.js"}""",
+                "index.js" to "export function apply(){}",
+            ),
+            "cfg-v2.zip",
+        ).getOrThrow()
+
+        val afterUpgrade = installer.getConfig("@acme/cfg-plugin")
+        assertTrue("跨文件名升级同一插件应保留原 config：$afterUpgrade", afterUpgrade.contains("secret"))
+        assertEquals(1, installer.entries().size)
+        assertFalse("旧版本孤儿目录应被清理", File(data, "plugins/cfg-v1").exists())
+    }
 }

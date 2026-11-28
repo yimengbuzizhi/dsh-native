@@ -1,4 +1,5 @@
 package xin.dshaa.nativeapp.ui.settings
+import xin.dshaa.ui.design.component.dshTopBarSurface
 
 import xin.dshaa.ui.design.component.liquidGlass
 import xin.dshaa.ui.design.theme.LiquidLevel
@@ -139,7 +140,7 @@ fun SettingsScreen(
     Column(Modifier.fillMaxSize().background(Color.Transparent)) {
         // Operit 顶栏：☰ + 页面标题
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel).statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().dshTopBarSurface().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (menuVisible) {

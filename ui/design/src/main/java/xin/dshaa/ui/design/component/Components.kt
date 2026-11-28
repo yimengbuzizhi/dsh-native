@@ -24,12 +24,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -96,27 +95,27 @@ fun SectionHeader(
     }
 }
 
-/** 状态点：运行中脉冲（加速版，1600ms 一圈）。 */
+/** 状态点：运行中脉冲（加速版，1600ms 一圈；仅 pulse=true 时创建无限动画，值在 graphicsLayer 读取不触发重组）。 */
 @Composable
 fun StatusDot(color: Color, pulse: Boolean = false, size: Dp = 8.dp) {
-    val transition = rememberInfiniteTransition(label = "dot")
-    val halo = if (pulse) {
-        transition.animateFloat(
-            initialValue = 0.6f,
-            targetValue = 1.7f,
-            animationSpec = infiniteRepeatable(tween(1600), RepeatMode.Restart),
-            label = "halo",
-        )
-    } else {
-        null
-    }
     Box(contentAlignment = Alignment.Center) {
-        if (halo != null) {
+        if (pulse) {
+            val transition = rememberInfiniteTransition(label = "dot")
+            val halo = transition.animateFloat(
+                initialValue = 0.6f,
+                targetValue = 1.7f,
+                animationSpec = infiniteRepeatable(tween(1600), RepeatMode.Restart),
+                label = "halo",
+            )
             Box(
                 Modifier
                     .size(size)
-                    .scale(halo.value)
-                    .alpha((1.6f - halo.value).coerceIn(0f, 0.35f))
+                    .graphicsLayer {
+                        val v = halo.value
+                        scaleX = v
+                        scaleY = v
+                        alpha = (1.6f - v).coerceIn(0f, 0.35f)
+                    }
                     .clip(CircleShape)
                     .background(color),
             )

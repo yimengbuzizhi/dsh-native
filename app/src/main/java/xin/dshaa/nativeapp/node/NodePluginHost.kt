@@ -17,6 +17,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -302,7 +303,12 @@ class NodePluginHost(
     }
 
     /** 转发一次工具调用；不管宿主状态如何都返回 ToolResult，不往上抛（取消除外）。 */
-    suspend fun invoke(toolName: String, args: JsonObject, timeoutMs: Long): ToolResult {
+    suspend fun invoke(
+        toolName: String,
+        args: JsonObject,
+        timeoutMs: Long,
+        toolContext: JsonObject? = null,
+    ): ToolResult {
         val ws = bridge
             ?: return ToolResult.err("Node host is not ready (state=${stateCode()})")
         if (_state.value !is State.Ready) {
@@ -318,10 +324,11 @@ class NodePluginHost(
         var result: ToolResult? = null
         var failureText: String? = null
         try {
-            when (val call = ws.invoke(toolName, args, timeoutMs, callId)) {
+            when (val call = ws.invoke(toolName, args, timeoutMs, callId, toolContext)) {
                 is NodeCall.Ok -> {
+                    val text = call.text ?: formatNodeValue(call.value)
                     result = ToolResult.ok(
-                        call.text ?: call.value?.toString().orEmpty(),
+                        text,
                         meta = mapOf(
                             "host" to "node",
                             "nodeTool" to toolName,
@@ -385,13 +392,19 @@ class NodePluginHost(
         val ws = bridge ?: return false
         if (_state.value !is State.Ready) return false
         return runCatching {
+            // 同步重拉工具表、模型供应商与斜杠命令，支持异步/动态注册工具刷新
+            runCatching { ws.manifest() }.getOrNull()?.let { rawTools ->
+                val specs = rawTools.mapNotNull { descriptorOf(it) }
+                surface.replace(specs)
+                _tools.value = surface.snapshot()
+            }
             val llm = ws.llmList()
             val commands = ws.commandList()
             _llmProviders.value = NodeLlmProviders.parseAll(llm)
             _commands.value = NodeCommands.parseAll(commands)
             Log.i(
                 TAG,
-                "registrations llm=${_llmProviders.value.map { it.id }} " +
+                "registrations tools=${_tools.value.size} llm=${_llmProviders.value.map { it.id }} " +
                     "commands=${_commands.value.map { it.name }}",
             )
             true
@@ -463,16 +476,29 @@ class NodePluginHost(
         )
     }
 
-    /** 给 ToolRegistry 的工具实现：执行回 Node，审批/审计由 [invoke] 统一做。 */
+    /** 给 ToolRegistry 的工具实现：执行回 Node，附带 workspace/cwd/session 上下文；审批/审计由 [invoke] 统一做。 */
     fun dshTools(): List<DshTool> = surface.snapshot().map { tool ->
         object : DshTool {
             override val name: String = registryName(tool.name)
 
             override suspend fun execute(args: JsonObject, ctx: ToolContext): ToolResult {
                 val timeout = ctx.timeoutMs.coerceIn(MIN_TOOL_TIMEOUT_MS, MAX_TOOL_TIMEOUT_MS)
-                return invoke(tool.name, args, timeout)
+                val callContext = kotlinx.serialization.json.buildJsonObject {
+                    put("workspace", kotlinx.serialization.json.JsonPrimitive(ctx.workspace.absolutePath))
+                    put("cwd", kotlinx.serialization.json.JsonPrimitive(ctx.cwd.absolutePath))
+                }
+                return invoke(tool.name, args, timeout, callContext)
             }
         }
+    }
+
+    private fun formatNodeValue(value: kotlinx.serialization.json.JsonElement?): String {
+        if (value == null) return ""
+        if (value is kotlinx.serialization.json.JsonPrimitive && value.isString) return value.content
+        if (value is JsonObject) {
+            (value["text"] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.let { return it.content }
+        }
+        return value.toString()
     }
 
     fun stop() {
@@ -591,6 +617,22 @@ class NodePluginHost(
 
     /** 模块说明符对应的插件目录（doctor 检查目录/入口是否存在）。 */
     fun pluginDir(module: String): File? = pluginInstaller.dirFor(module)
+
+    /** 读取已安装 Node 插件的 JSON 配置。 */
+    fun pluginConfig(idOrModule: String): String = pluginInstaller.getConfig(idOrModule)
+
+    /** 保存已安装 Node 插件的 JSON 配置，并按需重启宿主使新配置生效。 */
+    suspend fun savePluginConfig(
+        idOrModule: String,
+        configJson: String,
+        restart: Boolean = true,
+    ): Result<String> {
+        val saved = withContext(Dispatchers.IO) { pluginInstaller.setConfig(idOrModule, configJson) }
+        if (saved.isSuccess && restart) {
+            reload()
+        }
+        return saved
+    }
 
     /** 审计文件尾部（`nodehost_logs` 的 audit 来源）。 */
     fun auditTail(max: Int = 50): List<String> {

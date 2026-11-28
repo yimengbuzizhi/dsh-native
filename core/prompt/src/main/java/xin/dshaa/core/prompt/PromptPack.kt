@@ -196,6 +196,7 @@ class PromptPack(
                     "description" -> put(key, replaceDescription(value, BASH_ARG_DESCRIPTION))
                     "command" -> put(key, replaceDescription(value, BASH_COMMAND_DESCRIPTION))
                     "workdir" -> put(key, replaceDescription(value, BASH_WORKDIR_DESCRIPTION))
+                    "timeoutMs" -> put(key, replaceDescription(value, BASH_TIMEOUT_DESCRIPTION))
                     else -> put(key, value)
                 }
             }
@@ -268,13 +269,14 @@ class PromptPack(
          * 用户反馈的「bash 工具箱不全」有一半是这段文案在骗人。这里改成真机事实，并写清实际可用的参数。
          */
         private const val BASH_DESCRIPTION =
-            "Execute a shell command (`sh -c` on Android: a toybox userland with no bash, no interactive TTY " +
-                "and no python/curl/node unless one is installed) and return its stdout/stderr. Each call runs in a fresh shell; " +
+            "Execute a shell command on Android (bundled GNU Bash 5.3 + curl 8.x + Mozilla CA + BusyBox utilities on arm64, " +
+                "falling back to `/system/bin/sh` on x86_64; no interactive TTY) and return its stdout/stderr. Each call runs in a fresh shell; " +
                 "pass `workdir` instead of using `cd`. Paths outside the workspace are refused outright (`path escapes workspace: …`, " +
                 "a hard error, not a policy denial you can retry another way). " +
                 "Managed `\$DSH_WORKSPACE` / `\$DSH_CWD` / `\$DSH_TIMEOUT_MS` / `\$DSH_SESSION` expose current harness environment facts; " +
                 "`env` adds extra variables and `stdin` feeds standard input. When `<workspace>/.dsh/bin` exists it is prepended to `PATH`. " +
-                "Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. " +
+                "Foreground commands are killed on timeout (with partial tail output returned when available). " +
+                "Long output is truncated to its tail; the full output is saved inside `<workspace>/.dsh/bash-logs/` whose path is reported so `read` can inspect it. " +
                 "Provide `description` before `command` in the arguments. Before any delete or move, verify that the resolved absolute target path is the intended one; " +
                 "never run it against a computed path you have not checked. An unset variable expands to an empty string, so guard variables in such paths with `\${VAR:?}`. " +
                 "There is no graded sandbox on this device: `sandbox_permissions` and `justification` are accepted but ignored."
@@ -285,11 +287,14 @@ class PromptPack(
                 "\"npm install\" → \"Install package dependencies\"."
 
         private const val BASH_COMMAND_DESCRIPTION =
-            "The shell command to execute (`sh -c` on Android: toybox userland, no bash builtins, no interactive prompt)."
+            "The shell command to execute (bundled GNU Bash 5.3 + curl + BusyBox utilities on arm64, `/system/bin/sh` fallback on x86_64; no interactive TTY)."
 
         private const val BASH_WORKDIR_DESCRIPTION =
             "Directory to run the command in; must resolve inside the workspace (absolute path, or relative to the " +
                 "current directory). Defaults to the current directory. Use this instead of `cd`."
+
+        private const val BASH_TIMEOUT_DESCRIPTION =
+            "Optional timeout in milliseconds (1000..600000). On expiry the foreground command and its child processes are killed and any partial output collected so far is returned."
 
         private const val BASH_ENV_DESCRIPTION =
             "Extra environment variables for this command only, merged over the inherited environment and the managed " +
@@ -323,7 +328,7 @@ class PromptPack(
         private fun readResource(path: String): String {
             val stream = PromptPack::class.java.classLoader?.getResourceAsStream(path)
                 ?: error("missing prompt resource: $path")
-            return stream.use { it.readBytes().toString(Charsets.UTF_8) }
+            return stream.use { it.readBytes().toString(Charsets.UTF_8) }.replace("\r\n", "\n")
         }
     }
 }

@@ -47,6 +47,10 @@ class PluginSandbox(
      * 实现在 App 层，和 AI 工具面/原生面共用同一个 `PrimitiveHost`。
      */
     private val primitiveBridge: PluginPrimitiveBridge? = null,
+    /** 插件自身安装目录：始终允许只读访问与多文件模块加载（不需要 fs:any）。 */
+    private val pluginDir: File? = null,
+    /** 插件私有持久化数据目录（升级保留）：始终允许读写，不污染用户工作区。 */
+    private val dataDir: File? = null,
 ) {
 
     /** 宿主调用结果。[payloadJson] 是给 JS 的完整 JSON（`{ok:true,…}` / `{ok:false,error,code}`）。 */
@@ -73,6 +77,7 @@ class PluginSandbox(
                     // 只是给 JS console 一个出口；真正的日志由 App 侧 JsHost 打。
                     ok { put("logged", true) }
                 }
+                "module.resolve" -> moduleResolve(args)
                 "fs.read" -> fsRead(args)
                 "fs.readBinary" -> fsReadBinary(args)
                 "fs.write" -> fsWrite(args)
@@ -114,13 +119,141 @@ class PluginSandbox(
         }
     }
 
+    // ---- 多文件模块解析（支持相对路径、.js/.mjs/.cjs/.json、目录 index、包内 node_modules） ----
+
+    private fun moduleResolve(args: JsonObject): Reply {
+        val root = pluginDir?.canonicalFile
+            ?: return fail("当前运行环境没有插件目录，无法解析模块依赖", "NO_PLUGIN_DIR")
+        if (!root.isDirectory) return fail("插件目录不存在", "NO_PLUGIN_DIR")
+        val id = args.text("id")?.trim().orEmpty()
+        if (id.isEmpty()) return fail("缺少模块标识符 id", "INVALID_ARGUMENT")
+        val from = args.text("from")?.trim().orEmpty()
+
+        val resolvedFile = resolveModuleFile(root, from, id)
+            ?: return fail("找不到插件模块：$id（from=$from）", "MODULE_NOT_FOUND")
+        val relPath = resolvedFile.relativeTo(root).invariantSeparatorsPath
+        if (resolvedFile.length() > MAX_READ_BYTES) {
+            return fail("模块文件太大（>${MAX_READ_BYTES / 1024 / 1024}MB）：$relPath", "MODULE_TOO_LARGE")
+        }
+        val source = resolvedFile.readText(Charsets.UTF_8)
+        if (relPath.endsWith(".json", ignoreCase = true)) {
+            return ok {
+                put("kind", "json")
+                put("path", relPath)
+                put("code", source)
+            }
+        }
+        val transformed = PluginModule.transform(source)
+        val body = buildString {
+            append(transformed.code)
+            append("\nreturn {")
+            transformed.exports.forEachIndexed { idx, exp ->
+                if (idx > 0) append(", ")
+                append(JsonPrimitive(exp.exported).toString())
+                append(": (typeof ").append(exp.local)
+                append(" === 'undefined' ? undefined : ").append(exp.local).append(")")
+            }
+            append("};\n")
+        }
+        return ok {
+            put("kind", "js")
+            put("path", relPath)
+            put("code", body)
+        }
+    }
+
+    private fun resolveModuleFile(root: File, from: String, id: String): File? {
+        val cleanId = id.replace('\\', '/')
+        val candidates = ArrayList<File>()
+        if (cleanId.startsWith("./") || cleanId.startsWith("../") || cleanId == "." || cleanId == "..") {
+            val baseDir = if (from.isNotEmpty()) {
+                val fromFile = runCatching { PluginPathGuard.resolve(root, from) }.getOrNull()
+                if (fromFile != null && fromFile.isDirectory) fromFile else fromFile?.parentFile ?: root
+            } else {
+                root
+            }
+            val rawTarget = File(baseDir, cleanId)
+            addModuleCandidates(root, rawTarget, candidates)
+        } else if (!cleanId.startsWith("/")) {
+            // 在插件自己的 node_modules 中逐级向上查找（不越出 pluginDir）
+            var searchDir = if (from.isNotEmpty()) {
+                val fromFile = runCatching { PluginPathGuard.resolve(root, from) }.getOrNull()
+                fromFile?.parentFile ?: root
+            } else {
+                root
+            }
+            val rootPath = root.path
+            while (searchDir.canonicalPath == rootPath || searchDir.canonicalPath.startsWith(rootPath + File.separator)) {
+                val nmTarget = File(File(searchDir, "node_modules"), cleanId)
+                addModuleCandidates(root, nmTarget, candidates)
+                if (searchDir.canonicalPath == rootPath) break
+                searchDir = searchDir.parentFile ?: break
+            }
+        }
+        return candidates.firstOrNull { candidate ->
+            val canon = runCatching { candidate.canonicalFile }.getOrNull() ?: return@firstOrNull false
+            canon.isFile && (canon.path == root.path || canon.path.startsWith(root.path + File.separator))
+        }?.canonicalFile
+    }
+
+    private fun addModuleCandidates(root: File, target: File, out: MutableList<File>) {
+        out += target
+        for (ext in listOf(".js", ".mjs", ".cjs", ".json")) {
+            out += File(target.path + ext)
+        }
+        if (target.isDirectory) {
+            val pkgJson = File(target, "package.json")
+            if (pkgJson.isFile) {
+                val entry = runCatching {
+                    val obj = Json.parseToJsonElement(pkgJson.readText(Charsets.UTF_8)) as? JsonObject
+                    obj?.let { PluginPackage.resolveEntryFromJson(it) }
+                }.getOrNull()
+                if (!entry.isNullOrBlank()) {
+                    val entryFile = File(target, entry)
+                    out += entryFile
+                    for (ext in listOf(".js", ".mjs", ".cjs", ".json")) {
+                        out += File(entryFile.path + ext)
+                    }
+                }
+            }
+            for (idx in listOf("index.js", "index.mjs", "index.cjs", "index.json")) {
+                out += File(target, idx)
+            }
+        }
+    }
+
     // ---- 文件 ----
 
     private fun fsRead(args: JsonObject): Reply {
         val raw = args.text("path") ?: throw IllegalArgumentException("fs.read 缺少 path")
-        val file = fsFile(raw)
+        val file = fsFile(raw, write = false)
         if (!file.exists()) throw IOException("文件不存在：$raw")
         if (file.isDirectory) throw IOException("是个目录，不是文件：$raw")
+        val offset = args.long("offset")?.coerceAtLeast(0L)
+        val length = args.long("length")?.coerceAtLeast(0L)
+        if (offset != null || length != null) {
+            val fileLen = file.length()
+            val start = (offset ?: 0L).coerceAtMost(fileLen)
+            val maxSlice = (length ?: MAX_READ_BYTES).coerceAtMost(MAX_READ_BYTES)
+            val toRead = (fileLen - start).coerceAtMost(maxSlice).toInt().coerceAtLeast(0)
+            val buf = ByteArray(toRead)
+            java.io.RandomAccessFile(file, "r").use { raf ->
+                raf.seek(start)
+                var read = 0
+                while (read < toRead) {
+                    val n = raf.read(buf, read, toRead - read)
+                    if (n < 0) break
+                    read += n
+                }
+                val slice = if (read == toRead) buf else buf.copyOf(read)
+                return ok {
+                    put("text", slice.toString(Charsets.UTF_8))
+                    put("size", slice.size)
+                    put("totalSize", fileLen)
+                    put("eof", start + slice.size >= fileLen)
+                }
+            }
+        }
         if (file.length() > MAX_READ_BYTES) {
             throw IOException("文件太大（>${MAX_READ_BYTES / 1024 / 1024}MB）：$raw")
         }
@@ -133,7 +266,7 @@ class PluginSandbox(
 
     private fun fsReadBinary(args: JsonObject): Reply {
         val raw = args.text("path") ?: throw IllegalArgumentException("fs.readBinary 缺少 path")
-        val file = fsFile(raw)
+        val file = fsFile(raw, write = false)
         if (!file.exists()) throw IOException("文件不存在：$raw")
         if (file.isDirectory) throw IOException("是个目录，不是文件：$raw")
         if (file.length() > MAX_BINARY_BYTES) {
@@ -155,7 +288,7 @@ class PluginSandbox(
         if (bytes.size > MAX_BINARY_BYTES) {
             throw IOException("写入内容太大（>${MAX_BINARY_BYTES / 1024 / 1024}MB）")
         }
-        val file = fsFile(raw)
+        val file = fsFile(raw, write = true)
         if (file.isDirectory) throw IOException("是个目录，不是文件：$raw")
         val parent = file.parentFile
         if (parent != null && !parent.exists()) throw IOException("上级目录不存在：${parent.path}")
@@ -170,7 +303,7 @@ class PluginSandbox(
         if (bytes.size > MAX_WRITE_BYTES) {
             throw IOException("写入内容太大（>${MAX_WRITE_BYTES / 1024 / 1024}MB）")
         }
-        val file = fsFile(raw)
+        val file = fsFile(raw, write = true)
         if (file.isDirectory) throw IOException("是个目录，不是文件：$raw")
         val parent = file.parentFile
         if (parent != null && !parent.exists()) throw IOException("上级目录不存在：${parent.path}")
@@ -180,14 +313,13 @@ class PluginSandbox(
 
     private fun fsExists(args: JsonObject): Reply {
         val raw = args.text("path") ?: throw IllegalArgumentException("fs.exists 缺少 path")
-        // 越界仍然报「没有权限」，不静默返回 false——否则插件会以为文件不存在而继续写。
-        val file = fsFile(raw)
+        val file = fsFile(raw, write = false)
         return ok { put("exists", file.exists()) }
     }
 
     private fun fsList(args: JsonObject): Reply {
         val raw = args.text("path") ?: "."
-        val file = fsFile(raw)
+        val file = fsFile(raw, write = false)
         if (!file.isDirectory) throw IOException("不是目录：$raw")
         val children = file.listFiles() ?: throw IOException("读不了目录：$raw")
         val sorted = children.sortedBy { it.name.lowercase() }
@@ -195,6 +327,21 @@ class PluginSandbox(
             put(
                 "names",
                 buildJsonArray { sorted.forEach { add(JsonPrimitive(it.name)) } },
+            )
+            put(
+                "entries",
+                buildJsonArray {
+                    sorted.forEach { child ->
+                        add(
+                            buildJsonObject {
+                                put("name", child.name)
+                                put("isFile", child.isFile)
+                                put("isDirectory", child.isDirectory)
+                                put("size", if (child.isFile) child.length() else 0L)
+                            },
+                        )
+                    }
+                },
             )
         }
     }
@@ -266,7 +413,7 @@ class PluginSandbox(
 
     private fun fsMkdir(args: JsonObject): Reply {
         val raw = args.text("path") ?: throw IllegalArgumentException("fs.mkdir 缺少 path")
-        val file = fsFile(raw)
+        val file = fsFile(raw, write = true)
         val recursive = args.flag("recursive")
         val created = if (recursive) file.mkdirs() else file.mkdir()
         if (!created && !file.isDirectory) throw IOException("建不了目录：$raw")
@@ -275,7 +422,7 @@ class PluginSandbox(
 
     private fun fsRemove(args: JsonObject): Reply {
         val raw = args.text("path") ?: throw IllegalArgumentException("fs.remove 缺少 path")
-        val file = fsFile(raw)
+        val file = fsFile(raw, write = true)
         if (!file.exists()) {
             if (args.flag("force")) return ok { put("removed", false) }
             throw IOException("路径不存在：$raw")
@@ -433,17 +580,46 @@ class PluginSandbox(
         }
     }
 
-    /** 按授权表解析/校验路径；`fs:workspace` 强制 canonical 包含检查。 */
-    private fun fsFile(raw: String): File {
+    /**
+     * 按授权表解析/校验路径：
+     * 1. 插件自身安装目录（[pluginDir]）始终允许**只读**访问（读取自带资源/数据/模板等无需危险权限）；
+     * 2. 插件私有持久化数据目录（[dataDir]）始终允许**读写**访问（升级不丢、不污染用户工作区）；
+     * 3. 其余路径走权限表（`fs:workspace` 强制 canonical 包含检查，`fs:any` 允许任意可访问路径）。
+     */
+    private fun fsFile(raw: String, write: Boolean = false): File {
         if (raw.indexOf('\u0000') >= 0) throw PluginPathException("路径里有非法字符")
+        val normalized = raw.trim().replace('\\', '/')
+        if (normalized.startsWith("plugin://")) {
+            val root = pluginDir ?: throw PluginPathException("插件目录不可用")
+            if (write) throw PluginAccessDenied("插件包目录是只读的，写入请使用 ctx.dataDir / data://")
+            val rel = normalized.removePrefix("plugin://").ifEmpty { "." }
+            return PluginPathGuard.resolve(root, rel)
+        }
+        if (normalized.startsWith("data://")) {
+            val root = dataDir ?: throw PluginPathException("插件数据目录不可用")
+            runCatching { root.mkdirs() }
+            val rel = normalized.removePrefix("data://").ifEmpty { "." }
+            return PluginPathGuard.resolve(root, rel)
+        }
+        val asFile = File(normalized)
+        if (asFile.isAbsolute) {
+            val canon = asFile.canonicalFile
+            val pDir = pluginDir?.canonicalFile
+            if (pDir != null && (canon.path == pDir.path || canon.path.startsWith(pDir.path + File.separator))) {
+                if (write) throw PluginAccessDenied("插件包目录是只读的，写入请使用 ctx.dataDir")
+                return canon
+            }
+            val dDir = dataDir?.canonicalFile
+            if (dDir != null && (canon.path == dDir.path || canon.path.startsWith(dDir.path + File.separator))) {
+                runCatching { dDir.mkdirs() }
+                return canon
+            }
+        }
         return when (PluginPermissions.fsMode(grants)) {
             PluginFsMode.NONE ->
                 throw PluginAccessDenied("插件没有文件权限（manifest 里要声明 fs:workspace）")
             PluginFsMode.WORKSPACE -> PluginPathGuard.resolve(workspace, raw)
-            PluginFsMode.ANY -> {
-                val asFile = File(raw.trim().replace('\\', '/'))
-                (if (asFile.isAbsolute) asFile else File(workspace, raw)).canonicalFile
-            }
+            PluginFsMode.ANY -> (if (asFile.isAbsolute) asFile else File(workspace, raw)).canonicalFile
         }
     }
 
@@ -966,10 +1142,10 @@ class PluginSandbox(
         (this[key] as? JsonPrimitive)?.content?.toLongOrNull()
 
     private companion object {
-        const val MAX_READ_BYTES = 4L * 1024 * 1024
-        const val MAX_WRITE_BYTES = 4 * 1024 * 1024
+        const val MAX_READ_BYTES = 16L * 1024 * 1024
+        const val MAX_WRITE_BYTES = 16 * 1024 * 1024
         const val MAX_COPY_BYTES = 32L * 1024 * 1024
-        const val MAX_BINARY_BYTES = 8L * 1024 * 1024
+        const val MAX_BINARY_BYTES = 16L * 1024 * 1024
         const val MAX_ARCHIVE_BYTES = 128L * 1024 * 1024
         const val MAX_ZIP_ENTRIES = 10_000
         const val MAX_UPLOAD_BYTES = 32L * 1024 * 1024

@@ -357,8 +357,9 @@ class SystemAssemblyTest {
             "required 不能变（上游同形）",
         )
         val description = bash.description.orEmpty()
-        assertTrue(description.contains("`sh -c` on Android"), "应说明真机是 sh -c：$description")
-        assertTrue("bash -c" !in description, "不该再宣称 bash：$description")
+        assertTrue(description.contains("bundled GNU Bash 5.3"), "应说明 arm64 真机内置 GNU Bash 5.3：$description")
+        assertTrue(description.contains("curl"), "应说明内置 curl：$description")
+        assertTrue(description.contains("/system/bin/sh"), "应说明 x86_64 退回 /system/bin/sh：$description")
         assertTrue("no graded sandbox" in description, "应说明没有分级沙箱：$description")
     }
 

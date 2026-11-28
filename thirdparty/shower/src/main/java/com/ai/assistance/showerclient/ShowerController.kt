@@ -114,6 +114,9 @@ class ShowerController {
     private var lastPps: ByteArray? = null
 
     @Volatile
+    private var lastIdr: ByteArray? = null
+
+    @Volatile
     private var binaryHandler: ((ByteArray) -> Unit)? = null
 
     fun setBinaryHandler(handler: ((ByteArray) -> Unit)?) {
@@ -131,12 +134,18 @@ class ShowerController {
         }
         if (handler != null) {
             val parameterSets = listOfNotNull(lastSps?.copyOf(), lastPps?.copyOf())
-            val frames = parameterSets + framesToReplay
+            val hasBufferedIdr = framesToReplay.any { containsNalType(it, 5) }
+            val keyframe = if (!hasBufferedIdr) lastIdr?.copyOf() else null
+            val frames = buildList {
+                addAll(parameterSets)
+                if (keyframe != null) add(keyframe)
+                addAll(framesToReplay)
+            }
             if (frames.isNotEmpty()) {
                 ShowerLog.d(
                     TAG,
                     "setBinaryHandler: replaying ${parameterSets.size} parameter set(s) + " +
-                        "${framesToReplay.size} buffered frames",
+                        "${if (keyframe != null) 1 else 0} cached IDR + ${framesToReplay.size} buffered frames",
                 )
                 frames.forEach { frame ->
                     try {
@@ -165,28 +174,95 @@ class ShowerController {
         }
     }
 
-    /** 缓存 SPS(7)/PPS(8)；每个 onVideoFrame 是一个 NAL 包（与 ShowerVideoRenderer 的判断一致）。 */
+    /**
+     * 缓存 SPS(7)/PPS(8) 与最近一帧 IDR(5)：
+     * 兼容单 NAL 包、同一包内合并 SPS+PPS 的 Annex-B 流、以及 AVCC 长度前缀格式，
+     * 避免 MediaCodec 合并下发 codec-config 时 lastPps 恒空导致重绑 Surface 永久黑屏。
+     */
     private fun rememberParameterSet(data: ByteArray) {
-        when (nalUnitType(data)) {
-            7 -> lastSps = data.copyOf()
-            8 -> lastPps = data.copyOf()
+        val nals = extractAnnexBNals(data)
+        for (nal in nals) {
+            when (nal.type) {
+                7 -> lastSps = nal.bytes
+                8 -> lastPps = nal.bytes
+                5 -> lastIdr = nal.bytes
+            }
         }
     }
 
-    private fun nalUnitType(packet: ByteArray): Int {
-        var offset = -1
-        for (i in 0 until packet.size - 3) {
-            if (packet[i] == 0.toByte() && packet[i + 1] == 0.toByte()) {
-                if (packet[i + 2] == 1.toByte()) {
-                    offset = i + 3
-                    break
-                } else if (i + 3 < packet.size && packet[i + 2] == 0.toByte() && packet[i + 3] == 1.toByte()) {
-                    offset = i + 4
-                    break
+    private fun clearCachedCodecState() {
+        lastSps = null
+        lastPps = null
+        lastIdr = null
+        synchronized(binaryLock) {
+            earlyBinaryFrames.clear()
+        }
+    }
+
+    private data class NalSlice(val type: Int, val bytes: ByteArray)
+
+    private fun containsNalType(packet: ByteArray, wanted: Int): Boolean =
+        extractAnnexBNals(packet).any { it.type == wanted }
+
+    private fun extractAnnexBNals(packet: ByteArray): List<NalSlice> {
+        val annexb = maybeAvccToAnnexb(packet)
+        val starts = ArrayList<Pair<Int, Int>>(4) // (startCodePos, nalHeaderPos)
+        var i = 0
+        val n = annexb.size
+        while (i + 3 < n) {
+            if (annexb[i] == 0.toByte() && annexb[i + 1] == 0.toByte()) {
+                if (annexb[i + 2] == 1.toByte()) {
+                    starts += i to (i + 3)
+                    i += 3
+                    continue
+                } else if (i + 3 < n && annexb[i + 2] == 0.toByte() && annexb[i + 3] == 1.toByte()) {
+                    starts += i to (i + 4)
+                    i += 4
+                    continue
                 }
             }
+            i++
         }
-        return if (offset != -1 && offset < packet.size) packet[offset].toInt() and 0x1F else -1
+        if (starts.isEmpty()) return emptyList()
+        val out = ArrayList<NalSlice>(starts.size)
+        for (idx in starts.indices) {
+            val (codePos, headerPos) = starts[idx]
+            val endPos = if (idx + 1 < starts.size) starts[idx + 1].first else n
+            if (headerPos < endPos) {
+                val nalType = annexb[headerPos].toInt() and 0x1F
+                out += NalSlice(nalType, annexb.copyOfRange(codePos, endPos))
+            }
+        }
+        return out
+    }
+
+    private fun maybeAvccToAnnexb(packet: ByteArray): ByteArray {
+        if (packet.size >= 4) {
+            val b0 = packet[0].toInt() and 0xFF
+            val b1 = packet[1].toInt() and 0xFF
+            val b2 = packet[2].toInt() and 0xFF
+            val b3 = packet[3].toInt() and 0xFF
+            if (b0 == 0 && b1 == 0 && ((b2 == 0 && b3 == 1) || b2 == 1)) {
+                return packet
+            }
+        }
+        val out = java.io.ByteArrayOutputStream()
+        var i = 0
+        val n = packet.size
+        while (i + 4 <= n) {
+            val nalLen =
+                ((packet[i].toInt() and 0xFF) shl 24) or
+                    ((packet[i + 1].toInt() and 0xFF) shl 16) or
+                    ((packet[i + 2].toInt() and 0xFF) shl 8) or
+                    (packet[i + 3].toInt() and 0xFF)
+            i += 4
+            if (nalLen <= 0 || i + nalLen > n) return packet
+            out.write(byteArrayOf(0, 0, 0, 1))
+            out.write(packet, i, nalLen)
+            i += nalLen
+        }
+        val result = out.toByteArray()
+        return if (result.isNotEmpty()) result else packet
     }
 
     suspend fun requestScreenshot(timeoutMs: Long = 3000L): ByteArray? =
@@ -217,6 +293,7 @@ class ShowerController {
             virtualDisplayId = null
             videoWidth = 0
             videoHeight = 0
+            clearCachedCodecState()
         }
 
         fun isBinderDied(e: Throwable): Boolean {
@@ -292,6 +369,7 @@ class ShowerController {
             virtualDisplayId = null
             videoWidth = 0
             videoHeight = 0
+            clearCachedCodecState()
         }
 
         fun isBinderDied(e: Throwable): Boolean {
@@ -311,6 +389,7 @@ class ShowerController {
             }
 
             if (existingId != null) {
+                clearCachedCodecState()
                 try {
                     service.destroyDisplay(existingId)
                     ShowerLog.d(TAG, "ensureDisplay: destroyed previous displayId=$existingId before recreate")
@@ -494,6 +573,7 @@ class ShowerController {
         virtualDisplayId = null
         videoWidth = 0
         videoHeight = 0
+        clearCachedCodecState()
         synchronized(binaryLock) {
             binaryHandler = null
             earlyBinaryFrames.clear()

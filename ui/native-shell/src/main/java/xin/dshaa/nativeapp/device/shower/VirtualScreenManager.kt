@@ -114,6 +114,7 @@ object VirtualScreenManager {
             VirtualScreenSession.spec,
             app.first,
         )
+        VirtualScreenOverlay.updateCurrentAppPackageName(app.first)
         Result.success("${app.second} (${app.first}) on display $displayId")
     }
 

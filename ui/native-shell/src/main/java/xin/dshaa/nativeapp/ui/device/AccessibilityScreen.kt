@@ -1,4 +1,5 @@
 package xin.dshaa.nativeapp.ui.device
+import xin.dshaa.ui.design.component.dshTopBarSurface
 
 import xin.dshaa.ui.design.component.liquidGlass
 import xin.dshaa.ui.design.theme.LiquidLevel
@@ -67,8 +68,7 @@ fun AccessibilityScreen(onBack: () -> Unit) {
             // statusBarsPadding：之前顶栏被内容顶进状态栏（用户 23:00：无障碍页内容过于靠上、遮挡状态栏）
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp).liquidGlass(shape = RoundedCornerShape(LiquidRadius.xl), level = LiquidLevel.Panel)
-                .statusBarsPadding()
+                .dshTopBarSurface()
                 .padding(horizontal = 8.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

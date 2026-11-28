@@ -342,7 +342,7 @@ fun ChatComposer(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(c.background)
+            .background(if (liquidUi) Color.Transparent else c.background)
             .navigationBarsPadding()
             .padding(start = 10.dp, end = 10.dp, bottom = 8.dp),
     ) {
@@ -1610,15 +1610,15 @@ private fun SendOrb(streaming: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val c = DshTheme2.colors
     val liquidUi = DshTheme2.liquidEnabled
     val active = streaming || enabled
-    val transition = rememberInfiniteTransition(label = "send-orb")
-    val angle by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Restart),
-        label = "send-orb-angle",
-    )
     Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
         if (streaming) {
+            val transition = rememberInfiniteTransition(label = "send-orb")
+            val angleState = transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Restart),
+                label = "send-orb-angle",
+            )
             Canvas(Modifier.fillMaxSize()) {
                 val stroke = 2.dp.toPx()
                 val d = size.minDimension - stroke
@@ -1635,7 +1635,7 @@ private fun SendOrb(streaming: Boolean, enabled: Boolean, onClick: () -> Unit) {
                 )
                 drawArc(
                     color = c.brand,
-                    startAngle = angle - 90f,
+                    startAngle = angleState.value - 90f,
                     sweepAngle = 96f,
                     useCenter = false,
                     topLeft = topLeft,

@@ -295,7 +295,13 @@ class NodeBridgeCore(
         ackWaiters.clear()
     }
 
-    suspend fun invoke(name: String, args: JsonObject, timeoutMs: Long, callId: String = nextCallId()): NodeCall {
+    suspend fun invoke(
+        name: String,
+        args: JsonObject,
+        timeoutMs: Long,
+        callId: String = nextCallId(),
+        context: JsonObject? = null,
+    ): NodeCall {
         val id = callId
         val deferred = CompletableDeferred<NodeCall>()
         pending[id] = deferred
@@ -305,6 +311,7 @@ class NodeBridgeCore(
             put("name", name)
             put("args", args)
             put("timeoutMs", timeoutMs)
+            if (context != null) put("context", context)
         }
         if (!transport.send(payload.toString())) {
             pending.remove(id)
