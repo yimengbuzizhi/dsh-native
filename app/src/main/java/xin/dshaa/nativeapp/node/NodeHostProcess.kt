@@ -70,15 +70,17 @@ class NodeHostProcess(
         val filesRoot = installer.dataDir.parentFile?.parentFile
         val toolchainBin = filesRoot?.let { File(it, "toolchain/bin") }?.takeIf { it.isDirectory }
         val toolchainBusybox = filesRoot?.let { File(it, "toolchain/busybox-bin") }?.takeIf { it.isDirectory }
-        val caBundle = filesRoot?.let { File(it, "toolchain/cacert.pem") }?.takeIf { it.isFile }
+        // PATH：系统目录在最前，`files/toolchain/*` 只垫底（docs/198 P2-b）。
+        // 那个目录是 app 私有、但 `fs:any` 插件可写 —— 放首位等于让插件能劫持 Node 宿主
+        // spawn 出来的每一个命令（`node`、`sh`、`curl`…）。
         val pathParts = buildList {
-            toolchainBin?.let { add(it.absolutePath) }
-            if (inheritedPath.isNotBlank()) {
-                inheritedPath.split(':').filter { it.isNotBlank() }.forEach { if (it !in this) add(it) }
-            }
             for (sys in listOf("/system/bin", "/system/xbin", "/product/bin")) {
                 if (sys !in this) add(sys)
             }
+            if (inheritedPath.isNotBlank()) {
+                inheritedPath.split(':').filter { it.isNotBlank() }.forEach { if (it !in this) add(it) }
+            }
+            toolchainBin?.let { if (it.absolutePath !in this) add(it.absolutePath) }
             toolchainBusybox?.let { if (it.absolutePath !in this) add(it.absolutePath) }
         }
         env["PATH"] = pathParts.joinToString(":")
@@ -89,10 +91,10 @@ class NodeHostProcess(
         env["OPENSSL_CONF"] = "/dev/null"
         env["NODE_NO_WARNINGS"] = "1"
         env["NODE_PATH"] = File(installer.dshDir, "node_modules").absolutePath
-        caBundle?.let {
-            env["SSL_CERT_FILE"] = it.absolutePath
-            env["NODE_EXTRA_CA_CERTS"] = it.absolutePath
-        }
+        // CA：**不**指向 `files/toolchain/cacert.pem`（插件可写 → 能给所有 Node 插件换信任根，
+        // docs/198 P2-b）。优先系统只读的 hashed CA 目录；没有就让 Node 用自带的 Mozilla 根证书。
+        // 不设 SSL_CERT_FILE / NODE_EXTRA_CA_CERTS，避免任何 app 私有可写路径参与 TLS 校验。
+        systemCaDir()?.let { env["SSL_CERT_DIR"] = it }
         // docs/187 §九 第 2 项：WS 鉴权 token 只经环境变量进宿主，不落盘、不进日志。
         env["DSH_NODE_TOKEN"] = token
         // 插件/清单在 files/node/data/，运行时在 runtime/<version>/：host.mjs 用这个找用户插件。
@@ -110,8 +112,19 @@ class NodeHostProcess(
         }
     }
 
-    private fun pump(proc: Process) {
-        runCatching {
+    /**
+     * 系统只读 CA 目录（OpenSSL 的 hashed dir 布局）。
+     *
+     * Android 10+ 的 CA 在 conscrypt APEX 里；更老的系统在 `/system/etc/security/cacerts`。
+     * 都找不到时返回 null：不设任何 CA 环境变量，让 Node 用它自带的 Mozilla 根证书——
+     * 绝不回退到插件可写的 app 私有路径（docs/198 P2-b）。
+     */
+    private fun systemCaDir(): String? = listOf(
+        "/apex/com.android.conscrypt/cacerts",
+        "/system/etc/security/cacerts",
+    ).firstOrNull { runCatching { File(it).isDirectory }.getOrDefault(false) }
+
+    private fun pump(proc: Process) {        runCatching {
             BufferedReader(InputStreamReader(proc.inputStream, Charsets.UTF_8)).use { reader ->
                 while (true) {
                     val line = reader.readLine() ?: break

@@ -5,6 +5,8 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PluginPackageTest {
@@ -302,6 +304,32 @@ class PluginPackageTest {
         file.delete()
         file.mkdirs()
         file
+    }
+
+    /**
+     * docs/198 P1-b：摘要预读也必须有累计上限。40 份 300KB 清单（解压后 12MB）不能全部读进堆，
+     * 更不能因为「没有总量上限」把导入前的堆打爆；返回第一份能识别的清单即可。
+     */
+    @Test
+    fun summarizeZipCapsManifestBytesAndCount() {
+        val pad = "x".repeat(300 * 1024)
+        val entries = (0 until 40)
+            .map { i -> "p$i/package.json" to """{"name":"p$i","pad":"$pad"}""" }
+            .toTypedArray()
+        val file = zipOf(*entries)
+        val summary = PluginPackage.summarizeZip(file)
+        assertNotNull(summary)
+        assertTrue(summary!!.manifestName.startsWith("p"), summary.manifestName)
+        assertTrue(file.delete())
+    }
+
+    /** 单份清单超过 1MB 时停止扫描（不是读进堆再判断），不抛异常。 */
+    @Test
+    fun summarizeZipRejectsOversizedManifestEntry() {
+        val huge = """{"pad":"${"x".repeat(2 * 1024 * 1024)}"}"""
+        val file = zipOf("huge/package.json" to huge)
+        assertNull(PluginPackage.summarizeZip(file))
+        assertTrue(file.delete())
     }
 
     private fun zipOf(vararg entries: Pair<String, String>): File {

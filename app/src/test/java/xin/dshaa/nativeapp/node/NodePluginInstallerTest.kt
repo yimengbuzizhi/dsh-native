@@ -246,32 +246,65 @@ class NodePluginInstallerTest {
     }
 
     @Test
-    fun getAndSetConfigPreservesAcrossUpgradeWithDifferentZipName() {
+    fun upgradeWithSameModulePreservesConfig() {
         val data = dataDir()
         val installer = NodePluginInstaller(data)
         installer.installZip(
             zip(
-                "package.json" to """{"name":"@acme/cfg-plugin","version":"1.0.0","main":"index.js"}""",
-                "index.js" to "export function apply(){}",
+                "cfg-plugin/package.json" to """{"name":"@acme/cfg-plugin","version":"1.0.0","main":"index.js"}""",
+                "cfg-plugin/index.js" to "export function apply(){}",
             ),
-            "cfg-v1.zip",
+            "cfg-v1.0.0.zip",
         ).getOrThrow()
 
         val saved = installer.setConfig("@acme/cfg-plugin", """{"apiKey":"secret","limit":5}""").getOrThrow()
         assertEquals("@acme/cfg-plugin", saved)
         assertTrue(installer.getConfig("@acme/cfg-plugin").contains("secret"))
 
+        // 同一个模块路径（包里有统一顶层目录，与 zip 文件名无关）再次安装 = 升级：配置保留。
         installer.installZip(
             zip(
-                "package.json" to """{"name":"@acme/cfg-plugin","version":"1.1.0","main":"index.js"}""",
-                "index.js" to "export function apply(){}",
+                "cfg-plugin/package.json" to """{"name":"@acme/cfg-plugin","version":"1.1.0","main":"index.js"}""",
+                "cfg-plugin/index.js" to "export function apply(){ return 2 }",
             ),
-            "cfg-v2.zip",
+            "cfg-v1.1.0.zip",
         ).getOrThrow()
 
         val afterUpgrade = installer.getConfig("@acme/cfg-plugin")
-        assertTrue("跨文件名升级同一插件应保留原 config：$afterUpgrade", afterUpgrade.contains("secret"))
+        assertTrue("同一模块升级应保留原 config：$afterUpgrade", afterUpgrade.contains("secret"))
         assertEquals(1, installer.entries().size)
-        assertFalse("旧版本孤儿目录应被清理", File(data, "plugins/cfg-v1").exists())
+        assertEquals("1.1.0", installer.entries().single().version)
+    }
+
+    /**
+     * docs/198 P1-a：别的目录里的包只凭「声明同一个 id」不能继承旧 config（常含 apiKey），
+     * 也不能把旧插件目录删掉。只有模块路径相同（真正的同插件升级）才继承。
+     */
+    @Test
+    fun sameIdDifferentModuleDoesNotInheritConfigOrDeleteOldDir() {
+        val data = dataDir()
+        val installer = NodePluginInstaller(data)
+        installer.installZip(
+            zip(
+                "victim/package.json" to """{"name":"@acme/cfg-plugin","version":"1.0.0","main":"index.js"}""",
+                "victim/index.js" to "export function apply(){}",
+            ),
+            "victim.zip",
+        ).getOrThrow()
+        installer.setConfig("@acme/cfg-plugin", """{"apiKey":"secret"}""").getOrThrow()
+
+        // 恶意包：目录名不同，但 package.json 声明成受害插件的 id/name。
+        val hijack = installer.installZip(
+            zip(
+                "evil/package.json" to """{"name":"@acme/cfg-plugin","version":"9.9.9","main":"index.js"}""",
+                "evil/index.js" to "export function apply(){}",
+            ),
+            "evil.zip",
+        ).getOrThrow()
+
+        assertEquals("./plugins/evil/index.js", hijack.module)
+        assertEquals("{}", installer.getConfig("@acme/cfg-plugin"))
+        assertTrue("旧插件目录不能被跨目录的同 id 包删掉", File(data, "plugins/victim/index.js").isFile)
+        assertEquals(1, installer.entries().size)
     }
 }

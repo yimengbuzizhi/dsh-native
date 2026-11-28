@@ -108,8 +108,8 @@ class NodePluginInstaller(
     /**
      * 解包 + 登记；返回写进清单的模块元数据。
      *
-     * [resetConfig] = true 时丢掉同 id 旧条目的 config（迁移/覆盖导入语义）；默认保留
-     * （升级安装不因为重装丢用户配置）。
+     * [resetConfig] = true 时丢掉同模块旧条目的 config（迁移/覆盖导入语义）；默认保留
+     * （升级安装不因为重装丢用户配置）。**只有同一模块路径**才继承/重置 config（docs/198 P1-a）。
      */
     fun installZip(bytes: ByteArray, fallbackName: String, resetConfig: Boolean = false): Result<Installed> = runCatching {
         if (bytes.isEmpty()) error("插件包是空的")
@@ -391,7 +391,7 @@ class NodePluginInstaller(
     private fun addModule(installed: Installed, resetConfig: Boolean) {
         val list = readManifest().toMutableList()
         var config: JsonElement = buildJsonObject { }
-        // 同 id 换目录/覆盖安装：移除旧条目（配置按 resetConfig 决定留不留）。
+        // 同 id 的旧条目（id 在宿主里唯一，先移除再写新条目）。
         val sameId = list.filter { element ->
             val obj = element as? JsonObject ?: return@filter false
             val module = (obj["module"] as? JsonPrimitive)?.content.orEmpty()
@@ -399,20 +399,17 @@ class NodePluginInstaller(
             declared == installed.id || module == installed.module ||
                 moduleDir(module)?.let { metaOf(it)?.id } == installed.id
         }
-        val newDir = moduleDir(installed.module)?.canonicalFile
         sameId.forEach { old ->
             val obj = old as JsonObject
             val module = (obj["module"] as? JsonPrimitive)?.content.orEmpty()
-            if (!resetConfig) {
+            // docs/198 P1-a：只有**同一模块路径**才算同一个插件在升级——这时才继承旧 config
+            // （常含 apiKey）。仅凭「声明了同一个 id」不继承，恶意包不能用受害者 id 拿走密钥。
+            val sameModule = module == installed.module
+            if (sameModule && !resetConfig) {
                 (obj["config"] as? JsonObject)?.let { config = it }
             }
-            // 同 id 换了目录名重装时清理遗留旧目录，避免磁盘残留孤儿副本
-            val oldDir = moduleDir(module)?.canonicalFile
-            if (oldDir != null && oldDir != newDir && oldDir.exists() &&
-                oldDir.path.startsWith(pluginsDir.canonicalPath + File.separator)
-            ) {
-                runCatching { oldDir.deleteRecursively() }
-            }
+            // 也**不**删旧目录：跨目录的同 id 包可以声明任意 id，删目录等于让它可以清掉受害插件的文件。
+            // 旧目录的清理只在安装路径确定时由 `target.deleteRecursively()` 做（同目录覆盖安装）。
             list.remove(old)
         }
         list += buildJsonObject {

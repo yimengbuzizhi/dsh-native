@@ -1,7 +1,7 @@
 ---
 name: dsh-plugin-authoring
-description: 为鲸歌 Android 原生版编写、适配、试运行、安装、启停和排查 QuickJS JS 插件；覆盖工具、工具/请求/存储中间件与事件钩子、UI 插槽、静态启动加载页、页面、Surface/WebView 整壳、回合、只读存储、提示词、模型供应商、能力提供方及事件投影。真 DSH/cordis/Node 插件见 dsh-node-plugin-authoring，不要用本技能改写成原生。
-whenToUse: 用户要求「写鲸歌原生插件」「AI 做插件并装测」「让 AI 授予/撤销插件权限、改配置、选角色」「修改鲸歌界面/壳」「适配社区插件到原生格式」「插件开发、安装或加载报错」时加载；真 DSH/npm/cordis 插件先看 dsh-node-plugin-authoring。
+description: 为鲸歌 Android 原生版编写、适配、试运行、安装、启停和排查 QuickJS JS 插件；覆盖工具、工具/请求/存储中间件与事件钩子、UI 插槽、静态启动加载页、页面、Surface/WebView 整壳、回合、只读存储、提示词、模型供应商、能力提供方及事件投影，以及 0.3.9 的多文件包（dsh.package.json：多脚本 + assets + client、包内相对 require/import、ctx.assets/ctx.data、fs 二进制与 node:path）和单文件 .js/.yaml/.md/.json 导入。真 DSH/cordis/Node 插件见 dsh-node-plugin-authoring，不要用本技能改写成原生。
+whenToUse: 用户要求「写鲸歌原生插件」「AI 做插件并装测」「让 AI 授予/撤销插件权限、改配置、选角色」「修改鲸歌界面/壳」「适配社区插件到原生格式」「写多文件插件 / dsh.package.json」「导入单个 .js/.yaml 插件」「插件开发、安装或加载报错」时加载；真 DSH/npm/cordis 插件先看 dsh-node-plugin-authoring。
 ---
 
 # 鲸歌原生插件开发与装测
@@ -9,6 +9,8 @@ whenToUse: 用户要求「写鲸歌原生插件」「AI 做插件并装测」「
 本技能针对鲸歌 Android 原生运行时（冷启动内的 QuickJS 宿主）。以当前工具 schema 和宿主返回值为准；桌面 DSH 的 npm 安装、Cordis 全量服务、Electron、DEX/APK 动态加载不适用于这条 JS 插件链。
 
 **先分清宿主**：真 DSH / cordis 插件（`@deepseek-ai/dsh-tools`、npm 依赖、`export function apply(ctx)`）优先装进 **Node 宿主**，用 `nodehost_*` 工具，见 `dsh-node-plugin-authoring`；本技能只处理鲸歌原生格式，或用户明确要求把某个插件改写成原生格式的分叉。把已有 DSH/社区插件迁到原生角色，见 `dsh-plugin-adapter`；与本技能冲突的旧能力说明（例如「只支持工具半侧」「root slot 一律拒绝」）不要照搬。
+
+**导入入口（0.3.9）**：单个 `.js`/`.mjs`/`.cjs`、`.yaml`/`.yml`、`.md`、`.json` 直接按原生装（不经归属确认框）；zip / 多文件包会先弹「原生 / Node」归属确认，用户选定才装（zip 里连清单都识别不出时不出框，按原生导入并报错）。单文件 `.js` 生成的清单 **permissions 为空**、id 为 `local.script.<名字>`、version `0.1.0`，所以需要 fs/net/shell/ui 的插件必须用 `dsh.package.json` 或 `package.json` + zip。
 
 ## 先做出能检查的包，再安装验证
 
@@ -25,7 +27,7 @@ whenToUse: 用户要求「写鲸歌原生插件」「AI 做插件并装测」「
 |---|---|---|
 | `plugin_dev_list` | `{}` 或 `{id:'whale-hello'}` | 列表或按 id 查询版本、路径、工具、壳、loadings、开关、权限及错误；loadings 含 id/label/protocol/selectionValue，不返回树、配置/服务值或当前选中状态。 |
 | `plugin_dev_scaffold` | `{path:'my-plugin',id:'whale-hello',template:'tool'}` | 父目录须存在，不覆盖现有目录；id 为 1–80 字符且不可为 builtin.*。生成清单/入口/说明；template 还可为 surface-shell、webview-shell、loading。 |
-| `plugin_dev_test` | `{path:'my-plugin'}` | 目录或 zip，隔离运行 apply 收集工具/壳/loadings 元数据；不执行工具、不落 registry、不接用户文件/网络/设备能力；不验证冷启动画面。 |
+| `plugin_dev_test` | `{path:'my-plugin'}` | 目录或 zip，隔离运行 apply 收集工具/壳/loadings 元数据；纯声明式包（无 script/main）只做 IR 校验并列出贡献物、不跑 JS；不执行工具、不落 registry、不接用户文件/网络/设备能力；不验证冷启动画面。 |
 | `plugin_dev_install` | `{path:'my-plugin'}` | 目录或 zip，边界检查及试运行通过后暂存/备份/替换/持久化，失败回滚；旧配置只保留新 schema 支持的键；**新装默认停用**（升级保留原开关）。 |
 | `plugin_dev_enable` | `{id:'whale-hello',enabled:true}` | 启停，不自动选择壳或授危险权限；停用会清掉指向它的角色选择并静默回退内置。 |
 | `plugin_dev_delete` | `{id:'whale-hello'}` | 删除插件目录并清角色选择；正在使用/运行中的插件会被拒绝，先停用再删。 |
@@ -81,11 +83,116 @@ my-plugin/
 }
 ```
 
-zip 根直接放清单，或保留一个公共顶层目录。`main` 显式填写；package.json 不填时默认是 `lib/index.js`。id 用稳定的字母数字、`@ . _ / -`，不要拿版本号当 id。zip 最多 2000 个文件、单文件 4 MiB、解压总计 32 MiB；不含绝对路径、`..`、重复路径。升级保留旧版本包以便回退。
+zip 根直接放清单，或保留一个公共顶层目录。id 用稳定的字母数字、`@ . _ / -`（`^[A-Za-z0-9@][A-Za-z0-9._@/-]{0,119}$`），不要拿版本号当 id。
 
-入口接受 ESM/CJS，导出 `apply(ctx, config)`；ESM 声明各占独立行，转换器不是完整打包器。Host QuickJS 无 DOM/完整 Node、无 npm 依赖安装；相对 import/require 不解析，依赖要内联到入口。已实现 `defineTool`、schemastery 子集、部分 fs/path/os/events/buffer/http/child_process shim，不表示支持整个对应 npm/Node API；未知成员可能是宽松占位，没抛错不能当验收成功。`cordis.patch.yml` 组合包只解析展示部分元数据，不会安装 npm 子插件或执行完整补丁。
+**原生 zip 上限（`PluginPackage` + `PluginStore.limitsText()`）**：zip 文件 ≤64MB、单文件条目 ≤32MB、解压总计 ≤64MB、条目 ≤5000、压缩比 ≤200×（小包按 128KB 兜底算）；不含绝对路径、盘符、`..`、重复路径。单个文本文件（`.md`/`.json`/`.js` 等）导入另限 4MB（`PackageImporter.importFile` 的 `MAX_TEXT_BYTES`）。导入确认框里显示的是「zip ≤64MB · 单文件 ≤32MB · 解压后 ≤64MB」，条目数/压缩比不写进提示但会被拒。升级保留旧版本包以便回退。
+
+入口解析顺序（0.3.9，`PluginPackage.parse`/`resolveEntryFromJson`）：`main` → `exports["."]`（字符串或 `import`/`default`/`require`/`node`）→ `module`；都没有时按 `index.js`/`index.mjs`/`index.cjs`/`lib/index.js`/`dist/index.js`/`src/index.js` 探测。`main` 省略不再直接判错（`manifest.json` 的默认入口仍是 `index.js`），但显式写 main 最稳。
+
+入口接受 ESM/CJS，导出 `apply(ctx, config)`；ESM 声明各占独立行，转换器不是完整打包器。Host QuickJS 无 DOM/完整 Node、无 npm 依赖安装。**相对模块 0.3.9 起已支持**：`require('./x.js')`、`require('../lib/y')`、`import` 相对路径、`require('./data.json')`、目录 `index.js`、包内 `node_modules/<包>`（`module.resolve` + `__dshModuleCache`，越不出插件目录）；找不到的相对模块在试运行里报「找不到相对模块：…」，不再静默返回空对象。已实现 `defineTool`、schemastery 子集、部分 fs/path/os/events/buffer/http/child_process shim，不表示支持整个对应 npm/Node API；未知成员可能是宽松占位，没抛错不能当验收成功。`cordis.patch.yml` 组合包只解析展示部分元数据，不会安装 npm 子插件或执行完整补丁。
 
 配置可在清单写 `config: {schema: <JSON Schema>, default: {...}}`，或导出支持的 schemastery `Config`；宿主合并默认值和用户值再传 `apply`。不要把 token/密钥硬编码进源码、zip、日志或服务快照。
+
+## 多文件包（dsh.package.json，0.3.9）
+
+单文件 `index.js` 之外，0.3.9 起可以直接交一个**多文件包**：根目录放 `dsh.package.json`（IR 清单），脚本、素材、client 半侧分文件放。安装器会校验整包，再把多个 `script` 串成一个自动生成的引导入口，走原有安装/试运行链路。
+
+```text
+my-multi-plugin/
+  dsh.package.json
+  scripts/tools.js        # 注册工具 + 页面路由
+  scripts/hooks.js        # 订阅/中间件
+  client.js               # 可选：__ModuleLoader__ 客户端 bundle
+  assets/prompts.json     # 包内只读资源（ctx.assets）
+  assets/guide.md         # 也可以作为 skill 贡献物的素材
+```
+
+```json
+{
+  "id": "local.whale.multi",
+  "name": "鲸歌多文件示例",
+  "version": "0.1.0",
+  "description": "两个脚本 + 素材 + 客户端半侧",
+  "format": "whale-lite",
+  "permissions": ["ui"],
+  "contributions": [
+    { "kind": "script", "id": "tools", "entry": "scripts/tools.js" },
+    { "kind": "script", "id": "hooks", "entry": "scripts/hooks.js" },
+    { "kind": "client", "id": "panel", "entry": "client.js" },
+    { "kind": "skill", "id": "guide", "assets": ["assets/guide.md"] },
+    { "kind": "asset", "id": "prompts", "assets": ["assets/prompts.json"] }
+  ]
+}
+```
+
+`scripts/tools.js`（多文件包里的相对 require + ctx.assets/ctx.data 都在工具执行时可用）：
+
+```js
+const prompts = require('../assets/prompts.json')
+
+export function apply(ctx) {
+  ctx.tools.register({
+    name: 'whale_echo',
+    description: '回声并记录次数',
+    parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+    async execute(args) {
+      const store = ctx.data.readJson('stats.json', { count: 0 })
+      store.count += 1
+      ctx.data.writeJson('stats.json', store)
+      return String(prompts.prefix || '') + String(args.text) + '（第 ' + store.count + ' 次）'
+    }
+  })
+  ctx.ui.registerRoute({ id: 'multi', title: '多文件示例', page: true })
+}
+```
+
+（示例只声明 `ui`：`require` 包内 JSON、`ctx.assets`、`ctx.data` 都不需要文件权限；要读写用户工作区文件时才加 `fs:workspace`。）
+
+`scripts/hooks.js`：
+
+```js
+export function apply(ctx) {
+  ctx.on('turn/end', (event) => console.log('turn/end', event.type))
+}
+```
+
+`client.js` 仍是 `__ModuleLoader__` bundle（写法见「页面与两种整壳」，id 换成 `local.whale.multi`）。
+
+**多脚本 bootstrap 语义**（`PackageImporter.importFiles` → `__dsh_multi_entry.js`）：
+
+- 只有 `script` 贡献物和顶层 `main` 参与；按 `contributions` 里的声明顺序 `require('./<entry>')`，若还写了 `main` 就追加在最后，重复路径只算一次。
+- 每个模块取调用目标：模块本身是函数 → 直接调；否则 `apply` → `default.apply` → `default`（函数）；调用 `apply(ctx, config)`。返回 Promise 会被收集并 `Promise.all` 等待（async apply 支持）。任一脚本同步抛错 → 整次 apply 失败（试运行/安装就报错）。
+- 只有一个脚本（或只有一个 `main`）时不生成包装，直接把该文件当入口——这种单脚本包仍可 `export const Config` 提供配置 schema。
+- 多脚本包装**只导出 `apply`**：`dsh.package.json` 也没有 `config` 顶层键，所以多脚本包的配置 schema 为空、`apply(ctx, config)` 收到 `{}`；需要配置就自己读 `ctx.data` 或拆成单脚本包。
+- 每个脚本的 `apply` 在试运行、每次工具调用、常驻 runtime 启动时都会重跑；`apply` 只登记能力，别在 apply 里发网/写文件/延时。
+- 纯声明式包（没有 `script` 也没有 `main`）**不跑 JS**：只落目录 + 登记，贡献物在插件详情「贡献物」里列出。本版真正进运行时的只有 `script` 与 `client`；`skill`/`prompt`/`theme`/`page`/`macro`/`mcp`/`tool.http`/`preset`/`asset` 只登记展示，别承诺已生效。
+- 只声明 `client` 的包也能装（`clientUi=true`，详情里「打开插件窗口」走通用容器）；但 `page` 类整页仍要 Host 脚本 `registerRoute`。
+
+**清单键（严格模式，未知字段直接报错）**：
+
+| 层 | 允许的键 |
+|---|---|
+| 顶层 | `id`、`name`、`version`、`description`、`format`、`permissions`、`contributions`、`main`、`bundlePatch`、`enginesDsh`（`format` **必填**：`whale-lite` / `dsh` / `legacy-js` / `operit`） |
+| 贡献物 | `kind`、`id`、`config`（JSON 对象）、`assets`（包内相对路径数组）、`entry`（只有 `script`/`client` 用） |
+
+**各 kind 的最小声明**（`PackageIrRules.validateContribution`）：`skill` 要 `config.text` 或 `assets`；`prompt` 要 `text` 或非空 `sections`；`theme` 要非空 `tokens`；`page` 要 `surface` 树；`macro` 要非空 `steps`；`mcp` 要 `server` 且 `command`/`url` 二选一；`tool.http` 要 `request.url`（或顶层 `url`）；`script` 要 `entry`；`client` 要 `entry` 或 `config.manifest`；`asset` 要 `assets`；`preset` 不强制（上游 cordis 形状）。`entry`/`assets`/`main` 指的文件**必须真的在包里**，否则安装前报「… 在包里找不到」。
+
+**上限与路径**：最多 64 个贡献物、单贡献物 `config` ≤256KB、`page` 的 surface 树 ≤500 节点、包 id 按 `^[A-Za-z0-9@][A-Za-z0-9._@/-]{0,119}$`、`permissions` ≤64 条。`assets`/`entry`/`main` 全部过 `PluginPackage.normalizePath`：绝对路径、盘符、`..`、`.`/空段直接判「路径不安全」。
+
+**常见校验错误文案**（照抄给作者改包，不要猜）：
+
+- `dsh.package.json 里有不认识的字段：xxx（本版支持 bundlePatch、contributions、description、enginesDsh、format、id、main、name、permissions、version）`
+- `dsh.package.json 的 contributions[0] 有不认识的字段：…`
+- `dsh.package.json 的 contributions[0] 的 kind=xxx 认不出（本版支持 skill、prompt、theme、page、macro、mcp、tool.http、preset、script、client、asset）`
+- `包里有多个顶层 dsh.package.json，分不清装哪个`
+- `script 贡献物 tools 的入口在包里找不到：scripts/tools.js`
+- `asset 贡献物 prompts 的素材在包里找不到：assets/prompts.json`
+- `贡献物重复（script:tools）` / `贡献物超过 64 个` / `… 的 config 太大（300000B > 262144B）`
+- `dsh.package.json 缺少或认不出 format（支持 whale-lite、dsh、legacy-js、operit）`
+
+**client 入口安全**：`PluginClientEntry` 先读 `dsh.package.json` 的 `client` 贡献物，`entry` 走 `normalizePath` + `canonicalFile` 校验，`../` 越界或符号链接逃出插件目录都判非法（声明了就越界报错，不会悄悄换别的入口）；只有没有可用的 client 贡献物（或清单解不出来）才回退旧 `package.json`/`manifest.json` 的 `exports["./client"]` / `dsh.client.entry` / `lib/client.js`。
+
+**重载语义**：多脚本包安装时会把生成的 `__dsh_multi_entry.js` 写进插件目录；`plugin_dev_reload` 只重跑这个入口（脚本文件内容改了会生效），**改 `dsh.package.json` 的脚本清单要重新导入/安装**。
 
 ## 最小工具：先让这一条真实跑通
 
@@ -152,6 +259,20 @@ ctx.llm.register({
 ```
 
 `emit('文本片段')` 是增量文本；也接受 `{type:'thinking',text}`、`{type:'tool_use',id,name,input}`。最终返回 `{text, toolCalls?, stopReason?, usage?}`；工具调用结果交宿主正常工具循环处理。不要把 emit 前缀在最终 text 中重复拼接，也不要编造 usage；缺 usage 就如实缺失。此供应商回调与 agent.run 的 api.llm.stream 是两条不同接口。
+
+### 文件、模块与编码（0.3.9）
+
+| 接口 | 说明 | 权限 |
+|---|---|---|
+| `ctx.pluginDir` / `ctx.dataDir` | 插件安装目录 / 私有数据目录的绝对路径（真机上就是 files 下两个目录） | 只读展示，不需要权限 |
+| `ctx.assets` | `resolve/exists/readText/readJson/readBytes/readSlice/list/stat`；走 `plugin://`，**只读**，路径由 `PluginPathGuard` 限制在插件目录内 | **不需要** `fs:any`/`fs:workspace` |
+| `ctx.data` | `resolve/exists/readText/writeText/readJson(rel,fallback)/writeJson/list/mkdir/remove`；走 `data://`，**读写**，跨升级保留（数据在 `files/plugin-data/<插件目录名>`，替换插件目录不清空） | **不需要**文件权限 |
+| `ctx.fs` 二进制 | `readFileSync(path,'buffer'/'binary')` 返回 `Buffer`（DshBuffer）；`writeFileSync(path, Uint8Array/Buffer)`；`readSliceSync(path,offset,length)` 返回 `{text,size,totalSize,eof}`（**不是** Buffer）；`readdirSync(p,{withFileTypes:true})` 返回 `{name,isFile(),isDirectory(),isSymbolicLink()}` | 工作区/任意路径仍按 `fs:workspace`/`fs:any`；`plugin://`/`data://` 不需要 |
+| 读写上限 | 读文本/二进制单次 ≤16MB、写 ≤16MB、拷贝 ≤32MB | — |
+| `node:path` / `path` | `join/resolve/dirname/basename/extname/relative/parse/normalize/isAbsolute/sep/delimiter`，`api.posix` 指向自身 | 不需要权限 |
+| 编码垫片 | `TextEncoder`/`TextDecoder`（仅 UTF-8）、`btoa`/`atob`（按 UTF-8↔base64） | 不需要权限 |
+
+`plugin://` 也可以直接当路径用：`ctx.fs.readFileSync('plugin://assets/prompts.json','utf8')`；绝对路径落在插件目录/数据目录内同样放行（只读/读写分别同上）。包外的工作区或任意路径才进入权限表。
 
 ## 静态启动加载页：loading/v1
 
@@ -362,9 +483,9 @@ ctx.on('session/event', (e) => {
 
 ## 权限与不支持项
 
-- `fs:workspace`：按当前工作区解析，canonical 校验阻止越界；不是插件目录，也不是只读。`fs:any`：仍受 Android App 可访问范围限制。
+- `fs:workspace`：按当前工作区解析，canonical 校验阻止越界；不是插件目录，也不是只读。`fs:any`：仍受 Android App 可访问范围限制。**插件自带资源 `plugin://`（只读）与私有数据目录 `data://`（读写）不吃这两个权限**，`ctx.assets`/`ctx.data` 可直接用。
 - `net:<域名>` 或 `net:any`：需宿主授权，仅 HTTPS，本机/链路本地等地址受限制，重定向逐跳检查。不要为通过测试擅自扩大到 net:any。
-- `shell`：需宿主危险权限确认；执行时**自动选择身份：root 优先，其次 Shizuku，最后 App**（0.3.5 起 `root.exec` 已并入 `shell.exec`），返回的 `identity` 说明实际身份，不假装 root；已授权后不会保证每条 shell 都再问一次。`device`/`memory` 同样沿用宿主权限与设备条件，声明不等于授权。
+- `shell`：需宿主危险权限确认；`ctx.shell.exec` 当前就是 **App 身份跑 `/system/bin/sh -c`**（无自动 root/Shizuku 提权，返回 `{status,stdout,stderr,timedOut}`，没有 `identity` 字段）。模型侧的 `bash` 工具另有 `identity=app|shell|root` 参数走 root→Shizuku→App 链，但那是工具能力，不是插件 `ctx.shell` 的。`device`/`memory` 同样沿用宿主权限与设备条件，声明不等于授权。
 - **内置插件组可开关**：插件页「内置」页签每个内置插件都有开关，关掉即从工具表/页面入口注销。与插件相关：`builtin.plugin.dev`（「插件开发」，全部 `plugin_dev_*`，含 AI 控制四工具）、`builtin.node.host`（「Node 宿主」，9 个 `nodehost_*`）、`builtin.capability`（「能力与通知」，`capability`/`notify`）、`builtin.web`（「联网」，`web_search`/`web_fetch`/`curl`）、`builtin.fs`（`read`/`read_image`/`write`/`edit`/`glob`/`grep`）、`builtin.shell`（`bash`/终端）。模型侧 HTTP 用内置 `curl`（只允许 http/https，不回显请求头与 `set-cookie`；`http_request` 只是旧会话别名，模型看不到）；插件自己的网络仍走 `ctx.http` + `net:` 授权。若 `plugin_dev_*` 没出现在工具表，先确认「插件开发」组没被关。
 - `ui`/`agent`/`storage`/`prompt`/`capability` 按当前宿主导入默认规则登记与授予，角色选择/调用还有各自条件。0.3.5 新增的 `ui:slot`（插槽）、`tools:intercept`（改描述/参数/结果）、`llm:request`（改请求/流/提示词）、`storage:hooks`（写钩子/事件 veto）都是危险权限、默认需逐项确认、不自动授权；`restrict`/`guard` 只收紧，不需要 `tools:intercept`。AI 可经 `plugin_dev_grant/revoke` 改已声明授权（总开关 + 工具审批 + 审计，见 M88-E 节），但仍不能改系统权限或授权文件、不能绕过工具审批。
 - 通知桥依宿主场景与 Android 通知条件工作；`notify` 权限已实现（默认仍需确认），Android 13+ 还要系统 `POST_NOTIFICATIONS`。不能用 `Notification.permission='granted'` 占位值证明系统通知权限已取得。
@@ -377,8 +498,9 @@ ctx.on('session/event', (e) => {
 - 权限：未授权时确实拒绝；已授权能力按预期；错误和超时可读，日志无凭据。试运行也会跑 apply，确认 apply 无安装/发网/删文件副作用。
 - AI 代授（用到时）：`plugin_dev_grant/revoke` 只授清单内权限、审计有记录、插件页横幅能撤销；没有额外总开关（docs/190-F 已删除）；系统权限仍由系统弹窗授予。
 - 生命周期：停用/重载后工具与角色撤下，cleanup 可用，重启/历史重放不重复产生外部副作用；升级保留可回退包。
+- 多文件包：`dsh.package.json` 能被 `plugin_dev_test` 解析（贡献物/入口/素材都对得上）、多脚本 bootstrap 后工具数与单脚本一致、`ctx.assets`/`ctx.data` 真实读写一次；改了 `dsh.package.json` 的脚本清单要重新导入，`plugin_dev_reload` 只重跑已生成的引导入口。
 - UI：窄屏/宽屏、横竖屏、深浅色、中文长文本、键盘遮挡、可滚动/可点击、状态和错误可见；主界面保留停止与恢复原生壳入口，未授权审批和提问按真实用户操作处理。
 - 加载页：真实 registerLoading → list/test 元数据 → 安装选择 → 进程冷启动所选快照首 draw → 必需角色就绪 → 主界面；另验停用/坏声明/坏快照与失败恢复，记录每段耗时，不以静态登记通过宣称冷启动已验。
 - 分别报告「源码自检」「试运行」「安装启用」「实际功能/页面验证」完成程度；没执行的步骤不能写通过。
 
-源码核对入口（相对原生仓库根）：`core/plugins/.../PluginPackage.kt`、`PluginModule.kt`、`PluginSandbox.kt`、`PluginPermissions.kt`、`PluginServices.kt` 中 PluginCapabilities、`SurfaceSpec.kt`、`LoadingSpec.kt`、`PluginClientEntry.kt`；加载快照 `app/.../data/LoadingSnapshotStore.kt`，启动闸门与恢复 `app/.../ui/boot/BootHost.kt`、`BootLoadingScreen.kt`、`BootRecoveryPanel.kt`，常驻调度 `app/.../data/PluginResidentRuntime.kt`，插件开发/AI 控制工具 `app/.../data/PluginDevTools.kt`、审计 `PluginAuditLog.kt`、内置组 `BuiltinPlugins.kt`，工具输入闸门 `core:engine/ToolInputGuard.kt`，页面桥 `app/src/main/assets/client-host/host.js`，整壳桥 `app/.../ui/surface/WebViewShellScreen.kt`。注释/旧技能与实际 dispatch 不一致时读实现确认，不能凭宽松 shim 推断能力。
+源码核对入口（相对原生仓库根）：`core/plugins/PackageIr.kt`（`PackageIr`/`PackageIrRules`/`PackageImporter`、`dsh.package.json` 的键、上限与错误文案）、`PackageIrTest.kt`、`PluginPackage.kt`（zip/清单/入口解析）、`PluginModule.kt`、`PluginSandbox.kt`（`fs`/`module.resolve`/权限门）、`PluginPermissions.kt`、`PluginServices.kt` 中 PluginCapabilities、`SurfaceSpec.kt`、`LoadingSpec.kt`、`PluginClientEntry.kt`；导入/安装链路 `app/.../data/PluginStore.kt`、`app/.../chat/AppViewModel.kt`（`beginPluginImport`/`confirmPluginImport`）、`ui/plugins/PluginsScreen.kt`（归属确认框）；加载快照 `app/.../data/LoadingSnapshotStore.kt`，启动闸门与恢复 `app/.../ui/boot/BootHost.kt`、`BootLoadingScreen.kt`、`BootRecoveryPanel.kt`，常驻调度 `app/.../data/PluginResidentRuntime.kt`，插件开发/AI 控制工具 `app/.../data/PluginDevTools.kt`、审计 `PluginAuditLog.kt`、内置组 `BuiltinPlugins.kt`，工具输入闸门 `core:engine/ToolInputGuard.kt`，页面桥 `app/src/main/assets/client-host/host.js`，整壳桥 `app/.../ui/surface/WebViewShellScreen.kt`。注释/旧技能与实际 dispatch 不一致时读实现确认，不能凭宽松 shim 推断能力。

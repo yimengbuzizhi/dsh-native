@@ -32,6 +32,16 @@ object PluginPackage {
     const val MAX_ARCHIVE_BYTES = 64L * 1024 * 1024
 
     /**
+     * [summarizeZip] 的上限（docs/198 P1-b）：流式预读虽然不把整包解进堆，但清单本身也要计数——
+     * 构造一个「几万个浅层 package.json」的 zip 可以在导入确认框出现前把堆打爆。
+     * 单份 1MB / 累计 8MB / 最多 32 份 / 最多扫 5 万条目（与原生导入的条目上限同一量级）。
+     */
+    const val MAX_SUMMARY_MANIFESTS = 32
+    const val MAX_SUMMARY_BYTES = 8L * 1024 * 1024
+    const val MAX_SUMMARY_SCAN = 50_000
+    private const val MAX_SUMMARY_ENTRY_BYTES = 1024L * 1024
+
+    /**
      * 防 zip bomb 的第二道闸：解压总量不能超过「压缩包大小（至少按 128KB 算）× 200」。
      * 绝对值上限（64MB）先挡大包；比例检查挡「几 KB 解出几十 MB」的构造包。
      */
@@ -115,14 +125,23 @@ object PluginPackage {
     /**
      * 流式预读 zip 清单摘要：只读浅层 package.json / manifest.json / dsh.package.json（跳过 node_modules），
      * 不把整包解压进堆内存，也不受原生 64MB/5000 条目上限拦截——让大体积 Node 插件能正常进入归属选择框。
+     *
+     * 但清单本身有硬上限（docs/198 P1-b）：单份 ≤1MB、累计 ≤[MAX_SUMMARY_BYTES]、最多
+     * [MAX_SUMMARY_MANIFESTS] 份、最多扫 [MAX_SUMMARY_SCAN] 个条目，且检查压缩比。
+     * 超限就**停止扫描**并用已读到的清单给摘要（不是异常、也不是继续往堆里堆）。
+     * 只捕 [Exception]：OOME 是上限没守住才会出现的信号，不能在这里被 `runCatching` 吞掉。
      */
     fun summarizeZip(file: File): PackageSummary? {
         if (!file.isFile) return null
         val manifests = ArrayList<PluginFile>(4)
-        runCatching {
+        var totalBytes = 0L
+        try {
             ZipInputStream(file.inputStream().buffered()).use { zip ->
                 var scanned = 0
-                while (scanned < 50_000) {
+                while (scanned < MAX_SUMMARY_SCAN &&
+                    manifests.size < MAX_SUMMARY_MANIFESTS &&
+                    totalBytes < MAX_SUMMARY_BYTES
+                ) {
                     val entry = zip.nextEntry ?: break
                     scanned++
                     if (entry.isDirectory) continue
@@ -132,10 +151,16 @@ object PluginPackage {
                     if (base !in SUMMARY_MANIFEST_NAMES) continue
                     // 跳过依赖树里的 package.json，只看包本身顶层或一层根目录下的清单
                     if (path.contains("node_modules/") || path.count { it == '/' } > 1) continue
-                    val bytes = readLimited(zip, 1024L * 1024) ?: continue
+                    // 单份清单超限：不再继续读（也就不必为剩余内容解压），直接用已读到的给摘要。
+                    val bytes = readLimited(zip, MAX_SUMMARY_ENTRY_BYTES) ?: break
+                    if (totalBytes + bytes.size > MAX_SUMMARY_BYTES) break
+                    if (looksLikeBomb(totalBytes + bytes.size, file.length())) break
+                    totalBytes += bytes.size
                     manifests += PluginFile(path, bytes)
                 }
             }
+        } catch (e: Exception) {
+            // 坏包/截断：用已经读到的清单给摘要（与旧行为一致），别让导入流程直接崩。
         }
         return summarize(manifests)
     }

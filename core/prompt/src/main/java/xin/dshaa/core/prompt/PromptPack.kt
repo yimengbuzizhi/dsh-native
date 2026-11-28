@@ -222,6 +222,20 @@ class PromptPack(
                     put("description", kotlinx.serialization.json.JsonPrimitive(BASH_STDIN_DESCRIPTION))
                 },
             )
+            // 2026-11-28（docs/198 §二）：AI 直接跑 pm/settings/am/dumpsys 的通道，不用再手工套 rish。
+            put(
+                "identity",
+                kotlinx.serialization.json.buildJsonObject {
+                    put("type", kotlinx.serialization.json.JsonPrimitive("string"))
+                    put(
+                        "enum",
+                        kotlinx.serialization.json.JsonArray(
+                            listOf("app", "shell", "root").map { kotlinx.serialization.json.JsonPrimitive(it) },
+                        ),
+                    )
+                    put("description", kotlinx.serialization.json.JsonPrimitive(BASH_IDENTITY_DESCRIPTION))
+                },
+            )
         }
         return kotlinx.serialization.json.buildJsonObject {
             schema.forEach { (key, value) ->
@@ -275,6 +289,9 @@ class PromptPack(
                 "a hard error, not a policy denial you can retry another way). " +
                 "Managed `\$DSH_WORKSPACE` / `\$DSH_CWD` / `\$DSH_TIMEOUT_MS` / `\$DSH_SESSION` expose current harness environment facts; " +
                 "`env` adds extra variables and `stdin` feeds standard input. When `<workspace>/.dsh/bin` exists it is prepended to `PATH`. " +
+                "Set `identity` to run the command as the Android shell uid 2000 (`shell`, via Shizuku — needed for `pm`, `settings`, `am`, `dumpsys`, `input`, `cmd`) " +
+                "or as root (`root`, `su`, rooted devices only); `identity=app` is the default. Elevated identities run the whole command once in the system shell " +
+                "and report the actual identity, and fail with instructions when Shizuku is not authorized or the device has no root. " +
                 "Foreground commands are killed on timeout (with partial tail output returned when available). " +
                 "Long output is truncated to its tail; the full output is saved inside `<workspace>/.dsh/bash-logs/` whose path is reported so `read` can inspect it. " +
                 "Provide `description` before `command` in the arguments. Before any delete or move, verify that the resolved absolute target path is the intended one; " +
@@ -303,6 +320,13 @@ class PromptPack(
         private const val BASH_STDIN_DESCRIPTION =
             "Text fed to the command's standard input; the pipe is closed afterwards. Without it stdin is empty. " +
                 "Not supported with `run_in_background`."
+
+        private const val BASH_IDENTITY_DESCRIPTION =
+            "Execution identity (Android). \"app\" (default): this app's uid with the bundled bash and workspace access. " +
+                "\"shell\": Android shell uid 2000 via Shizuku (or a root launcher) — use it for pm/settings/am/dumpsys/input/cmd; " +
+                "grant Shizuku once under Settings → Permissions & Capabilities. \"root\": `su` on a rooted device. " +
+                "shell/root run the whole command once in the system shell (no persistent cd/variables), report the actual identity, " +
+                "and move to /data/local/tmp when the workspace is app-private. stdin is supported; run_in_background is not."
 
         private val json = Json { ignoreUnknownKeys = true }
 

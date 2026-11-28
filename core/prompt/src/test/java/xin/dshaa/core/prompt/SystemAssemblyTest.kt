@@ -351,6 +351,13 @@ class SystemAssemblyTest {
         val props = bash.inputSchema["properties"]?.jsonObject ?: error("bash 没有 properties")
         assertEquals("object", props["env"]?.jsonObject?.get("type")?.jsonPrimitive?.content)
         assertEquals("string", props["stdin"]?.jsonObject?.get("type")?.jsonPrimitive?.content)
+        // docs/198 §二：AI 直接用 pm/settings 的通道必须进 schema，且取值只有 app/shell/root。
+        val identity = props["identity"]?.jsonObject
+        assertEquals("string", identity?.get("type")?.jsonPrimitive?.content)
+        assertEquals(
+            listOf("app", "shell", "root"),
+            identity?.get("enum")?.jsonArray?.map { it.jsonPrimitive.content },
+        )
         assertEquals(
             listOf("description", "command"),
             bash.inputSchema["required"]?.jsonArray?.map { it.jsonPrimitive.content },
@@ -361,6 +368,7 @@ class SystemAssemblyTest {
         assertTrue(description.contains("curl"), "应说明内置 curl：$description")
         assertTrue(description.contains("/system/bin/sh"), "应说明 x86_64 退回 /system/bin/sh：$description")
         assertTrue("no graded sandbox" in description, "应说明没有分级沙箱：$description")
+        assertTrue("identity" in description, "应说明 identity=shell/root 通道：$description")
     }
 
     /**

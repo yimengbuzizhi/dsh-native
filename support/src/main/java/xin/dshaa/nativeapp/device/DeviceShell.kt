@@ -14,7 +14,25 @@ import moe.shizuku.server.IShizukuService
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import java.io.File
+import java.io.Reader
 import java.util.concurrent.TimeUnit
+
+/**
+ * `DeviceShell.runElevatedCommand` 的结果（`bash identity=shell/root` 用）。
+ *
+ * [identity] 是**实际**身份（`root (uid 0 via su -c id)` / `shell (uid 2000 via Shizuku)` / …），
+ * 不假设请求什么就是什么；[error] 非空 = 命令根本没跑起来（没 root / Shizuku 未授权）。
+ */
+data class ElevatedRun(
+    val ok: Boolean,
+    val identity: String,
+    val exitCode: Int,
+    val timedOut: Boolean,
+    val output: String,
+    val truncated: Boolean,
+    val error: String? = null,
+    val note: String? = null,
+)
 
 /**
  * 设备 shell 后端：给 Shower（虚拟屏）与后续设备工具用。
@@ -36,6 +54,20 @@ import java.util.concurrent.TimeUnit
 object DeviceShell : ShellRunner {
 
     private const val TAG = "DeviceShell"
+
+    /** 提权命令最多留在内存里的输出字符数（`dumpsys` 之类可能几十 MB）。 */
+    private const val ELEVATED_MAX_OUTPUT_CHARS = 300_000
+
+    /** `bash identity=shell` 不可用时的文案：告诉模型/用户下一步做什么，而不是裸 Permission denied。 */
+    private const val SHELL_UNAVAILABLE_REASON =
+        "identity=shell is unavailable: Shizuku is not running or this app is not authorized. " +
+            "Grant it once in DSH → Settings → Permissions & Capabilities → Shizuku (the grant is persistent), then retry. " +
+            "identity=root needs a rooted device; the default app identity needs no grant."
+
+    /** `bash identity=root` 不可用时的文案。 */
+    private const val ROOT_UNAVAILABLE_REASON =
+        "identity=root is unavailable: no su/root on this device, or the su grant was denied. " +
+            "Use identity=shell (Shizuku) or the default app identity."
 
     /** 单次 `su` 探测超时：Magisk 首次会弹授权框，给用户 12 秒点。 */
     private const val ROOT_PROBE_TIMEOUT_SECONDS = 12L
@@ -312,6 +344,300 @@ object DeviceShell : ShellRunner {
                 }
             }
         }
+
+    /**
+     * 一次性提权执行（`bash identity=shell/root`，docs/198 §二）：**整条命令**交给系统 shell，
+     * 流式收 stdout/stderr 的尾部，按 [timeoutMs] 到时杀进程树，如实回报实际身份。
+     *
+     * 与 [runElevated] 的区别：这条给 AI 的 `bash` 工具用，所以支持 `cwd`/`env`/`stdin`/超时，
+     * 且**绝不静默降级成 App 身份**（身份不可用时返回 [ElevatedRun.error]，让模型知道该去授权）。
+     *
+     * `shell` 身份的 cwd 如果在 app 私有目录里（shell uid 2000 进不去），改用 `/data/local/tmp`
+     * 并在 [ElevatedRun.note] 里说明，不假装命令是在原目录跑的。
+     */
+    suspend fun runElevatedCommand(
+        command: String,
+        identity: ShellIdentity,
+        cwd: File?,
+        env: Map<String, String>,
+        timeoutMs: Long,
+        stdin: String?,
+        maxOutputChars: Int = ELEVATED_MAX_OUTPUT_CHARS,
+    ): ElevatedRun = withContext(Dispatchers.IO) {
+        val timeout = timeoutMs.coerceIn(1_000L, 600_000L)
+        val wanted = if (identity == ShellIdentity.DEFAULT) ShellIdentity.SHELL else identity
+        when (wanted) {
+            ShellIdentity.ROOT -> {
+                if (!hasRoot()) {
+                    return@withContext ElevatedRun(
+                        ok = false,
+                        identity = "root",
+                        exitCode = -1,
+                        timedOut = false,
+                        output = "",
+                        truncated = false,
+                        error = ROOT_UNAVAILABLE_REASON,
+                    )
+                }
+                runRootStreaming(command, cwd, env, timeout, stdin, maxOutputChars, shellIdentity = false)
+            }
+            ShellIdentity.SHELL -> when {
+                hasShizuku() -> {
+                    val (dir, note) = shellAccessibleCwd(cwd)
+                    runShizukuStreaming(command, dir, env, timeout, stdin, maxOutputChars).copy(note = note)
+                }
+                hasRoot() -> {
+                    val (dir, note) = shellAccessibleCwd(cwd)
+                    runRootStreaming(command, dir, env, timeout, stdin, maxOutputChars, shellIdentity = true)
+                        .copy(note = note)
+                }
+                else -> ElevatedRun(
+                    ok = false,
+                    identity = "shell",
+                    exitCode = -1,
+                    timedOut = false,
+                    output = "",
+                    truncated = false,
+                    error = SHELL_UNAVAILABLE_REASON,
+                )
+            }
+            ShellIdentity.DEFAULT -> error("unreachable")
+        }
+    }
+
+    /** shell uid 2000 进不去 app 私有目录：换成 `/data/local/tmp` 并给出说明。 */
+    private fun shellAccessibleCwd(cwd: File?): Pair<File?, String?> {
+        if (cwd == null) return null to null
+        val dataDir = appContext?.applicationInfo?.dataDir ?: return cwd to null
+        val insideAppData = cwd.path == dataDir || cwd.path.startsWith(dataDir + File.separator)
+        if (!insideAppData) return cwd to null
+        val fallback = File("/data/local/tmp").takeIf { it.isDirectory } ?: File("/")
+        return fallback to (
+            "workspace is app-private storage, which shell (uid 2000) cannot enter; " +
+                "the command ran in ${fallback.absolutePath}. " +
+                "Pass workdir only for paths the shell identity can read (e.g. /sdcard, /data/local/tmp)."
+            )
+    }
+
+    /**
+     * root 执行（[shellIdentity] = 用 launcher 降权到 uid 2000）。
+     * `su` 写法的选择复用 [RootProbe]；环境变量由调用方给全（系统 PATH/HOME 等）。
+     */
+    private fun runRootStreaming(
+        command: String,
+        cwd: File?,
+        env: Map<String, String>,
+        timeoutMs: Long,
+        stdin: String?,
+        maxOutputChars: Int,
+        shellIdentity: Boolean,
+    ): ElevatedRun {
+        val probe = probeRoot()
+        val launcher = if (shellIdentity) launcherStatus() else null
+        val useLauncher = launcher?.available == true
+        val argv = RootProbe.execArgv(probe, command, if (useLauncher) launcher?.path else null)
+        val label = when {
+            !shellIdentity -> "root (uid 0 via ${probe.command ?: "su"})"
+            useLauncher -> "shell (uid 2000 via root launcher)"
+            else -> "root (uid 0; shell launcher unavailable: ${launcher?.reason ?: "unknown"})"
+        }
+        val builder = ProcessBuilder(argv).redirectErrorStream(true)
+        if (cwd != null) runCatching { builder.directory(cwd) }
+        builder.environment().putAll(env)
+        val process = runCatching { builder.start() }.getOrElse {
+            return ElevatedRun(
+                ok = false,
+                identity = label,
+                exitCode = -1,
+                timedOut = false,
+                output = "",
+                truncated = false,
+                error = "failed to start ${argv.firstOrNull() ?: "su"}: ${it.message ?: it.javaClass.simpleName}",
+            )
+        }
+        feedStdin(process, stdin)
+        val tail = TailText(maxOutputChars)
+        val reader = Thread({
+            runCatching { process.inputStream.reader(Charsets.UTF_8).use { readInto(it, tail) } }
+        }, "dsh-elevated-out").apply { isDaemon = true; start() }
+        val finished = runCatching { process.waitFor(timeoutMs, TimeUnit.MILLISECONDS) }.getOrDefault(false)
+        if (!finished) killProcessTree(process)
+        reader.join(1_500)
+        val exit = if (finished) runCatching { process.exitValue() }.getOrDefault(-1) else -1
+        return ElevatedRun(
+            ok = finished && exit == 0,
+            identity = label,
+            exitCode = exit,
+            timedOut = !finished,
+            output = tail.text(),
+            truncated = tail.truncated,
+        )
+    }
+
+    /** Shizuku 执行：`newProcess(argv, env, dir)` + 流式读 stdout/stderr；超时销毁并保留已读输出。 */
+    private fun runShizukuStreaming(
+        command: String,
+        cwd: File?,
+        env: Map<String, String>,
+        timeoutMs: Long,
+        stdin: String?,
+        maxOutputChars: Int,
+    ): ElevatedRun = runCatching {
+        val binder = Shizuku.getBinder() ?: error("Shizuku binder 未收到")
+        val service = IShizukuService.Stub.asInterface(ShizukuBinderWrapper(binder))
+            ?: error("IShizukuService 代理为空")
+        val envArray = env.entries.map { "${it.key}=${it.value}" }.toTypedArray().takeIf { it.isNotEmpty() }
+        val remote = service.newProcess(arrayOf("sh", "-c", command), envArray, cwd?.absolutePath)
+        val tail = TailText(maxOutputChars)
+        feedRemoteStdin(remote, stdin)
+        val pumps = listOf("dsh-elevated-out" to remote.inputStream, "dsh-elevated-err" to remote.errorStream)
+            .map { (name, pfd) ->
+                Thread({
+                    runCatching {
+                        ParcelFileDescriptor.AutoCloseInputStream(pfd).reader(Charsets.UTF_8).use { readInto(it, tail) }
+                    }
+                }, name).apply { isDaemon = true; start() }
+            }
+        val exitHolder = java.util.concurrent.atomic.AtomicInteger(-1)
+        val waiter = Thread({ exitHolder.set(runCatching { remote.waitFor() }.getOrDefault(-1)) }, "dsh-elevated-wait")
+            .apply { isDaemon = true; start() }
+        waiter.join(timeoutMs)
+        val timedOut = waiter.isAlive
+        if (timedOut) {
+            runCatching { remote.destroy() }
+            waiter.join(1_000)
+        }
+        pumps.forEach { it.join(1_500) }
+        val exit = exitHolder.get()
+        ElevatedRun(
+            ok = !timedOut && exit == 0,
+            identity = "shell (uid 2000 via Shizuku)",
+            exitCode = if (timedOut) -1 else exit,
+            timedOut = timedOut,
+            output = tail.text(),
+            truncated = tail.truncated,
+        )
+    }.getOrElse {
+        ElevatedRun(
+            ok = false,
+            identity = "shell",
+            exitCode = -1,
+            timedOut = false,
+            output = "",
+            truncated = false,
+            error = "failed to start a Shizuku process: ${it.message ?: it.javaClass.simpleName}",
+        )
+    }
+
+    /** 把 stdin 一次性喂给进程再关流（不给就立刻 EOF，别让 `cat` 挂着）。 */
+    private fun feedStdin(process: Process, data: String?) {
+        runCatching {
+            process.outputStream.use { stream ->
+                if (data != null) stream.write(data.toByteArray(Charsets.UTF_8))
+            }
+        }
+    }
+
+    /** Shizuku 的 `IRemoteProcess` 有独立的 stdin 管道；关掉它子进程才能看到 EOF。 */
+    private fun feedRemoteStdin(remote: moe.shizuku.server.IRemoteProcess, data: String?) {
+        val pfd = runCatching { remote.outputStream }.getOrNull() ?: return
+        runCatching {
+            ParcelFileDescriptor.AutoCloseOutputStream(pfd).use { stream ->
+                if (data != null) stream.write(data.toByteArray(Charsets.UTF_8))
+            }
+        }
+    }
+
+    private fun readInto(reader: Reader, tail: TailText) {
+        val buffer = CharArray(8 * 1024)
+        while (true) {
+            val read = reader.read(buffer)
+            if (read < 0) break
+            if (read > 0) tail.append(String(buffer, 0, read))
+        }
+    }
+
+    /**
+     * 有界字符尾部缓冲：提权输出可能很大（`dumpsys`），只留最后 [capacity] 个字符，
+     * 超出的部分丢掉并标记 [truncated]（bash 工具随后落盘/截断展示）。
+     */
+    private class TailText(private val capacity: Int) {
+        private val chunks = ArrayDeque<String>()
+        private var total = 0
+
+        @Volatile
+        var truncated: Boolean = false
+            private set
+
+        @Synchronized
+        fun append(text: String) {
+            if (text.isEmpty()) return
+            chunks.addLast(text)
+            total += text.length
+            while (total > capacity && chunks.size > 1) {
+                total -= chunks.removeFirst().length
+                truncated = true
+            }
+            if (total > capacity && chunks.size == 1) {
+                val only = chunks.removeFirst()
+                val kept = only.takeLast(capacity)
+                chunks.addLast(kept)
+                total = kept.length
+                truncated = true
+            }
+        }
+
+        @Synchronized
+        fun text(): String = chunks.joinToString("")
+    }
+
+    /** 超时清理：先拍进程树再强杀，避免 `su` 下的子进程被 init 收养后继续跑。 */
+    private fun killProcessTree(process: Process) {
+        val parentPid = processPid(process)
+        val descendants = if (parentPid > 0) runCatching { descendantsOf(parentPid) }.getOrDefault(emptyList()) else emptyList()
+        runCatching { process.destroyForcibly() }
+        descendants.reversed().forEach { childPid ->
+            runCatching {
+                ProcessBuilder("/system/bin/kill", "-9", childPid.toString()).start()
+                    .waitFor(200, TimeUnit.MILLISECONDS)
+            }
+        }
+    }
+
+    private fun processPid(process: Process): Int {
+        runCatching {
+            val field = process.javaClass.getDeclaredField("pid").apply { isAccessible = true }
+            val value = field.getInt(process)
+            if (value > 0) return value
+        }
+        runCatching {
+            val method = Process::class.java.getMethod("pid").apply { isAccessible = true }
+            val value = (method.invoke(process) as? Number)?.toInt() ?: -1
+            if (value > 0) return value
+        }
+        return -1
+    }
+
+    private fun descendantsOf(rootPid: Int): List<Int> {
+        val children = HashMap<Int, MutableList<Int>>()
+        File("/proc").listFiles()?.forEach { dir ->
+            val pid = dir.name.toIntOrNull() ?: return@forEach
+            val stat = runCatching { File(dir, "stat").readText() }.getOrNull() ?: return@forEach
+            val close = stat.lastIndexOf(')')
+            if (close < 0 || close + 2 >= stat.length) return@forEach
+            val fields = stat.substring(close + 2).split(' ')
+            val ppid = fields.getOrNull(1)?.toIntOrNull() ?: return@forEach
+            children.getOrPut(ppid) { ArrayList() } += pid
+        }
+        val out = ArrayList<Int>()
+        val queue = ArrayDeque(children[rootPid].orEmpty())
+        while (queue.isNotEmpty()) {
+            val pid = queue.removeFirst()
+            out += pid
+            children[pid]?.let { queue.addAll(it) }
+        }
+        return out
+    }
 
     private fun runShizukuBytes(command: String): ByteArray? = runCatching {
         val binder = Shizuku.getBinder() ?: error("Shizuku binder 未收到")

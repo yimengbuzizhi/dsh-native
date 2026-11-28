@@ -73,15 +73,16 @@ class MainActivity : ComponentActivity() {
             if (intent?.getBooleanExtra("dsh_floating_stop", false) == true) {
                 xin.dshaa.nativeapp.device.floating.FloatingBallService.stop(this)
             }
-            // 虚拟屏浮层验收：`--ez dsh_virtual_overlay true` 起 1080×1920 虚拟屏（QQ）
-            // 并直接显示 VirtualScreenOverlay，不经过模型工具调用。
+            // 虚拟屏浮层验收：`--ez dsh_virtual_overlay true` 起 1080×1920 虚拟屏（默认 QQ，
+            // `--es dsh_virtual_overlay_pkg <包名>` 可换目标 App）并直接显示 VirtualScreenOverlay，
+            // 不经过模型工具调用。
             if (intent?.getBooleanExtra("dsh_virtual_overlay", false) == true) {
-                startDebugVirtualOverlay(automation = false)
+                startDebugVirtualOverlay(automation = false, pkg = debugVirtualPackage(intent))
             }
             // 虚拟屏自动化栏验收：`--ez dsh_virtual_automation true` 起浮层后直接显示
             // 「1/5 + 暂停/继续 + 退出」，2s/4s 后推进到 3/5、5/5（OverlayInstance.AutomationBar）。
             if (intent?.getBooleanExtra("dsh_virtual_automation", false) == true) {
-                startDebugVirtualOverlay(automation = true)
+                startDebugVirtualOverlay(automation = true, pkg = debugVirtualPackage(intent))
             }
             // 位置附件验收：`--ez dsh_attach_location true` 起透明授权页 + 抓位置进附件
             // （要有已打开的会话；授权框截图见 docs/76 §十八）。
@@ -213,6 +214,16 @@ class MainActivity : ComponentActivity() {
                 val out = intent.getStringExtra("dsh_toolchain_probe_out")
                 lifecycleScope.launch(Dispatchers.IO) {
                     xin.dshaa.nativeapp.toolchain.ToolchainProbe.run(this@MainActivity, out)
+                }
+            }
+            // AI 终端身份通道验收（docs/198 §二 / docs/199）：`--ez dsh_bash_identity_probe true`
+            // 走真实 BashTool → Toolchain → DeviceShell，跑 app/shell/root 三类身份（含 stdin/cwd），
+            // 结果落 filesDir/bash-identity-probe.json（`--es dsh_bash_identity_probe_out <绝对路径>` 可改）。
+            // 有 root 的设备上同一份探针会给出真的 root 结果；没有 root 时验证结构化不可用文案。
+            if (intent?.getBooleanExtra("dsh_bash_identity_probe", false) == true) {
+                val out = intent.getStringExtra("dsh_bash_identity_probe_out")
+                lifecycleScope.launch(Dispatchers.IO) {
+                    xin.dshaa.nativeapp.toolchain.BashIdentityProbe.run(this@MainActivity, out)
                 }
             }
             // Node 插件宿主验收（P2）：`--ez dsh_node_selftest true` 起真 node 宿主跑
@@ -609,7 +620,7 @@ class MainActivity : ComponentActivity() {
      * 目标 App 用 QQ：Settings 会带 HIDE_NON_SYSTEM_OVERLAY_WINDOWS 私有 flag，
      * 系统会把主屏上的悬浮窗一起强制隐藏（2026-11-08 实测），不适合验收。
      */
-    private fun startDebugVirtualOverlay(automation: Boolean) {
+    private fun startDebugVirtualOverlay(automation: Boolean, pkg: String = DEFAULT_VIRTUAL_PACKAGE) {
         Thread {
             var waited = 0
             while (!xin.dshaa.nativeapp.device.DeviceShell.canUseShellIdentity() && waited < 20) {
@@ -620,7 +631,7 @@ class MainActivity : ComponentActivity() {
                 xin.dshaa.nativeapp.device.shower.VirtualScreenManager.start(
                     this@MainActivity,
                     xin.dshaa.nativeapp.device.shower.VirtualDisplaySpec(1080, 1920, 320),
-                    "com.tencent.mobileqq",
+                    pkg,
                 )
             }
             result.onSuccess { started ->
@@ -653,10 +664,15 @@ class MainActivity : ComponentActivity() {
             }
             android.util.Log.i(
                 "DshDebug",
-                "dsh_virtual_overlay(automation=$automation): ${result.exceptionOrNull()?.message ?: "ok"}",
+                "dsh_virtual_overlay(automation=$automation pkg=$pkg): ${result.exceptionOrNull()?.message ?: "ok"}",
             )
         }.start()
     }
+
+    /** 虚拟屏验收目标 App：默认 QQ（历史约定），`--es dsh_virtual_overlay_pkg <包名>` 可换。 */
+    private fun debugVirtualPackage(intent: android.content.Intent?): String =
+        intent?.getStringExtra("dsh_virtual_overlay_pkg")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: DEFAULT_VIRTUAL_PACKAGE
 
     /**
      * 悬浮球跟随后台（2026-11-09 用户要求）：应用一回到前台就收起。
@@ -694,10 +710,10 @@ class MainActivity : ComponentActivity() {
         }
         // 虚拟屏浮层/自动化栏：热启动也生效（不进 DEBUG_EXTRAS，避免 recreate 重复起浮层）
         if (BuildConfig.DEBUG && intent.getBooleanExtra("dsh_virtual_overlay", false)) {
-            startDebugVirtualOverlay(automation = false)
+            startDebugVirtualOverlay(automation = false, pkg = debugVirtualPackage(intent))
         }
         if (BuildConfig.DEBUG && intent.getBooleanExtra("dsh_virtual_automation", false)) {
-            startDebugVirtualOverlay(automation = true)
+            startDebugVirtualOverlay(automation = true, pkg = debugVirtualPackage(intent))
         }
         if (BuildConfig.DEBUG && intent.getBooleanExtra("dsh_attach_location", false)) {
             window.decorView.postDelayed(
@@ -709,6 +725,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
+        /** 虚拟屏验收默认目标 App（历史约定 QQ）；`--es dsh_virtual_overlay_pkg <包名>` 可换。 */
+        const val DEFAULT_VIRTUAL_PACKAGE = "com.tencent.mobileqq"
+
         val DEBUG_EXTRAS = listOf(
             "dsh_send",
             "dsh_open_session",

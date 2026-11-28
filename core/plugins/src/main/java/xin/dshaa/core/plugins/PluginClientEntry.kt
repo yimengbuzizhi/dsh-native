@@ -18,6 +18,11 @@ import java.io.File
  * 4. 最后按约定找 `lib/client.js` / `client.js` / `dist/client.js`。
  *
  * 只做静态解析，不执行任何插件代码；解析失败给具体原因（插件页要如实显示）。
+ *
+ * 安全（docs/198 P2-a）：清单里写的入口先过 [PluginPackage.normalizePath]（拒绝对路径/盘符/`..`），
+ * 再做 canonical 校验（符号链接不能指向插件目录之外）。旧实现只 `removePrefix("./")`，
+ * `../../other-plugin/x.js` 能通过这里的校验（真正读文件时 WebView 侧还有一道 canonical 检查，
+ * 但这里应该是第一道，不是靠纵深防御兜底）。
  */
 object PluginClientEntry {
 
@@ -29,24 +34,27 @@ object PluginClientEntry {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     fun resolve(pluginDir: File): Result {
+        val rootDir = runCatching { pluginDir.canonicalFile }.getOrElse { pluginDir }
         // 优先支持 dsh.package.json（鲸歌轻格式）里的 client 贡献物
-        val whaleManifest = File(pluginDir, PackageImporter.MANIFEST_NAME)
+        val whaleManifest = File(rootDir, PackageImporter.MANIFEST_NAME)
         if (whaleManifest.isFile) {
             val irRead = runCatching { PackageIrCodec.decode(whaleManifest.readText(Charsets.UTF_8), PackageImporter.MANIFEST_NAME) }
                 .getOrNull()
             if (irRead is IrRead.Ok) {
                 val clientContrib = irRead.ir.contributions.firstOrNull { it.kind == ContributionKind.CLIENT }
-                val entry = clientContrib?.entry?.trim()?.removePrefix("./")?.takeIf { it.isNotEmpty() }
-                if (entry != null) {
-                    return if (File(pluginDir, entry).isFile) {
+                val raw = clientContrib?.entry?.trim()?.takeIf { it.isNotEmpty() }
+                if (raw != null) {
+                    val entry = safeEntry(rootDir, raw)
+                        ?: return Result.Unsupported("dsh.package.json 声明的 client 入口越界或路径不合法：$raw")
+                    return if (File(rootDir, entry).isFile) {
                         Result.Resolved(entry)
                     } else {
-                        Result.Unsupported("dsh.package.json 声明的 client 入口不存在：$entry")
+                        Result.Unsupported("dsh.package.json 声明的 client 入口不存在：$raw")
                     }
                 }
             }
         }
-        val manifest = listOf("package.json", "manifest.json").map { File(pluginDir, it) }.firstOrNull { it.isFile }
+        val manifest = listOf("package.json", "manifest.json").map { File(rootDir, it) }.firstOrNull { it.isFile }
             ?: return Result.Unsupported("没有 package.json / manifest.json")
         val root = runCatching { json.parseToJsonElement(manifest.readText(Charsets.UTF_8)).jsonObject }
             .getOrNull() ?: return Result.Unsupported("${manifest.name} 不是合法 JSON")
@@ -61,20 +69,34 @@ object PluginClientEntry {
 
         val declared = clientExport(root) ?: clientEntry(client)
         if (declared != null) {
-            val file = File(pluginDir, declared)
-            return if (file.isFile) {
-                Result.Resolved(declared)
+            val entry = safeEntry(rootDir, declared)
+                ?: return Result.Unsupported("清单声明的入口越界或路径不合法：$declared")
+            return if (File(rootDir, entry).isFile) {
+                Result.Resolved(entry)
             } else {
                 Result.Unsupported("清单声明的入口不存在：$declared")
             }
         }
         val fallback = listOf("lib/client.js", "client.js", "dist/client.js")
-            .firstOrNull { File(pluginDir, it).isFile }
+            .firstOrNull { File(rootDir, it).isFile }
             ?: return Result.Unsupported("找不到 client 入口（lib/client.js 等）")
         return Result.Resolved(fallback)
     }
 
-    /** `exports["./client"]`：字符串或 `{default|import|require: "…"}`；去掉 `./` 前缀。 */
+    /**
+     * 清单声明的入口 → 插件目录内的相对路径；越界/不合法返回 null。
+     *
+     * [PluginPackage.normalizePath] 拦绝对路径、盘符、`..` 与空段；canonical 比较兜住
+     * 「插件目录里的符号链接指向目录外」这类文件系统层面的逃逸。
+     */
+    private fun safeEntry(rootDir: File, raw: String): String? {
+        val normalized = PluginPackage.normalizePath(raw) ?: return null
+        val target = runCatching { File(rootDir, normalized).canonicalFile }.getOrNull() ?: return null
+        if (!target.path.startsWith(rootDir.path + File.separator)) return null
+        return normalized
+    }
+
+    /** `exports["./client"]`：字符串或 `{default|import|require: "…"}`。 */
     private fun clientExport(root: JsonObject): String? {
         val exports = root["exports"] as? JsonObject ?: return null
         val value = exports["./client"] ?: return null
@@ -84,10 +106,10 @@ object PluginClientEntry {
                 .firstNotNullOfOrNull { key -> (value[key] as? JsonPrimitive)?.contentOrNull }
             else -> null
         }
-        return raw?.trim()?.takeIf { it.isNotEmpty() }?.removePrefix("./")
+        return raw?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     private fun clientEntry(client: JsonObject): String? =
         (client["entry"] as? JsonPrimitive)?.contentOrNull
-            ?.trim()?.takeIf { it.isNotEmpty() }?.removePrefix("./")
+            ?.trim()?.takeIf { it.isNotEmpty() }
 }

@@ -16,6 +16,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import xin.dshaa.core.jobs.JobOutcome
 import xin.dshaa.core.jobs.JobStatus
 import xin.dshaa.core.tools.DshTool
+import xin.dshaa.core.tools.ElevatedRequest
 import xin.dshaa.core.tools.ToolContext
 import xin.dshaa.core.tools.ToolResult
 import xin.dshaa.core.tools.resolvePath
@@ -47,6 +48,12 @@ private const val MAX_LOG_FILES = 20
 /** 工作区里的「自有工具箱」目录：存在就前置进 PATH。 */
 private const val WORKSPACE_BIN_DIR = ".dsh/bin"
 
+/** `bash.identity` 的默认值（App uid，走打包 bash / 系统 sh）。 */
+private const val IDENTITY_APP = "app"
+
+/** `bash.identity` 的合法值（docs/198 §二）：app（默认）/ shell（Android uid 2000）/ root（su）。 */
+private val IDENTITIES = setOf(IDENTITY_APP, "shell", "root")
+
 /**
  * `bash` 工具（Android 用 toybox `sh -c`；桌面 JVM 测试用 cmd / sh）。
  *
@@ -63,6 +70,10 @@ private const val WORKSPACE_BIN_DIR = ".dsh/bin"
  *   并把路径写进结果第一行（prompt 里承诺过「full output is saved to a file whose path is reported」）；
  * - `sandbox_permissions` / `justification`：Android 没有分级沙箱（越界路径直接 `path escapes workspace`），
  *   两个字段按上游 schema 保留但**故意忽略**，不假装提权成功。
+ *
+ * 2026-11-28（docs/198 §二）`identity`：`app`（默认）/ `shell`（Shizuku 的 Android uid 2000）/
+ * `root`（`su`）。AI 跑 `pm` / `settings` / `am` / `dumpsys` / `input` / `cmd` 时不用再手工套 `rish`；
+ * 提权通道由 [ShellHost.runElevated] 提供（Android 端 = `DeviceShell` 的 root → Shizuku → App 链）。
  */
 class BashTool : DshTool {
     override val name = "bash"
@@ -79,6 +90,17 @@ class BashTool : DshTool {
         }
         val extraEnv = envArgs(args) ?: return ToolResult.err("env must be an object of string values")
         val stdin = args.str("stdin")
+        val identity = args.str("identity")?.trim()?.lowercase().orEmpty().ifEmpty { IDENTITY_APP }
+        if (identity !in IDENTITIES) {
+            return ToolResult.err("identity must be one of: app (default), shell, root — got: $identity")
+        }
+        if (identity != IDENTITY_APP) {
+            // 提权通道一次性执行整条命令（不保留 cd/变量），后台 job 没有对应实现。
+            if (args.bool("run_in_background") == true) {
+                return ToolResult.err("identity=$identity does not support run_in_background; run it in the foreground instead.")
+            }
+            return runElevated(command, identity, workdir, timeoutMs, extraEnv, stdin, ctx)
+        }
         // 冷启动竞态防护：等待工具链准备完成；失败则静默退回 /system/bin/sh
         runCatching { ctx.shell?.prepare() }
         val shell = shellFor(command, ctx)
@@ -132,12 +154,122 @@ class BashTool : DshTool {
     }
 
     /**
+     * `identity=shell/root`：整条命令交给宿主的一次性提权通道（Shizuku / `su`），
+     * 输出仍按 `bash` 的老规矩处理（尾部截断、超时带部分输出、`[exit code: N]`、大输出落盘）。
+     *
+     * 与 app 身份的区别（都会写进结果首行，避免模型误判当前身份）：
+     * - 不经过打包 bash，PATH/环境按系统 shell 重建（app 私有的 toolbox 路径系统 shell 读不到）；
+     * - `cwd` 若在 app 私有目录里，宿主会改用 `/data/local/tmp` 并在 `note` 里说明；
+     * - 失败（没 root / Shizuku 未授权）返回可执行的提示，不是裸的 `Permission denied`。
+     */
+    private suspend fun runElevated(
+        command: String,
+        identity: String,
+        workdir: File,
+        timeoutMs: Long,
+        extraEnv: Map<String, String>,
+        stdin: String?,
+        ctx: ToolContext,
+    ): ToolResult {
+        val host = ctx.shell ?: return ToolResult.err(
+            "identity=$identity is unavailable: this session has no Android shell host. " +
+                "Omit identity (app uid) or run inside the DSH Android app.",
+        )
+        if (!host.supportsElevatedIdentity()) {
+            return ToolResult.err(
+                "identity=$identity is unavailable in this deployment (no Shizuku/su channel); use the default app identity.",
+            )
+        }
+        val result = try {
+            host.runElevated(
+                ElevatedRequest(
+                    command = command,
+                    identity = identity,
+                    cwd = workdir,
+                    env = elevatedEnvironment(ctx, workdir, timeoutMs, extraEnv),
+                    timeoutMs = timeoutMs,
+                    stdin = stdin,
+                ),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return ToolResult.err("identity=$identity failed to start: ${e.message ?: e.javaClass.simpleName}")
+        }
+        val error = result.error
+        if (!error.isNullOrBlank()) return ToolResult.err(error)
+        val header = "identity: ${result.identity}"
+        val meta = mapOf(
+            "identity" to result.identity,
+            "exit_code" to result.exitCode.toString(),
+            "timed_out" to result.timedOut.toString(),
+        )
+        var text = result.output.trimEnd()
+        if (result.timedOut) {
+            return ToolResult.err(
+                buildString {
+                    appendLine(header)
+                    appendLine("command timed out after ${timeoutMs}ms")
+                    result.note?.let { appendLine("note: $it") }
+                    if (text.isNotEmpty()) {
+                        appendLine("[partial output before timeout]")
+                        append(text.takeLast(4_000))
+                    }
+                }.trimEnd(),
+                meta = meta,
+            )
+        }
+        if (result.truncated || text.length > MAX_OUTPUT_CHARS) {
+            val logPath = saveElevatedOutput(ctx, text)
+            val note = if (logPath != null) "output tail saved: $logPath" else "output tail not saved"
+            text = "…(output truncated to tail; $note)\n" + text.takeLast(MAX_OUTPUT_CHARS)
+        }
+        val body = buildString {
+            appendLine(header)
+            result.note?.let { appendLine("note: $it") }
+            append(text)
+            if (result.exitCode != 0) {
+                if (isNotEmpty() && !endsWith("\n")) append('\n')
+                append("[exit code: ${result.exitCode}]")
+            }
+        }.trimEnd()
+        return ToolResult.ok(body, meta = meta)
+    }
+
+    /**
+     * 提权命令的环境：系统 shell 的 PATH/HOME，加上托管 `DSH_*` 与模型给的 `env`。
+     *
+     * 不铺打包工具箱的 `LD_LIBRARY_PATH`/CA/`BASH_ENV`：那些是 app 私有路径，shell/root 身份读不到。
+     */
+    private fun elevatedEnvironment(
+        ctx: ToolContext,
+        workdir: File,
+        timeoutMs: Long,
+        extraEnv: Map<String, String>,
+    ): Map<String, String> {
+        val env = LinkedHashMap<String, String>()
+        env["PATH"] = "/system/bin:/system/xbin:/product/bin"
+        env["HOME"] = "/data/local/tmp"
+        env["TMPDIR"] = "/data/local/tmp"
+        env["LANG"] = "C.UTF-8"
+        env["DSH_WORKSPACE"] = runCatching { ctx.workspace.absolutePath }.getOrDefault("")
+        env["DSH_CWD"] = runCatching { workdir.absolutePath }.getOrDefault("")
+        env["DSH_TIMEOUT_MS"] = timeoutMs.toString()
+        ctx.jobOwner()?.let { env["DSH_SESSION"] = it }
+        extraEnv.forEach { (k, v) -> env[k] = v }
+        return env
+    }
+
+    /** 提权输出落盘（复用 app 身份的滚动日志目录）。 */
+    private fun saveElevatedOutput(ctx: ToolContext, text: String): String? =
+        saveFullOutput(ctx, text.toByteArray(Charsets.UTF_8))
+
+    /**
      * 环境变量：托管 `DSH_*` + 工作区工具箱 PATH 前缀 + 模型给的 `env`（最后写入，可覆盖托管值）。
      *
      * 后台与前台共用，保证 `run_in_background` 的进程看到同样的环境。
      */
-    private fun applyEnvironment(
-        builder: ProcessBuilder,
+    private fun applyEnvironment(        builder: ProcessBuilder,
         ctx: ToolContext,
         workdir: File,
         timeoutMs: Long?,

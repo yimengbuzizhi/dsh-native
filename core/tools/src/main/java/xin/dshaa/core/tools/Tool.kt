@@ -82,10 +82,48 @@ data class ToolContext(
 )
 
 /**
+ * `bash` 的提权执行请求（`identity=shell` / `root`，Android 专用）。
+ *
+ * 为什么放在 `ShellHost` 而不是让 `core:tools` 直接依赖 Android：Shizuku binder / `su` 的
+ * 真实执行在 App 层（`DeviceShell`）；core 只声明「要什么」，保持纯 JVM 可单测。
+ */
+data class ElevatedRequest(
+    val command: String,
+    /** `shell`（Android shell uid 2000：Shizuku，或 root 下用 launcher 降权）或 `root`（su）。 */
+    val identity: String,
+    val cwd: File,
+    val env: Map<String, String>,
+    val timeoutMs: Long,
+    val stdin: String?,
+)
+
+/**
+ * 提权执行的结果：合并后的 stdout+stderr 尾部 + **实际**身份 + 退出码。
+ *
+ * [identity] 是执行端如实回报的（`root (uid 0, su -c id)` / `shell (uid 2000 via Shizuku)` /
+ * `root (uid 0; shell launcher unavailable: …)`），不能假设模型请求了什么就是什么。
+ * [error] 非空 = 命令根本没跑起来（没 root / Shizuku 未授权 / 平台不支持），文案可直接给模型。
+ */
+data class ElevatedResult(
+    val ok: Boolean,
+    val identity: String,
+    val exitCode: Int,
+    val timedOut: Boolean,
+    val output: String,
+    val truncated: Boolean,
+    val error: String? = null,
+    /** 补充说明（如「workspace 是 app 私有目录，shell 身份改用 /data/local/tmp」）。 */
+    val note: String? = null,
+)
+
+/**
  * `bash` 工具的命令行能力注入点（由 App 层的 `Toolchain` 实现，core:tools 保持纯 JVM 可单测）。
  *
  * 只暴露三样：bash 可执行体、curl 可执行体、要追加进子进程的环境变量（PATH/HOME/CA/LD_LIBRARY_PATH）。
  * 超时、后台、截断、stdin 仍由 `BashTool` 自己管，不在这里重复。
+ *
+ * 2026-11-28（docs/198 §二）：加 [runElevated] 给 `bash identity=shell/root` 用——
+ * 以前 AI 要跑 `pm`/`settings`/`am`/`dumpsys` 只能换工具或手工套 `rish`。
  */
 interface ShellHost {
     /** 确保工具链已解压就绪（冷启动首调时挂起等待，避免竞态）；默认空实现。 */
@@ -102,6 +140,24 @@ interface ShellHost {
 
     /** 追加进子进程环境的变量；同名键覆盖继承来的值。 */
     fun environment(): Map<String, String>
+
+    /** 本部署是否支持 `identity=shell/root`（Android = true；桌面 JVM / 测试默认 false）。 */
+    fun supportsElevatedIdentity(): Boolean = false
+
+    /**
+     * 以系统身份执行一条命令（`identity` = `shell` / `root`）。
+     * 只会在 [supportsElevatedIdentity] 为 true 时被调用；失败原因写进 [ElevatedResult.error]。
+     */
+    suspend fun runElevated(request: ElevatedRequest): ElevatedResult =
+        ElevatedResult(
+            ok = false,
+            identity = request.identity,
+            exitCode = -1,
+            timedOut = false,
+            output = "",
+            truncated = false,
+            error = "identity=${request.identity} is unavailable in this deployment (no Android shell host is mounted).",
+        )
 }
 
 /**

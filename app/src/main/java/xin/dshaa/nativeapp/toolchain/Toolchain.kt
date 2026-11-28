@@ -10,6 +10,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import xin.dshaa.core.tools.ElevatedRequest
+import xin.dshaa.core.tools.ElevatedResult
 import xin.dshaa.core.tools.ShellHost
 import java.io.File
 import java.io.FileOutputStream
@@ -332,6 +334,47 @@ class Toolchain(private val context: Context) : ShellHost {
     override fun curlPath(): String? = if (isReady()) curlFile.takeIf { it.isFile }?.absolutePath else null
 
     override fun environment(): Map<String, String> = buildEnvironment(includeFallbackBashEnv = !linksValid())
+
+    /** Android 端才有 Shizuku/su 通道；桌面/测试的 `ShellHost` 默认 false。 */
+    override fun supportsElevatedIdentity(): Boolean = true
+
+    /**
+     * `bash identity=shell/root`：交给 [DeviceShell] 的 root → Shizuku → App 身份链执行（docs/198 §二）。
+     * 这一层只做类型转换与「实际身份」回报，执行/超时/进程树回收都在 DeviceShell。
+     */
+    override suspend fun runElevated(request: ElevatedRequest): ElevatedResult {
+        val identity = when (request.identity) {
+            "root" -> com.ai.assistance.showerclient.ShellIdentity.ROOT
+            "shell" -> com.ai.assistance.showerclient.ShellIdentity.SHELL
+            else -> return ElevatedResult(
+                ok = false,
+                identity = request.identity,
+                exitCode = -1,
+                timedOut = false,
+                output = "",
+                truncated = false,
+                error = "unknown identity: ${request.identity} (expected shell or root)",
+            )
+        }
+        val run = xin.dshaa.nativeapp.device.DeviceShell.runElevatedCommand(
+            command = request.command,
+            identity = identity,
+            cwd = request.cwd,
+            env = request.env,
+            timeoutMs = request.timeoutMs,
+            stdin = request.stdin,
+        )
+        return ElevatedResult(
+            ok = run.ok,
+            identity = run.identity,
+            exitCode = run.exitCode,
+            timedOut = run.timedOut,
+            output = run.output,
+            truncated = run.truncated,
+            error = run.error,
+            note = run.note,
+        )
+    }
 
     private fun buildEnvironment(includeFallbackBashEnv: Boolean): Map<String, String> {
         val env = LinkedHashMap<String, String>()
